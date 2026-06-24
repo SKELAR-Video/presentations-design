@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+:root {
+  --skelar-bg: #090D17;
+  --skelar-red: #FD3433;
+  --skelar-text: #FFFFFF;
+  --skelar-secondary: #A2A6B1;
+  --skelar-chip-1: #292D39;
+  --skelar-chip-2: #3B404C;
+}
+
+body {
+  background: var(--skelar-bg);
+  color: var(--skelar-text);
+}
