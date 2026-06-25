@@ -263,6 +263,46 @@ export async function buildPresentation(
     }
   }
 
+  // General colon-split for all non-title, non-bento text slots.
+  // Rule: prefix up to and including ':' → WHITE (same rule as bento above).
+  for (let i = 0; i < plan.slides.length; i++) {
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    const compId = plan.slides[i].composition
+    const slots  = plan.slides[i].slots
+    const comp   = getComposition(compId)
+    if (!comp) continue
+
+    const slide = updatedSlides.find(s => s.objectId === pageId)
+    if (!slide) continue
+
+    for (const slot of comp.slots) {
+      if (slot.type !== 'text') continue
+      if (slot.name === 'ЗАГОЛОВОК') continue
+      if (BENTO_TOKENS[compId]?.includes(slot.name)) continue  // already handled above
+
+      const slotValue = slots[slot.name] ?? ''
+      const colonIdx  = slotValue.indexOf(':')
+      if (colonIdx < 0) continue
+
+      for (const el of slide.pageElements ?? []) {
+        if (!el.objectId) continue
+        const elText = (el.shape?.text?.textElements ?? [])
+          .map(te => te.textRun?.content ?? '').join('')
+        if (!elText.includes(`{{${slot.name}}}`)) continue
+
+        requests.push({
+          updateTextStyle: {
+            objectId: el.objectId,
+            style: { foregroundColor: { opaqueColor: { rgbColor: _WHITE } } },
+            fields: 'foregroundColor',
+            textRange: { type: 'FIXED_RANGE', startIndex: 0, endIndex: colonIdx + 1 },
+          },
+        })
+      }
+    }
+  }
+
   if (requests.length > 0) {
     await slidesApi.presentations.batchUpdate({
       presentationId,

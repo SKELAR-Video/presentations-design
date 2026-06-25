@@ -45,9 +45,9 @@ CH=680      — H - PAD - CY, висота карток
 ## Логотип
 - Розмір: 90×90 px
 - Позиція: правий верхній кут у межах сітки — `x = W - PAD - 90 = 1730, y = PAD = 100`
-- URL береться з `process.env.LOGO_URL`
+- URL: `process.env.LOGO_URL` — якщо не заданий, fallback = raw GitHub URL
+- Raw GitHub URL (вшитий як дефолт): `https://raw.githubusercontent.com/SKELAR-Video/presentations-design/main/public/assets/SKELAR%20Symbol.png`
 - Файл лежить: `public/assets/SKELAR Symbol.png`
-- Raw GitHub URL: `https://raw.githubusercontent.com/SKELAR-Video/presentations-design/main/public/assets/SKELAR%20Symbol.png`
 
 ## Бенто-картки — скруглення кутів
 - Google Slides REST API **не дозволяє** задати фіксований радіус для `ROUND_RECTANGLE`
@@ -61,9 +61,11 @@ CH=680      — H - PAD - CY, висота карток
 - Якщо хоч одна картка на слайді потребує зменшення — всі картки слайду отримують однаковий менший розмір
 - `updateTextStyle` виконується **після** `replaceAllText` (не до)
 
-## Бенто-картки — кольорування тексту з ":"
-- Якщо баді-текст містить `:` — частина до і включно з `:` стає **WHITE**
+## Кольорування тексту з ":"
+- Правило діє на **всі не-заголовкові текстові слоти** (body, caption, підзаголовки) — у всіх композиціях
+- Якщо текст містить `:` — частина до і включно з `:` стає **WHITE**
 - Частина після `:` залишається MUTED (або PINK на червоному тлі)
+- ЗАГОЛОВОК — завжди виключений
 
 ## Структура папок з ресурсами
 ```

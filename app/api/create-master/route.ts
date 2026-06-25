@@ -120,15 +120,14 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB): object[] {
 
   // Logo — top-right corner, within the PAD grid, 90×90 px
   const logoUrl = process.env.LOGO_URL
-  if (logoUrl) {
-    push([{
-      createImage: {
-        objectId: mk('logo'),
-        url: logoUrl,
-        elementProperties: elProps(slideId, W - PAD - LOGO_W, PAD, LOGO_W, LOGO_H),
-      },
-    }])
-  }
+    ?? 'https://raw.githubusercontent.com/SKELAR-Video/presentations-design/main/public/assets/SKELAR%20Symbol.png'
+  push([{
+    createImage: {
+      objectId: mk('logo'),
+      url: logoUrl,
+      elementProperties: elProps(slideId, W - PAD - LOGO_W, PAD, LOGO_W, LOGO_H),
+    },
+  }])
 
   // Simulated rounded corners: RECTANGLE + 4 × (bg-coloured square + card-coloured ellipse).
   // ROUND_RECTANGLE in Google Slides API cannot have a fixed radius — it always scales
