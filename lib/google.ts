@@ -5,7 +5,7 @@ import { PHASE0_COMPOSITIONS, getComposition } from './compositions'
 
 // ─── Bento font-size auto-shrink ─────────────────────────────────────────────
 // Layout constants must mirror create-master/route.ts
-const _PAD = 100, _UW = 1720, _GAP = 30, _INN = 40, _TH = 100, _TG = 100, _H = 1080
+const _PAD = 100, _UW = 1720, _GAP = 30, _INN = 30, _TH = 100, _TG = 100, _H = 1080
 const _CY = _PAD + _TH + _TG
 const _CH = _H - _PAD - _CY
 
