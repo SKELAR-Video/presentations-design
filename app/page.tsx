@@ -22,13 +22,18 @@ export default function HomePage() {
       })
       const fetchData = await fetchRes.json()
       if (!fetchRes.ok) throw new Error(fetchData.error ?? 'Не вдалося завантажити документ')
-      const content = fetchData.text as string
-
       // Step 2: map to slide plan
+      // gslides → 1:1 mode (text preserved verbatim, one slide per source slide)
+      // gdoc    → free-form mode (LLM structures freely from the text)
+      const is1to1 = fetchData.type === 'gslides'
       const mapRes = await fetch('/api/map', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: content, theme: 'dark' }),
+        body: JSON.stringify(
+          is1to1
+            ? { slides: fetchData.slides, theme: 'dark', mode: '1to1' }
+            : { text: fetchData.text, theme: 'dark' }
+        ),
       })
       const mapData = await mapRes.json()
       if (!mapRes.ok) throw new Error(mapData.error ?? 'Помилка аналізу')

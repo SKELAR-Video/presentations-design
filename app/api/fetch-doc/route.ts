@@ -27,23 +27,25 @@ function getOAuth2Client(accessToken: string) {
   return oauth2
 }
 
-async function extractSlidesText(auth2: ReturnType<typeof getOAuth2Client>, id: string): Promise<string> {
+export type SourceSlide = { index: number; texts: string[] }
+
+async function extractSlides(
+  auth2: ReturnType<typeof getOAuth2Client>,
+  id: string,
+): Promise<SourceSlide[]> {
   const slidesApi = google.slides({ version: 'v1', auth: auth2 })
   const res = await slidesApi.presentations.get({ presentationId: id })
-  const slides = res.data.slides ?? []
-  const lines: string[] = []
-
-  for (const slide of slides) {
-    for (const el of slide.pageElements ?? []) {
-      const text = el.shape?.text?.textElements
-        ?.map((te) => te.textRun?.content ?? '')
-        .join('')
-        .trim()
-      if (text) lines.push(text)
-    }
-  }
-
-  return lines.join('\n')
+  return (res.data.slides ?? []).map((slide, i) => ({
+    index: i,
+    texts: (slide.pageElements ?? [])
+      .map(el =>
+        (el.shape?.text?.textElements ?? [])
+          .map(te => te.textRun?.content ?? '')
+          .join('')
+          .trim(),
+      )
+      .filter(Boolean),
+  }))
 }
 
 export async function POST(req: NextRequest) {
@@ -67,7 +69,12 @@ export async function POST(req: NextRequest) {
     let text = ''
 
     if (parsed.type === 'gslides') {
-      text = await extractSlidesText(auth2, parsed.id)
+      const slides = await extractSlides(auth2, parsed.id)
+      const text = slides.map(s => s.texts.join('\n')).join('\n')
+      if (!text.trim()) {
+        return NextResponse.json({ error: 'Презентація порожня або недоступна' }, { status: 400 })
+      }
+      return NextResponse.json({ text: text.trim(), type: 'gslides', slides })
     } else {
       const drive = google.drive({ version: 'v3', auth: auth2 })
       const res = await drive.files.export(
