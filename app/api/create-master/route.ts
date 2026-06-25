@@ -29,10 +29,14 @@ const CY     = PAD + TH + TG   // 300 cards top y
 const CH     = H - PAD - CY    // 680 cards height
 
 // Right-bento layout constants (bento column fills full height PAD→PAD)
-const RBW    = 860              // right bento column width
-const RBH    = H - 2 * PAD     // 880 right bento column height
-const RBX    = PAD + (UW - RBW - GAP)  // 960 right bento x
-const LTW    = UW - RBW - GAP  // 830 left text zone width
+const RBW      = 860              // right bento column width
+const RBH      = H - 2 * PAD     // 880 right bento column height
+const LTW      = UW - RBW - GAP  // 830 left text zone width
+const RBX      = PAD + LTW + GAP  // 960 right bento x-start (PAD + LTW + GAP)
+const LOGO_H   =  90              // logo height, px
+const LOGO_GAP =  20              // visual gap between ТЕКСТ bottom and logo top
+// ТЕКСТ height in bento_right: leaves space at bottom for logo (RBH-260-GAP-LOGO_H-LOGO_GAP = 480)
+const RTEXT_H  = RBH - 260 - GAP - LOGO_H - LOGO_GAP  // 480
 
 // ─── Palette ────────────────────────────────────────────────────────────────
 type RGB = { red: number; green: number; blue: number }
@@ -245,7 +249,7 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
       const cardH = Math.floor((RBH - GAP) / 2)       // 425
       push(
         tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, LTW, 260, 44),
-        tb(mk(), slideId, 'ТЕКСТ', PAD, PAD + 260 + GAP, LTW, RBH - 260 - GAP, 22, MUTED),
+        tb(mk(), slideId, 'ТЕКСТ', PAD, PAD + 260 + GAP, LTW, RTEXT_H, 22, MUTED),
       )
       for (let k = 0; k < 2; k++) {
         const cy = PAD + k * (cardH + GAP)
@@ -259,7 +263,7 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
       const cardH = Math.floor((RBH - 2 * GAP) / 3)   // 273
       push(
         tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, LTW, 260, 44),
-        tb(mk(), slideId, 'ТЕКСТ', PAD, PAD + 260 + GAP, LTW, RBH - 260 - GAP, 22, MUTED),
+        tb(mk(), slideId, 'ТЕКСТ', PAD, PAD + 260 + GAP, LTW, RTEXT_H, 22, MUTED),
       )
       for (let k = 0; k < 3; k++) {
         const cy = PAD + k * (cardH + GAP)
@@ -275,7 +279,7 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
       const cellH = Math.floor((RBH - GAP) / 2)        // 425
       push(
         tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, LTW, 260, 44),
-        tb(mk(), slideId, 'ТЕКСТ', PAD, PAD + 260 + GAP, LTW, RBH - 260 - GAP, 22, MUTED),
+        tb(mk(), slideId, 'ТЕКСТ', PAD, PAD + 260 + GAP, LTW, RTEXT_H, 22, MUTED),
       )
       let k = 0
       for (let row = 0; row < 2; row++) {

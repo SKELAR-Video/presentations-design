@@ -2,8 +2,6 @@ import { google } from 'googleapis'
 import type { slides_v1 } from 'googleapis'
 import type { SlidePlan } from './types'
 import { PHASE0_COMPOSITIONS, getComposition } from './compositions'
-import { createReadStream } from 'fs'
-import { join } from 'path'
 
 // ─── Bento font-size auto-shrink ─────────────────────────────────────────────
 // Layout constants must mirror create-master/route.ts
@@ -55,13 +53,13 @@ const BENTO_DEFAULT_PT: Record<string, number> = {
   bento_right_2x2: 18,
 }
 
-const FONT_STEPS = [22, 18, 14] as const
+const FONT_STEPS = [22, 18, 14, 10] as const
 
 function textFits(text: string, wPx: number, hPx: number, pt: number): boolean {
   if (!text.trim()) return true
   const px = pt * 2.667
-  const cpl = Math.max(1, Math.floor(wPx / (px * 0.58)))   // chars per line (Inter Medium, conservative)
-  const maxLines = Math.floor(hPx / (px * 1.2))             // conservative line height
+  const cpl = Math.max(1, Math.floor(wPx / (px * 0.48)))   // conservative: Cyrillic chars wider
+  const maxLines = Math.max(1, Math.floor(hPx / (px * 1.4))) // conservative; ≥1 so tiny boxes are never 0
   const words = text.split(/\s+/).filter(Boolean)
   let lines = 1, cur = 0
   for (const w of words) {
@@ -72,47 +70,76 @@ function textFits(text: string, wPx: number, hPx: number, pt: number): boolean {
   return lines <= maxLines
 }
 
+// ─── bento_right ТЕКСТ font-shrink ───────────────────────────────────────────
+const _LTW  = _UW - _RBW - _GAP  // 830 — left text zone width in bento_right
+// ТЕКСТ box h = 480 after logo reserve (RBH-260-GAP-90-20 = 480); no INN padding
+const _BENTO_RIGHT_TEXT_H = 480
+
+function pickTextPt(compId: string, text: string): number | null {
+  if (!compId.startsWith('bento_right_') || !text.trim()) return null
+  const steps = FONT_STEPS.filter(s => s <= 22)  // 22pt default for ТЕКСТ
+  for (const pt of steps) {
+    if (textFits(text, _LTW, _BENTO_RIGHT_TEXT_H, pt)) return pt
+  }
+  return steps[steps.length - 1]
+}
+
 // ─── Logo ────────────────────────────────────────────────────────────────────
 const _FPX    = 9144000 / 1920
 const _W      = 1920
+const _H_SLIDE = 1080
 const _LOGO_W = 90
 const _LOGO_H = 90
 const _eL     = (px: number) => Math.round(px * _FPX)
 
-// Cached Drive URL — only set on success; failures are not cached so next request retries.
+// bento_right_* layouts occupy the top-right area — logo goes bottom-left instead
+function _logoPos(compId: string): { x: number; y: number } {
+  if (compId.startsWith('bento_right_')) {
+    return { x: _PAD, y: _H_SLIDE - _PAD - _LOGO_H }
+  }
+  return { x: _W - _PAD - _LOGO_W, y: _PAD }
+}
+
+// Logo URL priority: LOGO_URL env → Vercel static → GitHub public repo
+const _GITHUB_LOGO = 'https://raw.githubusercontent.com/SKELAR-Video/presentations-design/main/public/assets/SKELAR%20Symbol.png'
+
 let _logoUrlCache: string | undefined
 
-async function getLogoUrl(drive: ReturnType<typeof google.drive>): Promise<string | null> {
+function getLogoUrl(): string {
   if (_logoUrlCache) return _logoUrlCache
   if (process.env.LOGO_URL) {
     _logoUrlCache = process.env.LOGO_URL
-    return _logoUrlCache
+  } else if (process.env.VERCEL_URL) {
+    _logoUrlCache = `https://${process.env.VERCEL_URL}/assets/SKELAR%20Symbol.png`
+  } else {
+    _logoUrlCache = _GITHUB_LOGO
   }
-  try {
-    const logoPath = join(process.cwd(), 'public', 'assets', 'SKELAR Symbol.png')
-    const uploadRes = await drive.files.create({
-      requestBody: { name: 'skelar-logo.png', mimeType: 'image/png' },
-      media: { mimeType: 'image/png', body: createReadStream(logoPath) },
-      fields: 'id',
-    })
-    const fileId = uploadRes.data.id!
-    try {
-      await drive.permissions.create({
-        fileId,
-        requestBody: { type: 'anyone', role: 'reader' },
-      })
-    } catch (permErr) {
-      console.error('[logo] permissions.create failed (workspace may restrict public sharing):', permErr)
-      console.error('[logo] Fix: set LOGO_URL=<public image url> in .env.local')
-      return null
-    }
-    _logoUrlCache = `https://drive.google.com/uc?export=view&id=${fileId}`
-    console.log('[logo] uploaded ok, url:', _logoUrlCache)
-    return _logoUrlCache
-  } catch (err) {
-    console.error('[logo] Drive upload failed:', err)
-    return null  // do NOT cache — retry on next request
+  return _logoUrlCache
+}
+
+// Value+label split: if card text is "ЧИСЛО\nПідпис" or "ЧИСЛО: Підпис",
+// returns split point so value gets large font and label gets small font.
+// Only triggers when the first part contains a digit (metric/number indicator).
+function splitValueLabel(text: string): { valueEnd: number; labelStart: number } | null {
+  const nlIdx = text.indexOf('\n')
+  if (nlIdx > 0 && nlIdx <= 35 && /\d/.test(text.slice(0, nlIdx))) {
+    return { valueEnd: nlIdx, labelStart: nlIdx + 1 }
   }
+  const colonIdx = text.indexOf(':')
+  if (colonIdx > 0 && colonIdx <= 35 && /\d/.test(text.slice(0, colonIdx))) {
+    const labelStart = text[colonIdx + 1] === ' ' ? colonIdx + 2 : colonIdx + 1
+    return { valueEnd: colonIdx + 1, labelStart }  // include ":" in value range
+  }
+  return null
+}
+
+// Large font size for the VALUE part of a value+label card
+const BENTO_VALUE_PT: Record<string, number> = {
+  two_columns:     36,
+  three_columns:   28,
+  bento_right_2:   36,
+  bento_right_3:   28,
+  bento_right_2x2: 32,
 }
 
 // Returns the largest step (≤ defaultPt) at which every bento card on the slide fits.
@@ -158,7 +185,7 @@ export async function buildPresentation(
   const auth = getOAuth2Client(accessToken)
   const drive = google.drive({ version: 'v3', auth })
   const slidesApi = google.slides({ version: 'v1', auth })
-  const logoUrl = await getLogoUrl(drive)
+  const logoUrl = getLogoUrl()
   const masterDeckId = process.env.MASTER_DECK_ID
   if (!masterDeckId) throw new Error('MASTER_DECK_ID не заданий у .env.local — оновіть його і перезапустіть сервер')
 
@@ -187,6 +214,26 @@ export async function buildPresentation(
     if (compId) {
       if (!compMap[compId]) compMap[compId] = []
       compMap[compId].push(slide.objectId!)
+    }
+  }
+
+  // Step 2.5: Downgrade over-specified bento/column compositions to match filled card count.
+  // Prevents ghost empty cards when LLM picks a layout with more slots than content.
+  {
+    const DOWNGRADE: Record<string, Record<number, string>> = {
+      bento_right_2:   { 0: 'title_body', 1: 'title_body' },
+      bento_right_3:   { 0: 'title_body', 1: 'title_body', 2: 'bento_right_2' },
+      bento_right_2x2: { 0: 'title_body', 1: 'title_body', 2: 'bento_right_2', 3: 'bento_right_3' },
+      two_columns:     { 0: 'title_body', 1: 'title_body' },
+      three_columns:   { 0: 'title_body', 1: 'title_body', 2: 'two_columns' },
+    }
+    for (const slide of plan.slides) {
+      const tokens = BENTO_TOKENS[slide.composition]
+      if (!tokens) continue
+      const filled = tokens.filter(t => !!slide.slots[t]).length
+      if (filled >= tokens.length) continue
+      const target = DOWNGRADE[slide.composition]?.[filled]
+      if (target) slide.composition = target
     }
   }
 
@@ -241,32 +288,6 @@ export async function buildPresentation(
   for (const slide of updatedSlides) {
     if (!keepSet.has(slide.objectId!)) {
       requests.push({ deleteObject: { objectId: slide.objectId } })
-    }
-  }
-
-  // Logo on every slide: top-right corner within PAD grid, 90×90 px
-  if (logoUrl) {
-    for (let i = 0; i < planPageIds.length; i++) {
-      const pageId = planPageIds[i]
-      if (!pageId) continue
-      requests.push({
-        createImage: {
-          objectId: `logo_pl_${i}`,
-          url: logoUrl,
-          elementProperties: {
-            pageObjectId: pageId,
-            size: {
-              width:  { magnitude: _eL(_LOGO_W), unit: 'EMU' },
-              height: { magnitude: _eL(_LOGO_H), unit: 'EMU' },
-            },
-            transform: {
-              scaleX: 1, shearX: 0, translateX: _eL(_W - _PAD - _LOGO_W),
-              shearY: 0, scaleY: 1, translateY: _eL(_PAD),
-              unit: 'EMU',
-            },
-          },
-        },
-      })
     }
   }
 
@@ -330,6 +351,7 @@ export async function buildPresentation(
 
       const matchedToken = bentoTokens.find(t => elText.includes(`{{${t}}}`))
       if (!matchedToken) continue
+      if (!slots[matchedToken]) continue  // empty card will be deleted — skip style updates
 
       // 1. Font size (applied to all text in the box)
       requests.push({
@@ -341,19 +363,74 @@ export async function buildPresentation(
         },
       })
 
-      // 2. Colon-split: everything up to and including ":" → WHITE
+      // 2. Value+label (number + description) OR plain colon-split
       const slotValue = slots[matchedToken] ?? ''
-      const colonIdx  = slotValue.indexOf(':')
-      if (colonIdx >= 0) {
+      const split = splitValueLabel(slotValue)
+      if (split) {
+        // Large value (number/metric) → white; small label → inherits muted from template
+        const valuePt = BENTO_VALUE_PT[compId] ?? 36
         requests.push({
           updateTextStyle: {
             objectId: el.objectId,
-            style: { foregroundColor: { opaqueColor: { rgbColor: _WHITE } } },
-            fields: 'foregroundColor',
-            textRange: { type: 'FIXED_RANGE', startIndex: 0, endIndex: colonIdx + 1 },
+            style: {
+              fontSize: { magnitude: valuePt, unit: 'PT' },
+              bold: false,
+              foregroundColor: { opaqueColor: { rgbColor: _WHITE } },
+            },
+            fields: 'fontSize,bold,foregroundColor',
+            textRange: { type: 'FIXED_RANGE', startIndex: 0, endIndex: split.valueEnd },
           },
         })
+        requests.push({
+          updateTextStyle: {
+            objectId: el.objectId,
+            style: { fontSize: { magnitude: 14, unit: 'PT' }, bold: false },
+            fields: 'fontSize,bold',
+            textRange: { type: 'FIXED_RANGE', startIndex: split.labelStart, endIndex: slotValue.length },
+          },
+        })
+      } else {
+        // Plain colon-split: prefix up to and including ":" → WHITE
+        const colonIdx = slotValue.indexOf(':')
+        if (colonIdx >= 0) {
+          requests.push({
+            updateTextStyle: {
+              objectId: el.objectId,
+              style: { foregroundColor: { opaqueColor: { rgbColor: _WHITE } } },
+              fields: 'foregroundColor',
+              textRange: { type: 'FIXED_RANGE', startIndex: 0, endIndex: colonIdx + 1 },
+            },
+          })
+        }
       }
+    }
+  }
+
+  // ТЕКСТ font-size auto-shrink for bento_right layouts (left column body text)
+  for (let i = 0; i < plan.slides.length; i++) {
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    const compId = plan.slides[i].composition
+    const textPt = pickTextPt(compId, plan.slides[i].slots['ТЕКСТ'] ?? '')
+    if (textPt === null) continue
+
+    const slide = updatedSlides.find(s => s.objectId === pageId)
+    if (!slide) continue
+
+    for (const el of slide.pageElements ?? []) {
+      if (!el.objectId) continue
+      const elText = (el.shape?.text?.textElements ?? [])
+        .map(te => te.textRun?.content ?? '').join('')
+      if (!elText.includes('{{ТЕКСТ}}')) continue
+
+      requests.push({
+        updateTextStyle: {
+          objectId: el.objectId,
+          style: { fontSize: { magnitude: textPt, unit: 'PT' }, bold: false },
+          fields: 'fontSize,bold',
+          textRange: { type: 'ALL' },
+        },
+      })
     }
   }
 
@@ -397,11 +474,160 @@ export async function buildPresentation(
     }
   }
 
+  // General auto-shrink for text slots that might overflow (all except ЗАГОЛОВОК and bento cards)
+  for (let i = 0; i < plan.slides.length; i++) {
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    const compId = plan.slides[i].composition
+    const slots  = plan.slides[i].slots
+    const bentoTokens = BENTO_TOKENS[compId] ?? []
+
+    const slide = updatedSlides.find(s => s.objectId === pageId)
+    if (!slide) continue
+
+    for (const el of slide.pageElements ?? []) {
+      if (!el.objectId || !el.size || !el.transform) continue
+      const elText = (el.shape?.text?.textElements ?? [])
+        .map(te => te.textRun?.content ?? '').join('')
+
+      const tokenMatch = elText.match(/\{\{([^}]+)\}\}/)
+      if (!tokenMatch) continue
+      const slotName = tokenMatch[1]
+
+      // Skip ЗАГОЛОВОК (large box, multi-line is intentional)
+      if (slotName === 'ЗАГОЛОВОК') continue
+      // Skip image slots
+      if (slotName.startsWith('ЗОБРАЖЕННЯ')) continue
+      // Skip bento CARDS (handled by pickBentoPt above)
+      if (bentoTokens.includes(slotName)) continue
+      // Skip ТЕКСТ in bento_right (handled by pickTextPt above)
+      if (compId.startsWith('bento_right_') && slotName === 'ТЕКСТ') continue
+
+      const slotValue = slots[slotName] ?? ''
+      if (!slotValue.trim()) continue
+
+      const wPx = Math.round((el.size.width?.magnitude ?? 0) / _FPX)
+      const hPx = Math.round((el.size.height?.magnitude ?? 0) / _FPX)
+      if (!wPx || !hPx) continue
+
+      // Read default pt from template element's text style
+      const defaultPt = (el.shape?.text?.textElements ?? [])
+        .find(te => te.textRun?.style?.fontSize?.magnitude)
+        ?.textRun?.style?.fontSize?.magnitude ?? 18
+
+      const steps = (FONT_STEPS as readonly number[]).filter(s => s <= defaultPt)
+      let chosenPt: number | null = null
+      for (const pt of steps) {
+        if (textFits(slotValue, wPx, hPx, pt)) { chosenPt = pt; break }
+      }
+      if (chosenPt === null) chosenPt = steps[steps.length - 1] ?? 10
+      if (chosenPt >= defaultPt) continue  // already fits at default, no change
+
+      requests.push({
+        updateTextStyle: {
+          objectId: el.objectId,
+          style: { fontSize: { magnitude: chosenPt, unit: 'PT' }, bold: false },
+          fields: 'fontSize,bold',
+          textRange: { type: 'ALL' },
+        },
+      })
+    }
+  }
+
+  // Delete shapes for empty bento card slots — removes ghost cards (rect + corners)
+  {
+    const deletedIds = new Set<string>()
+    for (let i = 0; i < plan.slides.length; i++) {
+      const pageId = planPageIds[i]
+      if (!pageId) continue
+      const compId = plan.slides[i].composition
+      const slots  = plan.slides[i].slots
+      const bentoTokens = BENTO_TOKENS[compId]
+      if (!bentoTokens) continue
+
+      const slide = updatedSlides.find(s => s.objectId === pageId)
+      if (!slide) continue
+
+      for (const el of slide.pageElements ?? []) {
+        if (!el.objectId || !el.transform || !el.size) continue
+        const elText = (el.shape?.text?.textElements ?? [])
+          .map(te => te.textRun?.content ?? '').join('')
+
+        const matchedToken = bentoTokens.find(t => elText.includes(`{{${t}}}`))
+        if (!matchedToken) continue
+        if (slots[matchedToken]) continue  // slot has content, keep card
+
+        // Card is empty — derive card bounds by expanding text-box by INN on all sides
+        const tbX = Math.round((el.transform.translateX ?? 0) / _FPX) - _INN
+        const tbY = Math.round((el.transform.translateY ?? 0) / _FPX) - _INN
+        const tbW = Math.round((el.size.width?.magnitude ?? 0) / _FPX) + 2 * _INN
+        const tbH = Math.round((el.size.height?.magnitude ?? 0) / _FPX) + 2 * _INN
+
+        // Delete every element whose centre falls strictly inside the card bounds
+        for (const other of slide.pageElements ?? []) {
+          if (!other.objectId || !other.transform || !other.size) continue
+          if (deletedIds.has(other.objectId)) continue
+          const ox = Math.round((other.transform.translateX ?? 0) / _FPX)
+          const oy = Math.round((other.transform.translateY ?? 0) / _FPX)
+          const ow = Math.round((other.size.width?.magnitude ?? 0) / _FPX)
+          const oh = Math.round((other.size.height?.magnitude ?? 0) / _FPX)
+          const cx = ox + ow / 2
+          const cy = oy + oh / 2
+          if (cx > tbX && cx < tbX + tbW && cy > tbY && cy < tbY + tbH) {
+            requests.push({ deleteObject: { objectId: other.objectId } })
+            deletedIds.add(other.objectId)
+          }
+        }
+      }
+    }
+  }
+
   if (requests.length > 0) {
     await slidesApi.presentations.batchUpdate({
       presentationId,
       requestBody: { requests },
     })
+  }
+
+  // Logo — separate batch so a bad URL never breaks text replacement
+  if (logoUrl) {
+    const logoRequests: object[] = []
+    for (let i = 0; i < planPageIds.length; i++) {
+      const pageId = planPageIds[i]
+      if (!pageId) continue
+      const lp = _logoPos(plan.slides[i].composition)
+      logoRequests.push({
+        createImage: {
+          objectId: `logo_pl_${i}`,
+          url: logoUrl,
+          elementProperties: {
+            pageObjectId: pageId,
+            size: {
+              width:  { magnitude: _eL(_LOGO_W), unit: 'EMU' },
+              height: { magnitude: _eL(_LOGO_H), unit: 'EMU' },
+            },
+            transform: {
+              scaleX: 1, shearX: 0, translateX: _eL(lp.x),
+              shearY: 0, scaleY: 1, translateY: _eL(lp.y),
+              unit: 'EMU',
+            },
+          },
+        },
+      })
+    }
+    if (logoRequests.length > 0) {
+      try {
+        await slidesApi.presentations.batchUpdate({
+          presentationId,
+          requestBody: { requests: logoRequests },
+        })
+        console.log(`[logo] inserted ${logoRequests.length} logo(s) ok`)
+      } catch (logoErr: unknown) {
+        const msg = logoErr instanceof Error ? logoErr.message : String(logoErr)
+        console.warn('[logo] logo insertion failed (URL not accessible to Slides API):', msg)
+        console.warn('[logo] Set LOGO_URL in .env.local to fix.')
+      }
+    }
   }
 
   // Step 6: Reorder slides to match plan order

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
-import { google } from 'googleapis'
+import { google, slides_v1 } from 'googleapis'
 
 type SourceType = 'gdoc' | 'gslides'
 
@@ -29,6 +29,20 @@ function getOAuth2Client(accessToken: string) {
 
 export type SourceSlide = { index: number; texts: string[] }
 
+// Recursively extract text from page elements, including grouped elements
+function extractElementText(el: slides_v1.Schema$PageElement): string {
+  if (el.elementGroup?.children?.length) {
+    return el.elementGroup.children
+      .map(extractElementText)
+      .filter(Boolean)
+      .join('\n')
+  }
+  return (el.shape?.text?.textElements ?? [])
+    .map(te => te.textRun?.content ?? '')
+    .join('')
+    .trim()
+}
+
 async function extractSlides(
   auth2: ReturnType<typeof getOAuth2Client>,
   id: string,
@@ -38,12 +52,7 @@ async function extractSlides(
   return (res.data.slides ?? []).map((slide, i) => ({
     index: i,
     texts: (slide.pageElements ?? [])
-      .map(el =>
-        (el.shape?.text?.textElements ?? [])
-          .map(te => te.textRun?.content ?? '')
-          .join('')
-          .trim(),
-      )
+      .map(extractElementText)
       .filter(Boolean),
   }))
 }
