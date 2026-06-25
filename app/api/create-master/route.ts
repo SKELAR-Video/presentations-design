@@ -25,8 +25,14 @@ const GAP    =   30   // gap between bento cards
 const INN    =   30   // inner padding inside cards
 const TH     =  100   // title row height
 const TG     =  100   // title → cards gap (min free space above bento)
-const CY     = PAD + TH + TG   // 224 cards top y
-const CH     = H - PAD - CY    // 756 cards height
+const CY     = PAD + TH + TG   // 300 cards top y
+const CH     = H - PAD - CY    // 680 cards height
+
+// Right-bento layout constants (bento column fills full height PAD→PAD)
+const RBW    = 860              // right bento column width
+const RBH    = H - 2 * PAD     // 880 right bento column height
+const RBX    = PAD + (UW - RBW - GAP)  // 960 right bento x
+const LTW    = UW - RBW - GAP  // 830 left text zone width
 
 // ─── Palette ────────────────────────────────────────────────────────────────
 type RGB = { red: number; green: number; blue: number }
@@ -227,6 +233,59 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB): object[] {
 
     case 'closing': {
       push(tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, UW, 320, 44))
+      break
+    }
+
+    // ── Right Bento layouts ─────────────────────────────────────────────────
+    // Left zone: title (top) + body text (below). Right zone: bento cards.
+    // Bento column: x=RBX(960), y=PAD(100), w=RBW(860), h=RBH(880)
+
+    case 'bento_right_2': {
+      const cardH = Math.floor((RBH - GAP) / 2)       // 425
+      push(
+        tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, LTW, 260, 44),
+        tb(mk(), slideId, 'ТЕКСТ', PAD, PAD + 260 + GAP, LTW, RBH - 260 - GAP, 22, MUTED),
+      )
+      for (let k = 0; k < 2; k++) {
+        const cy = PAD + k * (cardH + GAP)
+        roundedCard(RBX, cy, RBW, cardH)
+        push(tb(mk(), slideId, `КАРТКА_${k + 1}`, RBX + INN, cy + INN, RBW - 2 * INN, cardH - 2 * INN, 18, MUTED))
+      }
+      break
+    }
+
+    case 'bento_right_3': {
+      const cardH = Math.floor((RBH - 2 * GAP) / 3)   // 273
+      push(
+        tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, LTW, 260, 44),
+        tb(mk(), slideId, 'ТЕКСТ', PAD, PAD + 260 + GAP, LTW, RBH - 260 - GAP, 22, MUTED),
+      )
+      for (let k = 0; k < 3; k++) {
+        const cy = PAD + k * (cardH + GAP)
+        const h  = k === 2 ? RBH - 2 * (cardH + GAP) : cardH   // last fills remaining
+        roundedCard(RBX, cy, RBW, h)
+        push(tb(mk(), slideId, `КАРТКА_${k + 1}`, RBX + INN, cy + INN, RBW - 2 * INN, h - 2 * INN, 18, MUTED))
+      }
+      break
+    }
+
+    case 'bento_right_2x2': {
+      const cellW = Math.floor((RBW - GAP) / 2)        // 415
+      const cellH = Math.floor((RBH - GAP) / 2)        // 425
+      push(
+        tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, LTW, 260, 44),
+        tb(mk(), slideId, 'ТЕКСТ', PAD, PAD + 260 + GAP, LTW, RBH - 260 - GAP, 22, MUTED),
+      )
+      let k = 0
+      for (let row = 0; row < 2; row++) {
+        for (let col = 0; col < 2; col++) {
+          const cx = RBX + col * (cellW + GAP)
+          const cy = PAD + row * (cellH + GAP)
+          roundedCard(cx, cy, cellW, cellH)
+          push(tb(mk(), slideId, `КАРТКА_${k + 1}`, cx + INN, cy + INN, cellW - 2 * INN, cellH - 2 * INN, 18, MUTED))
+          k++
+        }
+      }
       break
     }
   }

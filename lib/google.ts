@@ -11,6 +11,9 @@ const _PAD = 100, _UW = 1720, _GAP = 30, _INN = 30, _TH = 100, _TG = 100, _H = 1
 const _CY = _PAD + _TH + _TG
 const _CH = _H - _PAD - _CY
 
+const _RBW = 860
+const _RBH = _H - 2 * _PAD  // 880
+
 function bentoDims(compId: string): { w: number; h: number } | null {
   if (compId === 'two_columns') {
     const cw = Math.floor((_UW - _GAP) / 2)
@@ -20,17 +23,36 @@ function bentoDims(compId: string): { w: number; h: number } | null {
     const cw = Math.floor((_UW - 2 * _GAP) / 3)
     return { w: cw - 2 * _INN, h: _CH - 2 * _INN }
   }
+  if (compId === 'bento_right_2') {
+    const cardH = Math.floor((_RBH - _GAP) / 2)
+    return { w: _RBW - 2 * _INN, h: cardH - 2 * _INN }
+  }
+  if (compId === 'bento_right_3') {
+    const cardH = Math.floor((_RBH - 2 * _GAP) / 3)
+    return { w: _RBW - 2 * _INN, h: cardH - 2 * _INN }
+  }
+  if (compId === 'bento_right_2x2') {
+    const cellW = Math.floor((_RBW - _GAP) / 2)
+    const cellH = Math.floor((_RBH - _GAP) / 2)
+    return { w: cellW - 2 * _INN, h: cellH - 2 * _INN }
+  }
   return null
 }
 
 const BENTO_TOKENS: Record<string, string[]> = {
-  two_columns:   ['КОЛОНКА_1', 'КОЛОНКА_2'],
-  three_columns: ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3'],
+  two_columns:     ['КОЛОНКА_1', 'КОЛОНКА_2'],
+  three_columns:   ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3'],
+  bento_right_2:   ['КАРТКА_1', 'КАРТКА_2'],
+  bento_right_3:   ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3'],
+  bento_right_2x2: ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
 }
 
 const BENTO_DEFAULT_PT: Record<string, number> = {
-  two_columns: 18,
-  three_columns: 18,
+  two_columns:     18,
+  three_columns:   18,
+  bento_right_2:   18,
+  bento_right_3:   18,
+  bento_right_2x2: 18,
 }
 
 const FONT_STEPS = [22, 18, 14] as const

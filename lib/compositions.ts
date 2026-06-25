@@ -95,6 +95,45 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
       { name: 'ЗОБРАЖЕННЯ_1', type: 'image', ratio: '16:9', role: 'background', optional: true },
     ],
   },
+  {
+    id: 'bento_right_2',
+    name: 'Бенто праворуч — 2 картки',
+    when_to_use: 'велика теза або пояснення ліворуч + 2 ключові пункти у картках праворуч',
+    themes: ['dark'],
+    slots: [
+      { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 80, style: 'h1' },
+      { name: 'ТЕКСТ', type: 'text', max_chars: 320, style: 'body', optional: true },
+      { name: 'КАРТКА_1', type: 'text', max_chars: 200, style: 'body' },
+      { name: 'КАРТКА_2', type: 'text', max_chars: 200, style: 'body' },
+    ],
+  },
+  {
+    id: 'bento_right_3',
+    name: 'Бенто праворуч — 3 картки',
+    when_to_use: 'теза ліворуч + 3 пункти/кроки у картках праворуч',
+    themes: ['dark'],
+    slots: [
+      { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 80, style: 'h1' },
+      { name: 'ТЕКСТ', type: 'text', max_chars: 320, style: 'body', optional: true },
+      { name: 'КАРТКА_1', type: 'text', max_chars: 140, style: 'body' },
+      { name: 'КАРТКА_2', type: 'text', max_chars: 140, style: 'body' },
+      { name: 'КАРТКА_3', type: 'text', max_chars: 140, style: 'body' },
+    ],
+  },
+  {
+    id: 'bento_right_2x2',
+    name: 'Бенто праворуч — 2×2',
+    when_to_use: 'теза ліворуч + 4 пункти у сітці 2×2 праворуч',
+    themes: ['dark'],
+    slots: [
+      { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 80, style: 'h1' },
+      { name: 'ТЕКСТ', type: 'text', max_chars: 320, style: 'body', optional: true },
+      { name: 'КАРТКА_1', type: 'text', max_chars: 140, style: 'body' },
+      { name: 'КАРТКА_2', type: 'text', max_chars: 140, style: 'body' },
+      { name: 'КАРТКА_3', type: 'text', max_chars: 140, style: 'body' },
+      { name: 'КАРТКА_4', type: 'text', max_chars: 140, style: 'body' },
+    ],
+  },
 ]
 
 export function getComposition(id: string): Composition | undefined {
