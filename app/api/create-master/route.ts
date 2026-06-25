@@ -115,11 +115,11 @@ function tb(
 // ─── Layouts ────────────────────────────────────────────────────────────────
 const R = 30  // fixed corner radius in Figma px
 
-function buildLayout(compId: string, slideId: string, bgColor: RGB): object[] {
+function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number): object[] {
   const out: object[] = []
   let n = 0
-  const base = compId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).padEnd(5, 'x')
-  const mk = (p = 's') => `${p}_${base}_${n++}`
+  // idx (slide position) guarantees unique IDs across all slides in the presentation.
+  const mk = (p = 's') => `${p}${idx}_${n++}`
   const push = (...items: object[][]) => items.forEach(arr => out.push(...arr))
 
   // Simulated rounded corners: RECTANGLE + 4 × (bg-coloured square + card-coloured ellipse).
@@ -353,7 +353,7 @@ export async function POST() {
         reqs.push({ insertText: { objectId: notesBox.objectId, insertionIndex: 0, text: `composition:${comp.id}` } })
       }
 
-      reqs.push(...buildLayout(comp.id, slideId, bg))
+      reqs.push(...buildLayout(comp.id, slideId, bg, i))
     }
 
     await slidesApi.presentations.batchUpdate({ presentationId, requestBody: { requests: reqs } })
