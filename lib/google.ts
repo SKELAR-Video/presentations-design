@@ -79,11 +79,11 @@ const _LOGO_W = 90
 const _LOGO_H = 90
 const _eL     = (px: number) => Math.round(px * _FPX)
 
-// Cache Drive URL for the logo within the process lifetime.
-let _logoUrlCache: string | null | undefined
+// Cached Drive URL — only set on success; failures are not cached so next request retries.
+let _logoUrlCache: string | undefined
 
 async function getLogoUrl(drive: ReturnType<typeof google.drive>): Promise<string | null> {
-  if (_logoUrlCache !== undefined) return _logoUrlCache
+  if (_logoUrlCache) return _logoUrlCache
   if (process.env.LOGO_URL) {
     _logoUrlCache = process.env.LOGO_URL
     return _logoUrlCache
@@ -96,18 +96,22 @@ async function getLogoUrl(drive: ReturnType<typeof google.drive>): Promise<strin
       fields: 'id',
     })
     const fileId = uploadRes.data.id!
-    await drive.permissions.create({
-      fileId,
-      requestBody: { type: 'anyone', role: 'reader' },
-    })
-    // thumbnail URL is served directly by Google without redirects
-    _logoUrlCache = `https://drive.google.com/thumbnail?id=${fileId}&sz=s512`
-    console.log('[logo] uploaded, url:', _logoUrlCache)
+    try {
+      await drive.permissions.create({
+        fileId,
+        requestBody: { type: 'anyone', role: 'reader' },
+      })
+    } catch (permErr) {
+      console.error('[logo] permissions.create failed (workspace may restrict public sharing):', permErr)
+      console.error('[logo] Fix: set LOGO_URL=<public image url> in .env.local')
+      return null
+    }
+    _logoUrlCache = `https://drive.google.com/uc?export=view&id=${fileId}`
+    console.log('[logo] uploaded ok, url:', _logoUrlCache)
     return _logoUrlCache
   } catch (err) {
     console.error('[logo] Drive upload failed:', err)
-    _logoUrlCache = null
-    return null
+    return null  // do NOT cache — retry on next request
   }
 }
 
