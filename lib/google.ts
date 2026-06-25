@@ -2,6 +2,8 @@ import { google } from 'googleapis'
 import type { slides_v1 } from 'googleapis'
 import type { SlidePlan } from './types'
 import { PHASE0_COMPOSITIONS, getComposition } from './compositions'
+import { createReadStream } from 'fs'
+import { join } from 'path'
 
 // ─── Bento font-size auto-shrink ─────────────────────────────────────────────
 // Layout constants must mirror create-master/route.ts
@@ -48,6 +50,45 @@ function textFits(text: string, wPx: number, hPx: number, pt: number): boolean {
   return lines <= maxLines
 }
 
+// ─── Logo ────────────────────────────────────────────────────────────────────
+const _FPX    = 9144000 / 1920
+const _W      = 1920
+const _LOGO_W = 90
+const _LOGO_H = 90
+const _eL     = (px: number) => Math.round(px * _FPX)
+
+// Cache Drive URL for the logo within the process lifetime.
+let _logoUrlCache: string | null | undefined
+
+async function getLogoUrl(drive: ReturnType<typeof google.drive>): Promise<string | null> {
+  if (_logoUrlCache !== undefined) return _logoUrlCache
+  if (process.env.LOGO_URL) {
+    _logoUrlCache = process.env.LOGO_URL
+    return _logoUrlCache
+  }
+  try {
+    const logoPath = join(process.cwd(), 'public', 'assets', 'SKELAR Symbol.png')
+    const uploadRes = await drive.files.create({
+      requestBody: { name: 'skelar-logo.png', mimeType: 'image/png' },
+      media: { mimeType: 'image/png', body: createReadStream(logoPath) },
+      fields: 'id',
+    })
+    const fileId = uploadRes.data.id!
+    await drive.permissions.create({
+      fileId,
+      requestBody: { type: 'anyone', role: 'reader' },
+    })
+    // thumbnail URL is served directly by Google without redirects
+    _logoUrlCache = `https://drive.google.com/thumbnail?id=${fileId}&sz=s512`
+    console.log('[logo] uploaded, url:', _logoUrlCache)
+    return _logoUrlCache
+  } catch (err) {
+    console.error('[logo] Drive upload failed:', err)
+    _logoUrlCache = null
+    return null
+  }
+}
+
 // Returns the largest step (≤ defaultPt) at which every bento card on the slide fits.
 function pickBentoPt(compId: string, slots: Record<string, string>): number | null {
   const dims = bentoDims(compId)
@@ -91,6 +132,7 @@ export async function buildPresentation(
   const auth = getOAuth2Client(accessToken)
   const drive = google.drive({ version: 'v3', auth })
   const slidesApi = google.slides({ version: 'v1', auth })
+  const logoUrl = await getLogoUrl(drive)
   const masterDeckId = process.env.MASTER_DECK_ID
   if (!masterDeckId) throw new Error('MASTER_DECK_ID не заданий у .env.local — оновіть його і перезапустіть сервер')
 
@@ -173,6 +215,32 @@ export async function buildPresentation(
   for (const slide of updatedSlides) {
     if (!keepSet.has(slide.objectId!)) {
       requests.push({ deleteObject: { objectId: slide.objectId } })
+    }
+  }
+
+  // Logo on every slide: top-right corner within PAD grid, 90×90 px
+  if (logoUrl) {
+    for (let i = 0; i < planPageIds.length; i++) {
+      const pageId = planPageIds[i]
+      if (!pageId) continue
+      requests.push({
+        createImage: {
+          objectId: `logo_pl_${i}`,
+          url: logoUrl,
+          elementProperties: {
+            pageObjectId: pageId,
+            size: {
+              width:  { magnitude: _eL(_LOGO_W), unit: 'EMU' },
+              height: { magnitude: _eL(_LOGO_H), unit: 'EMU' },
+            },
+            transform: {
+              scaleX: 1, shearX: 0, translateX: _eL(_W - _PAD - _LOGO_W),
+              shearY: 0, scaleY: 1, translateY: _eL(_PAD),
+              unit: 'EMU',
+            },
+          },
+        },
+      })
     }
   }
 
