@@ -119,7 +119,8 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
   const out: object[] = []
   let n = 0
   // idx (slide position) guarantees unique IDs across all slides in the presentation.
-  const mk = (p = 's') => `${p}${idx}_${n++}`
+  // Minimum length 5 required by Google Slides API — prefix "sh_" keeps it safe.
+  const mk = (p = 'sh') => `${p}_${idx}_${n++}`
   const push = (...items: object[][]) => items.forEach(arr => out.push(...arr))
 
   // Simulated rounded corners: RECTANGLE + 4 × (bg-coloured square + card-coloured ellipse).
