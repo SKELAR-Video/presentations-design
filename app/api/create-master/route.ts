@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { google } from 'googleapis'
 import { PHASE0_COMPOSITIONS } from '@/lib/compositions'
+import { createReadStream } from 'fs'
+import { join } from 'path'
 
 function getOAuth2Client(accessToken: string) {
   const oauth2 = new google.auth.OAuth2(
@@ -111,7 +113,30 @@ const R        = 30  // fixed corner radius in Figma px
 const LOGO_W   = 90
 const LOGO_H   = 90
 
-function buildLayout(compId: string, slideId: string, bgColor: RGB): object[] {
+// Upload the local logo to Drive and return a public URL Google Slides can fetch.
+// Falls back to LOGO_URL env var if set. Returns null if file missing + no env var.
+async function getLogoUrl(drive: ReturnType<typeof google.drive>): Promise<string | null> {
+  if (process.env.LOGO_URL) return process.env.LOGO_URL
+  try {
+    const logoPath = join(process.cwd(), 'public', 'assets', 'SKELAR Symbol.png')
+    const uploadRes = await drive.files.create({
+      requestBody: { name: 'skelar-logo.png', mimeType: 'image/png' },
+      media: { mimeType: 'image/png', body: createReadStream(logoPath) },
+      fields: 'id',
+    })
+    const fileId = uploadRes.data.id!
+    await drive.permissions.create({
+      fileId,
+      requestBody: { type: 'anyone', role: 'reader' },
+    })
+    return `https://drive.google.com/uc?export=view&id=${fileId}`
+  } catch (err) {
+    console.error('[logo] Drive upload failed:', err)
+    return null
+  }
+}
+
+function buildLayout(compId: string, slideId: string, bgColor: RGB, logoUrl: string | null): object[] {
   const out: object[] = []
   let n = 0
   const base = compId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).padEnd(5, 'x')
@@ -119,15 +144,15 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB): object[] {
   const push = (...items: object[][]) => items.forEach(arr => out.push(...arr))
 
   // Logo — top-right corner, within the PAD grid, 90×90 px
-  const logoUrl = process.env.LOGO_URL
-    ?? 'https://raw.githubusercontent.com/SKELAR-Video/presentations-design/main/public/assets/SKELAR%20Symbol.png'
-  push([{
-    createImage: {
-      objectId: mk('logo'),
-      url: logoUrl,
-      elementProperties: elProps(slideId, W - PAD - LOGO_W, PAD, LOGO_W, LOGO_H),
-    },
-  }])
+  if (logoUrl) {
+    push([{
+      createImage: {
+        objectId: mk('logo'),
+        url: logoUrl,
+        elementProperties: elProps(slideId, W - PAD - LOGO_W, PAD, LOGO_W, LOGO_H),
+      },
+    }])
+  }
 
   // Simulated rounded corners: RECTANGLE + 4 × (bg-coloured square + card-coloured ellipse).
   // ROUND_RECTANGLE in Google Slides API cannot have a fixed radius — it always scales
@@ -255,7 +280,9 @@ export async function POST() {
   try {
     const auth2     = getOAuth2Client(session.accessToken)
     const slidesApi = google.slides({ version: 'v1', auth: auth2 })
+    const driveApi  = google.drive({ version: 'v3', auth: auth2 })
     const comps     = PHASE0_COMPOSITIONS
+    const logoUrl   = await getLogoUrl(driveApi)
 
     const { data: created } = await slidesApi.presentations.create({
       requestBody: { title: 'SKELAR Template Deck — Phase 0' },
@@ -307,7 +334,7 @@ export async function POST() {
         reqs.push({ insertText: { objectId: notesBox.objectId, insertionIndex: 0, text: `composition:${comp.id}` } })
       }
 
-      reqs.push(...buildLayout(comp.id, slideId, bg))
+      reqs.push(...buildLayout(comp.id, slideId, bg, logoUrl))
     }
 
     await slidesApi.presentations.batchUpdate({ presentationId, requestBody: { requests: reqs } })
