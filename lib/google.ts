@@ -2,6 +2,8 @@ import { google } from 'googleapis'
 import type { slides_v1 } from 'googleapis'
 import type { SlidePlan } from './types'
 import { PHASE0_COMPOSITIONS, getComposition } from './compositions'
+import { validateDeck, type ValidationReport } from './validator'
+import { autoPushIfPass } from './auto-push'
 
 // ─── Bento font-size auto-shrink ─────────────────────────────────────────────
 // Layout constants must mirror create-master/route.ts
@@ -11,6 +13,9 @@ const _CH = _H - _PAD - _CY
 
 const _RBW = 860
 const _RBH = _H - 2 * _PAD  // 880
+
+// kpi_cards card width (mirrors create-master kw formula)
+const _KW = Math.floor((_UW - 3 * _GAP) / 4)  // 407
 
 function bentoDims(compId: string): { w: number; h: number } | null {
   if (compId === 'two_columns') {
@@ -142,6 +147,220 @@ const BENTO_VALUE_PT: Record<string, number> = {
   bento_right_2x2: 32,
 }
 
+// ─── kpi_cards adaptive layout ───────────────────────────────────────────────
+// Original master geometry (PAD+TH+subH+TG = 100+100+56+100 = 356; CH = H-PAD-kCY = 624)
+// Must stay in sync with create-master/route.ts kpi_cards case.
+const _KPI_CY0 = 356   // original kCY
+const _KPI_CH0 = 624   // original kCH
+const _R       = 30    // rounded-corner radius (same as create-master R)
+
+function estimateLineCount(text: string, wPx: number, pt: number): number {
+  if (!text.trim()) return 0
+  const px = pt * 2.667
+  const cpl = Math.max(1, Math.floor(wPx / (px * 0.48)))
+  const words = text.split(/\s+/).filter(Boolean)
+  let lines = 1, cur = 0
+  for (const w of words) {
+    if (!cur) { cur = w.length }
+    else if (cur + 1 + w.length <= cpl) { cur += 1 + w.length }
+    else { lines++; cur = w.length }
+  }
+  return lines
+}
+
+function lineH(pt: number): number { return pt * 2.667 * 1.4 }
+
+// Build an ABSOLUTE updatePageElementTransform request (intrinsic size = sW × sH EMU)
+function makeElemTransform(
+  objectId: string,
+  x: number, y: number, w: number, h: number,
+  intrW: number, intrH: number,
+): object {
+  const _FPX_LOCAL = 9144000 / 1920
+  return {
+    updatePageElementTransform: {
+      objectId,
+      transform: {
+        scaleX: (w * _FPX_LOCAL) / intrW,
+        shearX: 0, translateX: Math.round(x * _FPX_LOCAL),
+        shearY: 0, scaleY: (h * _FPX_LOCAL) / intrH,
+        translateY: Math.round(y * _FPX_LOCAL),
+        unit: 'EMU',
+      },
+      applyMode: 'ABSOLUTE',
+    },
+  }
+}
+
+interface KpiAdaptive {
+  bodyH: number
+  bodyFontPt: number
+  cardH: number
+  valH: number
+  lblH: number
+  kCY: number
+}
+
+function computeKpiAdaptive(
+  slots: Record<string, string>,
+  cardMinH: number,
+  cardMaxH: number,
+  gapMin: number,
+): KpiAdaptive {
+  const cardTextW = _KW - 2 * _INN  // 347 — inner text zone width
+  const VAL_PT = 48, LBL_PT = 14
+
+  // Step 1: Required card height — minimum that fits value + label content
+  let reqValLines = 1, reqLblLines = 1
+  for (let n = 1; n <= 4; n++) {
+    const valText = (slots[`КАРТКА_${n}_ЗНАЧЕННЯ`] ?? '').trim()
+    const lblText = (slots[`КАРТКА_${n}_ПІДПИС`] ?? '').trim()
+    if (valText) reqValLines = Math.max(reqValLines, estimateLineCount(valText, cardTextW, VAL_PT))
+    if (lblText) reqLblLines = Math.max(reqLblLines, estimateLineCount(lblText, cardTextW, LBL_PT))
+  }
+  const reqInner = Math.ceil(reqValLines * lineH(VAL_PT)) + Math.ceil(reqLblLines * lineH(LBL_PT)) + 16
+  const reqCardH = reqInner + 2 * _INN
+  const cardH    = Math.max(cardMinH, Math.min(cardMaxH, reqCardH))
+
+  // Step 2: Body available space (cards stick to bottom: kCY = H-PAD-cardH)
+  const kpiAvail  = _H - 2 * _PAD - _TH  // 780
+  const bodyAvail = kpiAvail - gapMin - cardH
+
+  // Step 3: Body font — reduce only when text doesn't fit at 18pt
+  const bodyText = slots['ТЕКСТ'] ?? ''
+  let bodyH = 0, bodyFontPt = 18
+  if (bodyText.trim()) {
+    let found = false
+    for (const pt of [18, 14, 10] as const) {
+      const h = Math.ceil(estimateLineCount(bodyText, _UW, pt) * lineH(pt)) + 4
+      if (h <= Math.max(1, bodyAvail)) {
+        bodyFontPt = pt; bodyH = h; found = true; break
+      }
+    }
+    if (!found) {
+      bodyFontPt = 10
+      bodyH = Math.min(
+        Math.ceil(estimateLineCount(bodyText, _UW, 10) * lineH(10)) + 4,
+        Math.max(0, bodyAvail),
+      )
+    }
+  }
+
+  // Step 4: Card inner proportions for actual height
+  const inner = cardH - 2 * _INN
+  const valH  = Math.round(inner * 0.55)
+  const lblH  = inner - valH
+  const kCY   = _H - _PAD - cardH  // cards stick to bottom of slide
+
+  return { bodyH, bodyFontPt, cardH, valH, lblH, kCY }
+}
+
+function buildKpiUpdateRequests(
+  slide: slides_v1.Schema$Page,
+  layout: KpiAdaptive,
+  slots: Record<string, string>,
+): object[] {
+  const reqs: object[] = []
+  const { bodyH, bodyFontPt, cardH, valH, lblH, kCY } = layout
+  const TOL = 8
+
+  // 0-indexed card numbers whose ЗНАЧЕННЯ was cleared (non-numeric or absent)
+  const emptyCards = new Set<number>()
+  for (let n = 1; n <= 4; n++) {
+    if (!(slots[`КАРТКА_${n}_ЗНАЧЕННЯ`] ?? '').trim()) emptyCards.add(n - 1)
+  }
+
+  for (const el of slide.pageElements ?? []) {
+    if (!el.objectId || !el.transform || !el.size) continue
+    const sW  = el.size.width?.magnitude  ?? 0
+    const sH  = el.size.height?.magnitude ?? 0
+    const scX = el.transform.scaleX ?? 1
+    const scY = el.transform.scaleY ?? 1
+    const elX = Math.round((el.transform.translateX ?? 0) / _FPX)
+    const elY = Math.round((el.transform.translateY ?? 0) / _FPX)
+    const elW = Math.round(sW * scX / _FPX)
+    const elH = Math.round(sH * scY / _FPX)
+
+    // ── TEXT_BOX: match by token ──────────────────────────────────────────
+    if (el.shape?.shapeType === 'TEXT_BOX') {
+      const rawText = (el.shape?.text?.textElements ?? [])
+        .map(te => te.textRun?.content ?? '').join('')
+      const token = rawText.match(/\{\{([^}]+)\}\}/)?.[1]
+
+      if (token === 'ТЕКСТ') {
+        reqs.push(makeElemTransform(el.objectId, elX, elY, _UW, Math.max(bodyH, 1), sW, sH))
+        if (bodyFontPt !== 18) {
+          reqs.push({
+            updateTextStyle: {
+              objectId: el.objectId,
+              style: { fontSize: { magnitude: bodyFontPt, unit: 'PT' }, bold: false },
+              fields: 'fontSize,bold',
+              textRange: { type: 'ALL' },
+            },
+          })
+        }
+        continue
+      }
+
+      const cardMatch = token?.match(/^КАРТКА_(\d+)_(ЗНАЧЕННЯ|ПІДПИС)$/)
+      if (cardMatch) {
+        const n  = parseInt(cardMatch[1]) - 1  // 0-indexed
+        if (emptyCards.has(n)) {
+          reqs.push({ deleteObject: { objectId: el.objectId } })
+          continue
+        }
+        const isVal = cardMatch[2] === 'ЗНАЧЕННЯ'
+        const cx    = _PAD + n * (_KW + _GAP)
+        const boxY  = isVal ? kCY + _INN : kCY + _INN + valH
+        const boxH  = isVal ? valH : lblH
+        reqs.push(makeElemTransform(el.objectId, cx + _INN, boxY, _KW - 2 * _INN, boxH, sW, sH))
+      }
+      continue
+    }
+
+    // Only process non-text shapes in the original card zone
+    if (elY < _KPI_CY0 - TOL) continue
+
+    // Identify card index by x position
+    let k = -1
+    for (let ci = 0; ci < 4; ci++) {
+      const cx = _PAD + ci * (_KW + _GAP)
+      if (elX >= cx - TOL && elX <= cx + _KW + TOL) { k = ci; break }
+    }
+    if (k < 0) continue
+
+    // Delete all non-text shapes belonging to empty cards
+    if (emptyCards.has(k)) {
+      reqs.push({ deleteObject: { objectId: el.objectId } })
+      continue
+    }
+
+    const cx       = _PAD + k * (_KW + _GAP)
+    const isBottom = elY > _KPI_CY0 + _KPI_CH0 / 2
+
+    if (el.shape?.shapeType === 'RECTANGLE') {
+      if (Math.abs(elW - _KW) < TOL && Math.abs(elH - _KPI_CH0) < TOL) {
+        // Card background: resize height + reposition
+        reqs.push(makeElemTransform(el.objectId, cx, kCY, _KW, cardH, sW, sH))
+      } else if (Math.abs(elW - _R) < TOL && Math.abs(elH - _R) < TOL) {
+        // Corner bg square (R×R): move Y only
+        const newY = isBottom ? kCY + cardH - _R : kCY
+        reqs.push(makeElemTransform(el.objectId, elX, newY, _R, _R, sW, sH))
+      }
+    }
+
+    if (el.shape?.shapeType === 'ELLIPSE') {
+      if (Math.abs(elW - 2 * _R) < TOL && Math.abs(elH - 2 * _R) < TOL) {
+        // Corner ellipse (2R×2R): move Y only
+        const newY = isBottom ? kCY + cardH - 2 * _R : kCY
+        reqs.push(makeElemTransform(el.objectId, elX, newY, 2 * _R, 2 * _R, sW, sH))
+      }
+    }
+  }
+
+  return reqs
+}
+
 // Returns the largest step (≤ defaultPt) at which every bento card on the slide fits.
 function pickBentoPt(compId: string, slots: Record<string, string>): number | null {
   const dims = bentoDims(compId)
@@ -181,7 +400,7 @@ export async function buildPresentation(
   accessToken: string,
   plan: SlidePlan,
   title: string,
-): Promise<string> {
+): Promise<{ url: string; validation: ValidationReport }> {
   const auth = getOAuth2Client(accessToken)
   const drive = google.drive({ version: 'v3', auth })
   const slidesApi = google.slides({ version: 'v1', auth })
@@ -234,6 +453,40 @@ export async function buildPresentation(
       if (filled >= tokens.length) continue
       const target = DOWNGRADE[slide.composition]?.[filled]
       if (target) slide.composition = target
+    }
+  }
+
+  // Step 2.6: Enforce max_chars — truncate slot values that exceed composition limits.
+  // Applied before any replaceAllText so the API never receives content larger than the slot can display.
+  for (const slide of plan.slides) {
+    const compDef = getComposition(slide.composition)
+    if (!compDef) continue
+    for (const slotDef of compDef.slots) {
+      if (slotDef.type !== 'text' || !slotDef.max_chars) continue
+      const val = slide.slots[slotDef.name]
+      if (val && val.length > slotDef.max_chars) {
+        console.warn(`[overflow] ${slide.composition}.${slotDef.name}: ${val.length} chars > max ${slotDef.max_chars} — truncated`)
+        slide.slots[slotDef.name] = val.slice(0, slotDef.max_chars - 1) + '…'
+      }
+    }
+  }
+
+  // Step 2.65: Sanitise kpi_cards — remove non-numeric КАРТКА_N_ЗНАЧЕННЯ.
+  // Non-numeric values pass through Step 2.6 (truncated but still non-numeric).
+  // Clearing them here ensures buildKpiUpdateRequests deletes the card elements,
+  // preventing a card from rendering with list/sentence text.
+  const _KPI_NUMERIC_RE = /^[\d\s+\-±×x.,/%$€£<>≤≥~≈MKBmkb]+$/i
+  for (const slide of plan.slides) {
+    if (slide.composition !== 'kpi_cards') continue
+    for (let n = 1; n <= 4; n++) {
+      const key = `КАРТКА_${n}_ЗНАЧЕННЯ`
+      const val = (slide.slots[key] ?? '').trim()
+      if (!val) continue
+      if (!_KPI_NUMERIC_RE.test(val)) {
+        console.warn(`[kpi_sanitise] ${slide.id}: ${key} non-numeric ("${val.slice(0, 20)}") — card ${n} removed`)
+        delete slide.slots[key]
+        delete slide.slots[`КАРТКА_${n}_ПІДПИС`]
+      }
     }
   }
 
@@ -327,6 +580,28 @@ export async function buildPresentation(
         }
       }
     }
+  }
+
+  // ── kpi_cards adaptive layout ────────────────────────────────────────────────
+  // Must run AFTER replaceAllText (so token text is real) but before auto-shrink
+  // (so auto-shrink doesn't override the font we choose here).
+  const kpiAdaptiveSlides = new Set<number>()
+  for (let i = 0; i < plan.slides.length; i++) {
+    if (plan.slides[i].composition !== 'kpi_cards') continue
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    const compDef = getComposition('kpi_cards')
+    const slide   = updatedSlides.find(s => s.objectId === pageId)
+    if (!compDef || !slide) continue
+
+    const layout = computeKpiAdaptive(
+      plan.slides[i].slots,
+      compDef.card_min_h ?? 180,
+      compDef.card_max_h ?? 624,
+      compDef.gap_min   ?? 30,
+    )
+    requests.push(...buildKpiUpdateRequests(slide, layout, plan.slides[i].slots))
+    kpiAdaptiveSlides.add(i)
   }
 
   // Font-size auto-shrink + colon-split colouring.
@@ -502,12 +777,15 @@ export async function buildPresentation(
       if (bentoTokens.includes(slotName)) continue
       // Skip ТЕКСТ in bento_right (handled by pickTextPt above)
       if (compId.startsWith('bento_right_') && slotName === 'ТЕКСТ') continue
+      // Skip kpi_cards ТЕКСТ — handled by adaptive layout above
+      if (compId === 'kpi_cards' && slotName === 'ТЕКСТ' && kpiAdaptiveSlides.has(i)) continue
 
       const slotValue = slots[slotName] ?? ''
       if (!slotValue.trim()) continue
 
-      const wPx = Math.round((el.size.width?.magnitude ?? 0) / _FPX)
-      const hPx = Math.round((el.size.height?.magnitude ?? 0) / _FPX)
+      // Use RENDERED dimensions: size.magnitude × transform.scale (intrinsic alone = always 630px)
+      const wPx = Math.round((el.size.width?.magnitude  ?? 0) * (el.transform?.scaleX ?? 1) / _FPX)
+      const hPx = Math.round((el.size.height?.magnitude ?? 0) * (el.transform?.scaleY ?? 1) / _FPX)
       if (!wPx || !hPx) continue
 
       // Read default pt from template element's text style
@@ -645,5 +923,22 @@ export async function buildPresentation(
     })
   }
 
-  return `https://docs.google.com/presentation/d/${presentationId}/edit`
+  const url = `https://docs.google.com/presentation/d/${presentationId}/edit`
+
+  const validation = await validateDeck(slidesApi, presentationId, plan, planPageIds)
+  console.log('[validator]', validation.summary)
+  for (const sv of validation.slides) {
+    if (!sv.pass) {
+      const fails = sv.checks
+        .filter(c => !c.pass)
+        .map(c => `${c.check}${c.detail ? ': ' + c.detail : ''}`)
+        .join(' | ')
+      console.warn(`[validator] slide ${sv.slideIndex} (${sv.composition}): ${fails}`)
+    }
+  }
+
+  const compositions = [...new Set(plan.slides.map(s => s.composition))].join(', ')
+  autoPushIfPass(validation, `feat(deck): ${plan.slides.length} slides [${compositions}] — validation PASS`)
+
+  return { url, validation }
 }

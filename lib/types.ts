@@ -39,4 +39,8 @@ export type Composition = {
   themes: string[]
   slots: CompositionSlot[]
   variants?: string[]
+  // Adaptive layout constraints (kpi_cards only)
+  card_min_h?: number  // px — minimum card height
+  card_max_h?: number  // px — maximum card height
+  gap_min?: number     // px — minimum gap between body text bottom and cards top
 }

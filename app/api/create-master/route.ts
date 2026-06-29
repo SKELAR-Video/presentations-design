@@ -110,8 +110,11 @@ function tb(
     } },
     { updateShapeProperties: {
         objectId: id,
-        shapeProperties: { contentAlignment: 'TOP' },
-        fields: 'contentAlignment',
+        shapeProperties: {
+          contentAlignment: 'TOP',
+          autofit: { autofitType: 'NONE' },
+        },
+        fields: 'contentAlignment,autofit.autofitType',
     } },
   ]
 }

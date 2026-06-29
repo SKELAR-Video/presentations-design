@@ -52,9 +52,12 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     name: 'KPI-картки',
     when_to_use: 'набір метрик (2–4 картки)',
     themes: ['dark', 'red'],
+    card_min_h: 180,
+    card_max_h: 624,
+    gap_min: 30,
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 50, style: 'h2' },
-      { name: 'ТЕКСТ', type: 'text', max_chars: 220, style: 'body', optional: true },
+      { name: 'ТЕКСТ', type: 'text', max_chars: 70, style: 'body', optional: true },
       { name: 'КАРТКА_1_ЗНАЧЕННЯ', type: 'text', max_chars: 10, style: 'h2' },
       { name: 'КАРТКА_1_ПІДПИС', type: 'text', max_chars: 40, style: 'caption' },
       { name: 'КАРТКА_2_ЗНАЧЕННЯ', type: 'text', max_chars: 10, style: 'h2' },
