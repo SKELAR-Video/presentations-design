@@ -142,17 +142,23 @@ function checkKpiNumeric(slots: Record<string, string>): CheckResult {
 }
 
 function checkKpiGap(slide: slides_v1.Schema$Page, gapMin: number): CheckResult {
+  // After replaceAllText, tokens are gone. Identify elements by geometry:
+  //   body (ТЕКСТ): TEXT_BOX with x≈PAD(100), w≈UW(1720), y in [150, 500]
+  //   card text: TEXT_BOX with x>120, w<600, y>300 (card inner zone)
   let bodyBottom = -1
   let cardTop    = Infinity
   for (const el of slide.pageElements ?? []) {
     if (el.shape?.shapeType !== 'TEXT_BOX' || !el.transform || !el.size) continue
-    const tok = elToken(el)
-    const { y, bottom } = elBounds(el)
-    if (tok === 'ТЕКСТ')                         { bodyBottom = Math.max(bodyBottom, bottom) }
-    if (tok?.match(/^КАРТКА_\d+_ЗНАЧЕННЯ$/))     { cardTop    = Math.min(cardTop, y) }
+    const { x, y, w, bottom } = elBounds(el)
+    if (Math.abs(x - 100) <= 20 && w > 1500 && y > 150 && y < 500) {
+      bodyBottom = Math.max(bodyBottom, bottom)
+    }
+    if (x > 120 && w < 600 && y > 300) {
+      cardTop = Math.min(cardTop, y)
+    }
   }
   if (bodyBottom < 0 || cardTop === Infinity) {
-    return { check: 'kpi_gap', pass: true, detail: 'ТЕКСТ or cards not found — skipped' }
+    return { check: 'kpi_gap', pass: true, detail: 'layout elements not identifiable — skipped' }
   }
   const gap = Math.round(cardTop - bodyBottom)
   return {
