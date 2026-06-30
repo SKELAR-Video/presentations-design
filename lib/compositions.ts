@@ -55,7 +55,7 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     when_to_use: 'набір метрик (2–4 картки)',
     themes: ['dark', 'red'],
     card_min_h: 180,
-    card_max_h: 624,
+    card_max_h: 680,  // H - PAD - kCY_min (kCY_min = PAD+TH+TG = 300)
     gap_min: 30,
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 50, style: 'h2' },

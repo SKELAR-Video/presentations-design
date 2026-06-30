@@ -168,6 +168,52 @@ function checkKpiGap(slide: slides_v1.Schema$Page, gapMin: number): CheckResult 
   }
 }
 
+// kpi_cards: card row must span full content width (PAD→PAD+UW), fill to bottom,
+// and maintain a comfortable gap from the title area.
+function checkKpiCardRowGeometry(slide: slides_v1.Schema$Page): CheckResult {
+  const PAD = 100, UW = 1720, H = 1080, TG = 100, TH = 100
+  const TOL = 20
+
+  // Card backgrounds: RECTANGLE, left-anchored (x≈PAD), wider than 350px, taller than 150px
+  const cardBgs: { x: number; w: number; y: number; h: number }[] = []
+  for (const el of slide.pageElements ?? []) {
+    if (el.shape?.shapeType !== 'RECTANGLE' || !el.transform || !el.size) continue
+    const b = elBounds(el)
+    if (b.x >= PAD - TOL && b.w > 350 && b.h > 150) {
+      cardBgs.push({ x: Math.round(b.x), w: Math.round(b.w), y: Math.round(b.y), h: Math.round(b.h) })
+    }
+  }
+  if (cardBgs.length === 0) {
+    return { check: 'kpi_row_geometry', pass: true, detail: 'no card backgrounds — skipped' }
+  }
+
+  const fails: string[] = []
+
+  // Row must span PAD → PAD+UW (left-to-right, no gaps at edges)
+  const minX     = Math.min(...cardBgs.map(c => c.x))
+  const maxRight = Math.max(...cardBgs.map(c => c.x + c.w))
+  if (Math.abs(minX - PAD) > TOL) {
+    fails.push(`left edge x=${minX} ≠ PAD(${PAD})`)
+  }
+  if (Math.abs(maxRight - (PAD + UW)) > TOL) {
+    fails.push(`right edge x=${maxRight} ≠ PAD+UW(${PAD + UW})`)
+  }
+
+  // Cards must reach the bottom margin
+  const maxBottom = Math.max(...cardBgs.map(c => c.y + c.h))
+  if (maxBottom < H - PAD - TOL) {
+    fails.push(`bottom=${maxBottom} < H-PAD(${H - PAD})`)
+  }
+
+  // Comfortable gap (TG) between title area and card row
+  const cardTopY = Math.min(...cardBgs.map(c => c.y))
+  if (cardTopY < PAD + TH + TG - TOL) {
+    fails.push(`card top=${cardTopY} < PAD+TH+TG(${PAD + TH + TG})`)
+  }
+
+  return { check: 'kpi_row_geometry', pass: fails.length === 0, detail: fails.join('; ') || undefined }
+}
+
 // cover: ДАТА must be full-width (≈ UW) and NOT stuck in the bottom corner.
 // Catches old-master decks where ДАТА was at y≈928, w=500.
 function checkCoverLayout(slide: slides_v1.Schema$Page): CheckResult {
@@ -245,6 +291,7 @@ export async function validateDeck(
       const comp = getComposition('kpi_cards')
       checks.push(checkKpiNumeric(planSlide.slots))
       checks.push(checkKpiGap(slide, comp?.gap_min ?? 30))
+      checks.push(checkKpiCardRowGeometry(slide))
     }
 
     if (compId === 'cover') {

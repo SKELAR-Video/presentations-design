@@ -194,47 +194,44 @@ function makeElemTransform(
 }
 
 interface KpiAdaptive {
+  n: number            // active card count (1–4)
+  cw: number           // dynamic card width: floor((UW - (n-1)*GAP) / n)
+  activeIdxs: number[] // 0-based indices of non-empty cards
   bodyH: number
   bodyFontPt: number
   cardH: number
   valH: number
   lblH: number
   kCY: number
+  valPt: number        // font pt for ЗНАЧЕННЯ (= largest from scale that fits)
 }
 
 function computeKpiAdaptive(
   slots: Record<string, string>,
   cardMinH: number,
   cardMaxH: number,
-  gapMin: number,
+  _gapMin: number,
 ): KpiAdaptive {
-  const cardTextW = _KW - 2 * _INN  // 347 — inner text zone width
-  const VAL_PT = 48, LBL_PT = 14
-
-  // Step 1: Required card height — minimum that fits value + label content
-  let reqValLines = 1, reqLblLines = 1
-  for (let n = 1; n <= 4; n++) {
-    const valText = (slots[`КАРТКА_${n}_ЗНАЧЕННЯ`] ?? '').trim()
-    const lblText = (slots[`КАРТКА_${n}_ПІДПИС`] ?? '').trim()
-    if (valText) reqValLines = Math.max(reqValLines, estimateLineCount(valText, cardTextW, VAL_PT))
-    if (lblText) reqLblLines = Math.max(reqLblLines, estimateLineCount(lblText, cardTextW, LBL_PT))
+  // ── Active cards: ordered 0-based indices of non-empty cards ─────────────
+  const activeIdxs: number[] = []
+  for (let i = 0; i < 4; i++) {
+    if ((slots[`КАРТКА_${i + 1}_ЗНАЧЕННЯ`] ?? '').trim()) activeIdxs.push(i)
   }
-  const reqInner = Math.ceil(reqValLines * lineH(VAL_PT)) + Math.ceil(reqLblLines * lineH(LBL_PT)) + 16
-  const reqCardH = reqInner + 2 * _INN
-  const cardH    = Math.max(cardMinH, Math.min(cardMaxH, reqCardH))
+  const n = Math.max(1, activeIdxs.length)
 
-  // Step 2: Body available space (cards stick to bottom: kCY = H-PAD-cardH)
-  const kpiAvail  = _H - 2 * _PAD - _TH  // 780
-  const bodyAvail = kpiAvail - gapMin - cardH
+  // ── Dynamic card width: row fills PAD → PAD+UW ───────────────────────────
+  // n=1→1720, n=2→845, n=3→553, n=4→407
+  const cw = Math.floor((_UW - (n - 1) * _GAP) / n)
+  const cardTextW = cw - 2 * _INN
 
-  // Step 3: Body font — reduce only when text doesn't fit at 18pt
-  const bodyText = slots['ТЕКСТ'] ?? ''
+  // ── Body text: shrink font until there is enough room below for cards ─────
+  const bodyText = (slots['ТЕКСТ'] ?? '').trim()
   let bodyH = 0, bodyFontPt = 18
-  if (bodyText.trim()) {
+  if (bodyText) {
     let found = false
     for (const pt of [18, 14, 10] as const) {
       const h = Math.ceil(estimateLineCount(bodyText, _UW, pt) * lineH(pt)) + 4
-      if (h <= Math.max(1, bodyAvail)) {
+      if (_H - _PAD - (_PAD + _TH + h + _TG) >= cardMinH) {
         bodyFontPt = pt; bodyH = h; found = true; break
       }
     }
@@ -242,18 +239,34 @@ function computeKpiAdaptive(
       bodyFontPt = 10
       bodyH = Math.min(
         Math.ceil(estimateLineCount(bodyText, _UW, 10) * lineH(10)) + 4,
-        Math.max(0, bodyAvail),
+        Math.max(0, _H - _PAD - _PAD - _TH - _TG - cardMinH),
       )
     }
   }
 
-  // Step 4: Card inner proportions for actual height
+  // ── Card Y: TG comfortable gap below title+body; card grows to bottom ─────
+  // kCY = PAD+TH+bodyH+TG; cardH fills H-PAD-kCY
+  const kCY   = _PAD + _TH + bodyH + _TG
+  const cardH = Math.min(cardMaxH, Math.max(cardMinH, _H - _PAD - kCY))
+
+  // ── Card inner proportions ─────────────────────────────────────────────────
   const inner = cardH - 2 * _INN
   const valH  = Math.round(inner * 0.55)
   const lblH  = inner - valH
-  const kCY   = _H - _PAD - cardH  // cards stick to bottom of slide
 
-  return { bodyH, bodyFontPt, cardH, valH, lblH, kCY }
+  // ── ЗНАЧЕННЯ font: UP to role size (48pt), DOWN only when it doesn't fit ──
+  // Same pt for ALL active cards — determined by the longest value text.
+  const VAL_SCALE = [48, 36, 28, 22, 18, 14] as const
+  let valPt: number = VAL_SCALE[VAL_SCALE.length - 1]
+  for (const pt of VAL_SCALE) {
+    const allFit = activeIdxs.every(idx => {
+      const val = (slots[`КАРТКА_${idx + 1}_ЗНАЧЕННЯ`] ?? '').trim()
+      return !val || textFits(val, cardTextW, valH, pt)
+    })
+    if (allFit) { valPt = pt; break }
+  }
+
+  return { n, cw, activeIdxs, bodyH, bodyFontPt, cardH, valH, lblH, kCY, valPt }
 }
 
 function buildKpiUpdateRequests(
@@ -262,25 +275,24 @@ function buildKpiUpdateRequests(
   slots: Record<string, string>,
 ): object[] {
   const reqs: object[] = []
-  const { bodyH, bodyFontPt, cardH, valH, lblH, kCY } = layout
-  const TOL = 8
+  const { cw, activeIdxs, bodyH, bodyFontPt, cardH, valH, lblH, kCY, valPt } = layout
+  const TOL    = 8
+  const LBL_PT = 14
 
-  // 0-indexed card numbers whose ЗНАЧЕННЯ was cleared (non-numeric or absent)
-  const emptyCards = new Set<number>()
-  for (let n = 1; n <= 4; n++) {
-    if (!(slots[`КАРТКА_${n}_ЗНАЧЕННЯ`] ?? '').trim()) emptyCards.add(n - 1)
-  }
+  // Map original 0-based card index → display position (0..n-1)
+  // e.g. if only cards 0 and 2 are active: {0→0, 2→1}
+  const displayPos = new Map<number, number>(
+    activeIdxs.map((origIdx, di) => [origIdx, di]),
+  )
 
   for (const el of slide.pageElements ?? []) {
     if (!el.objectId || !el.transform || !el.size) continue
     const sW  = el.size.width?.magnitude  ?? 0
     const sH  = el.size.height?.magnitude ?? 0
-    const scX = el.transform.scaleX ?? 1
-    const scY = el.transform.scaleY ?? 1
     const elX = Math.round((el.transform.translateX ?? 0) / _FPX)
     const elY = Math.round((el.transform.translateY ?? 0) / _FPX)
-    const elW = Math.round(sW * scX / _FPX)
-    const elH = Math.round(sH * scY / _FPX)
+    const elW = Math.round(sW * (el.transform.scaleX ?? 1) / _FPX)
+    const elH = Math.round(sH * (el.transform.scaleY ?? 1) / _FPX)
 
     // ── TEXT_BOX: match by token ──────────────────────────────────────────
     if (el.shape?.shapeType === 'TEXT_BOX') {
@@ -289,7 +301,7 @@ function buildKpiUpdateRequests(
       const token = rawText.match(/\{\{([^}]+)\}\}/)?.[1]
 
       if (token === 'ТЕКСТ') {
-        reqs.push(makeElemTransform(el.objectId, elX, elY, _UW, Math.max(bodyH, 1), sW, sH))
+        reqs.push(makeElemTransform(el.objectId, _PAD, _PAD + _TH, _UW, Math.max(bodyH, 1), sW, sH))
         if (bodyFontPt !== 18) {
           reqs.push({
             updateTextStyle: {
@@ -305,56 +317,84 @@ function buildKpiUpdateRequests(
 
       const cardMatch = token?.match(/^КАРТКА_(\d+)_(ЗНАЧЕННЯ|ПІДПИС)$/)
       if (cardMatch) {
-        const n  = parseInt(cardMatch[1]) - 1  // 0-indexed
-        if (emptyCards.has(n)) {
+        const origIdx = parseInt(cardMatch[1]) - 1  // 0-based
+        if (!displayPos.has(origIdx)) {
           reqs.push({ deleteObject: { objectId: el.objectId } })
           continue
         }
+        const di    = displayPos.get(origIdx)!
+        const cx    = _PAD + di * (cw + _GAP)
         const isVal = cardMatch[2] === 'ЗНАЧЕННЯ'
-        const cx    = _PAD + n * (_KW + _GAP)
         const boxY  = isVal ? kCY + _INN : kCY + _INN + valH
         const boxH  = isVal ? valH : lblH
-        reqs.push(makeElemTransform(el.objectId, cx + _INN, boxY, _KW - 2 * _INN, boxH, sW, sH))
+        reqs.push(makeElemTransform(el.objectId, cx + _INN, boxY, cw - 2 * _INN, boxH, sW, sH))
+        // Apply font size only when it differs from the master default
+        if (isVal && valPt !== 48) {
+          reqs.push({
+            updateTextStyle: {
+              objectId: el.objectId,
+              style: { fontSize: { magnitude: valPt, unit: 'PT' }, bold: false },
+              fields: 'fontSize,bold',
+              textRange: { type: 'ALL' },
+            },
+          })
+        }
+        if (!isVal && LBL_PT !== 14) {  // future-proof in case master changes
+          reqs.push({
+            updateTextStyle: {
+              objectId: el.objectId,
+              style: { fontSize: { magnitude: LBL_PT, unit: 'PT' }, bold: false },
+              fields: 'fontSize,bold',
+              textRange: { type: 'ALL' },
+            },
+          })
+        }
+        continue
       }
       continue
     }
 
-    // Only process non-text shapes in the original card zone
+    // ── Non-text shapes: only in original card zone ───────────────────────
     if (elY < _KPI_CY0 - TOL) continue
 
-    // Identify card index by x position
+    // Identify original card index by x (master always uses 4-card _KW layout)
     let k = -1
     for (let ci = 0; ci < 4; ci++) {
-      const cx = _PAD + ci * (_KW + _GAP)
-      if (elX >= cx - TOL && elX <= cx + _KW + TOL) { k = ci; break }
+      const origCx = _PAD + ci * (_KW + _GAP)
+      if (elX >= origCx - TOL && elX <= origCx + _KW + TOL) { k = ci; break }
     }
     if (k < 0) continue
 
-    // Delete all non-text shapes belonging to empty cards
-    if (emptyCards.has(k)) {
+    if (!displayPos.has(k)) {
       reqs.push({ deleteObject: { objectId: el.objectId } })
       continue
     }
 
-    const cx       = _PAD + k * (_KW + _GAP)
+    const di      = displayPos.get(k)!
+    const cx      = _PAD + di * (cw + _GAP)      // new display x
+    const origCx  = _PAD + k  * (_KW + _GAP)     // original master x
     const isBottom = elY > _KPI_CY0 + _KPI_CH0 / 2
 
     if (el.shape?.shapeType === 'RECTANGLE') {
       if (Math.abs(elW - _KW) < TOL && Math.abs(elH - _KPI_CH0) < TOL) {
-        // Card background: resize height + reposition
-        reqs.push(makeElemTransform(el.objectId, cx, kCY, _KW, cardH, sW, sH))
+        // Card background: resize width + height, reposition
+        reqs.push(makeElemTransform(el.objectId, cx, kCY, cw, cardH, sW, sH))
       } else if (Math.abs(elW - _R) < TOL && Math.abs(elH - _R) < TOL) {
-        // Corner bg square (R×R): move Y only
+        // Corner bg square (R×R): left vs right side
+        const isRightCorner = Math.abs(elX - (origCx + _KW - _R)) < TOL
+        const newX = isRightCorner ? cx + cw - _R : cx
         const newY = isBottom ? kCY + cardH - _R : kCY
-        reqs.push(makeElemTransform(el.objectId, elX, newY, _R, _R, sW, sH))
+        reqs.push(makeElemTransform(el.objectId, newX, newY, _R, _R, sW, sH))
       }
     }
 
     if (el.shape?.shapeType === 'ELLIPSE') {
       if (Math.abs(elW - 2 * _R) < TOL && Math.abs(elH - 2 * _R) < TOL) {
-        // Corner ellipse (2R×2R): move Y only
+        // Corner ellipse (2R×2R)
+        const isRightEllipse = Math.abs(elX - (origCx + _KW - 2 * _R)) < TOL
+        const newX = isRightEllipse ? cx + cw - 2 * _R : cx
         const newY = isBottom ? kCY + cardH - 2 * _R : kCY
-        reqs.push(makeElemTransform(el.objectId, elX, newY, 2 * _R, 2 * _R, sW, sH))
+        reqs.push(makeElemTransform(el.objectId, newX, newY, 2 * _R, 2 * _R, sW, sH))
       }
     }
   }
@@ -694,7 +734,7 @@ export async function buildPresentation(
     const layout = computeKpiAdaptive(
       plan.slides[i].slots,
       compDef.card_min_h ?? 180,
-      compDef.card_max_h ?? 624,
+      compDef.card_max_h ?? 680,
       compDef.gap_min   ?? 30,
     )
     requests.push(...buildKpiUpdateRequests(slide, layout, plan.slides[i].slots))
@@ -884,8 +924,8 @@ export async function buildPresentation(
       if (bentoTokens.includes(slotName)) continue
       // Skip ТЕКСТ in bento_right (handled by pickTextPt above)
       if (compId.startsWith('bento_right_') && slotName === 'ТЕКСТ') continue
-      // Skip kpi_cards ТЕКСТ — handled by adaptive layout above
-      if (compId === 'kpi_cards' && slotName === 'ТЕКСТ' && kpiAdaptiveSlides.has(i)) continue
+      // Skip kpi_cards — all slots handled by adaptive layout above
+      if (compId === 'kpi_cards' && kpiAdaptiveSlides.has(i)) continue
 
       const slotValue = slots[slotName] ?? ''
       if (!slotValue.trim()) continue
