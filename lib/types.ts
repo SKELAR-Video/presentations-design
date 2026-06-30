@@ -20,6 +20,9 @@ export type Slide = {
 export type SlidePlan = {
   theme: Theme
   slides: Slide[]
+  // Original input text, stored for verbatim content-integrity validation.
+  // Each non-empty slot value must be a line-by-line substring of this text.
+  sourceText?: string
 }
 
 export type CompositionSlot = {

@@ -5,56 +5,40 @@ import type { SourceSlide } from '@/app/api/fetch-doc/route'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-const SYSTEM_PROMPT = `Твоє завдання: з очищеного контенту ТЗ скласти план слайдів — послідовність композицій із заповненими слотами. Ти НЕ малюєш слайди й НЕ рахуєш геометрію. Ти лише обираєш композиції з каталогу й розкладаєш текст по слотах.
+// ─── Verbatim mapping mode ────────────────────────────────────────────────────
+// LLM assigns input fragment INDICES to slots — it never writes prose.
+// Text in each slot = verbatim line(s) from the original input.
+
+const SYSTEM_VERBATIM = `Ти маппінг-агент: ТЗ → SKELAR-презентація.
+
+Вхід: пронумерований список рядків (фрагментів) з ТЗ.
+Завдання: обрати композиції й вказати, який фрагмент іде в який слот.
 
 ## Жорсткі правила
-1. Використовуй ТІЛЬКИ композиції з наданого каталогу. Не вигадуй нових.
-2. Використовуй ТІЛЬКИ слоти, визначені для обраної композиції.
-3. **max_chars — абсолютний ліміт.** Рахуй символи перед тим як записати. Якщо не вміщається — постав менше тексту, обери головне. Ніколи не обрізай речення посередині і не додавай «…».
-4. Тема всього деку одна: dark АБО red.
-5. Перший слайд — завжди cover. Останній — завжди closing.
-6. Ігноруй image-слоти (ЗОБРАЖЕННЯ_N) — залишай їх порожніми.
-7. ДАТА — тільки коротка дата, наприклад «25 червня 2026» (≤20 символів). Не пиши опис чи назву події.
+1. Виводь ТІЛЬКИ JSON без markdown.
+2. Ти НЕ пишеш і НЕ переписуєш текст. Тільки призначаєш індекси фрагментів.
+3. assignment: { "СЛОТ": index | [i1,i2,...] | null }
+   - index → fragments[index] іде в слот дослівно
+   - [i1,i2] → fragments[i1] + "\\n" + fragments[i2]
+   - null → слот порожній
+4. Тема всього деку: dark АБО red (як вказано).
+5. Перший слайд → cover. Останній → closing (ЗАГОЛОВОК: null — майстер дає дефолт).
+6. Ігноруй image-слоти (ЗОБРАЖЕННЯ_*) — залишай null.
+7. ДАТА: індекс фрагмента, що містить дату (≤20 символів). Якщо немає — null.
+8. Якщо фрагмент явно перевищить max_chars слота — assignuj null (краще порожньо).
 
 ## Як обирати композицію
-- Перший слайд → cover. Останній → closing.
-- Перехід між темами → section (темна) або section_red (червона).
-- Одна теза з поясненням → title_body.
-- Дві паралельні тези → two_columns.
-- Три кроки / пункти → three_columns.
-- Набір метрик (2–4 числа) → kpi_cards. ТЕКСТ у kpi_cards — лише короткий субтитул (≤70 символів), не повний абзац.
-- Велика теза + рівно 2 числових/структурованих пункти → bento_right_2.
-- Велика теза + рівно 3 числових/структурованих пункти → bento_right_3.
-- Велика теза + рівно 4 числових/структурованих пункти (2×2) → bento_right_2x2.
+- cover → перший слайд.
+- closing → останній слайд.
+- section / section_red → перехід між темами.
+- title_body → одна теза з поясненням.
+- two_columns → дві паралельні тези.
+- three_columns → три кроки / пункти.
+- kpi_cards → набір метрик (2–4 числа). ТЕКСТ ≤70 символів — субтитул, не абзац.
+- bento_right_2/3/2x2 → велика теза + 2/3/4 числових або структурованих пунктів. Порожніх карток не лишати.
 
-## Коли обирати bento_right_* (суворо)
-Бенто ТІЛЬКИ для паралельних однорідних пунктів одного з двох типів:
-1. Числові метрики/показники: "< 0.5%", "x2 зростання", "$5M ARR", "100+ клієнтів"
-2. Структуровані переліки: "Напрям 1: ...", "Крок 1: ...", "Ринок А / Ринок Б"
-
-НЕ обирай bento_right_* для:
-- Звичайних речень-пояснень (навіть коротких) без числових значень
-- Суміші числових та текстових пунктів — числові йдуть у bento КАРТКА_*, текстовий контекст → ТЕКСТ зліва
-
-ВАЖЛИВО: кількість карток = кількість пунктів. Порожніх карток не повинно бути.
-
-## Формат виходу — ТІЛЬКИ валідний JSON, без markdown
-
-{
-  "theme": "dark",
-  "slides": [
-    {
-      "id": "slide_1",
-      "composition": "cover",
-      "slots": {
-        "ЗАГОЛОВОК": "Назва або тема презентації",
-        "ПІДЗАГОЛОВОК": "Короткий підзаголовок або опис події (необов'язково)",
-        "ДАТА": "25 червня 2026"
-      },
-      "flags": {}
-    }
-  ]
-}`
+Формат:
+{ "slides": [ { "composition": "cover", "assignment": { "ЗАГОЛОВОК": 0, "ПІДЗАГОЛОВОК": 1, "ДАТА": 2 } } ] }`
 
 // ─── 1:1 mode ────────────────────────────────────────────────────────────────
 // LLM outputs ONLY composition + slot→index mapping.
@@ -157,175 +141,105 @@ JSON з рівно ${slides.length} елементами в "slides".`
   }
 }
 
-type SlotViolation = {
-  slideId: string
-  composition: string
-  slotName: string
-  currentValue: string
-  limit: number
-  hint?: string  // slot-specific guidance for the LLM
-}
-
-// Slot-specific hints for slots that are systematically over-filled
-const SLOT_HINTS: Record<string, string> = {
-  ДАТА:  'тільки дата, наприклад «29 червня 2026» — без назви події чи опису',
-  ТЕКСТ: 'максимум 1 коротке речення-субтитул; не абзац і не список',
-}
-
-function getPlanViolations(plan: SlidePlan): SlotViolation[] {
-  const violations: SlotViolation[] = []
-  for (const slide of plan.slides) {
-    const comp = PHASE0_COMPOSITIONS.find(c => c.id === slide.composition)
-    if (!comp) continue
-    for (const def of comp.slots) {
-      if (def.type !== 'text' || !def.max_chars) continue
-      const val = slide.slots[def.name] ?? ''
-      if (val.length > def.max_chars) {
-        violations.push({
-          slideId:      slide.id,
-          composition:  slide.composition,
-          slotName:     def.name,
-          currentValue: val,
-          limit:        def.max_chars,
-          hint:         SLOT_HINTS[def.name],
-        })
-      }
-    }
-  }
-  return violations
-}
-
-// Ask the LLM to return ONLY the fixes for violating slots — not the full plan.
-async function fixSlotViolations(violations: SlotViolation[]): Promise<void> {
-  const items = violations.map(v => {
-    const hint = v.hint ? ` (${v.hint})` : ''
-    return `- ${v.slideId} → ${v.slotName} [ліміт ${v.limit} символів${hint}]:\n  Поточний текст (${v.currentValue.length} символів): "${v.currentValue}"`
-  }).join('\n')
-
-  const prompt = `Ці слоти перевищують ліміт символів. Скороти кожен — поклади головну думку в менше слів, не обрізай речення посередині.
-
-${items}
-
-Поверни ТІЛЬКИ JSON-масив виправлень (без markdown):
-[{"slideId":"...","slotName":"...","value":"..."}]`
-
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
-    messages: [{ role: 'user', content: prompt }],
-  })
-  const content = response.content[0]
-  if (content.type !== 'text') return
-
-  const raw = content.text.trim()
-  const clean = raw.startsWith('```') ? raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '') : raw
-  const fixes = JSON.parse(clean) as { slideId: string; slotName: string; value: string }[]
-
-  // Patch violations in-place — only update slots that were fixed
-  for (const fix of fixes) {
-    const v = violations.find(v => v.slideId === fix.slideId && v.slotName === fix.slotName)
-    if (!v) continue
-    if (fix.value.length <= v.limit) {
-      v.currentValue = fix.value  // used to patch plan below
-    } else {
-      console.warn(`[fix] ${fix.slideId}.${fix.slotName}: still ${fix.value.length}>${v.limit} after fix`)
-    }
-  }
-}
-
-const POST_GEN_SLOT_HINTS: Record<string, string> = {
-  ДАТА:  'тільки дата, наприклад «29 червня 2026» — без назви події чи опису',
-  ТЕКСТ: 'підпис-субтитул: ТІЛЬКИ ключові слова або 1-2 цифри. Викинь усі пояснення. Фраза, не речення.',
+// ─── Fragment parsing ─────────────────────────────────────────────────────────
+// Splits ТЗ text into verbatim lines (one fragment per line).
+// Each fragment IS a literal substring of the original text, enabling
+// the verbatim content-integrity validator check.
+function parseFragments(text: string): string[] {
+  return text
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map(l => l.trim())
+    .filter(Boolean)
 }
 
 // Called by google.ts after validateDeck — repairs slides that still have max_chars FAILs.
 // Each item carries the objectId of the text box so fixes are applied by ID, not by re-matching.
+// NOTE: this no longer rewrites text — it hard-truncates to preserve verbatim guarantee.
 export async function fixOverflowSlots(
   items: Array<{ id: string; slotName: string; currentText: string; limit: number }>,
 ): Promise<Array<{ id: string; value: string }>> {
-  const lines = items.map(it => {
-    const hint = POST_GEN_SLOT_HINTS[it.slotName] ? ` (${POST_GEN_SLOT_HINTS[it.slotName]})` : ''
-    return `- id: ${it.id}\n  слот: ${it.slotName}${hint}\n  ліміт: ${it.limit} символів\n  текст (${it.currentText.length} символів): "${it.currentText}"`
-  }).join('\n\n')
-
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
-    messages: [{
-      role: 'user',
-      content: `Ці слоти перевищують ліміт символів. Перепиши кожен як короткий заголовок-підпис — ТІЛЬКИ ключові слова або цифри, без пояснень. ОБОВ'ЯЗКОВО вкластися в ліміт символів.\n\n${lines}\n\nПоверни ТІЛЬКИ JSON-масив (без markdown):\n[{"id":"...","value":"..."}]`,
-    }],
+  return items.map(it => {
+    let truncated = it.currentText.slice(0, it.limit)
+    const lastSpace = truncated.lastIndexOf(' ')
+    if (lastSpace > it.limit * 0.7) truncated = truncated.slice(0, lastSpace)
+    console.warn(`[fixOverflowSlots] ${it.slotName}: hard-truncated ${it.currentText.length} → ${truncated.length} chars`)
+    return { id: it.id, value: truncated }
   })
-
-  const content = response.content[0]
-  if (content.type !== 'text') return []
-  const raw = content.text.trim()
-  const clean = raw.startsWith('```') ? raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '') : raw
-  try {
-    return JSON.parse(clean) as Array<{ id: string; value: string }>
-  } catch {
-    return []
-  }
-}
-
-function parseJsonPlan(raw: string): SlidePlan {
-  const clean = raw.startsWith('```') ? raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '') : raw
-  return JSON.parse(clean) as SlidePlan
 }
 
 export async function mapToPlan(text: string, theme: Theme): Promise<SlidePlan> {
+  // Split ТЗ into verbatim line fragments — each is a literal substring of `text`
+  const fragments = parseFragments(text)
+
+  // Compact catalog: slot names + max_chars so LLM knows what fits
   const catalogDescription = PHASE0_COMPOSITIONS.map((c) => {
-    const slots = c.slots
-      .map((s) => `    - ${s.name} (${s.type}${s.max_chars ? `, max ${s.max_chars} символів` : ''}${s.optional ? ', опційний' : ''})`)
-      .join('\n')
-    return `- ${c.id}: ${c.name}\n  Коли: ${c.when_to_use}\n  Слоти:\n${slots}`
-  }).join('\n\n')
+    const textSlots = c.slots
+      .filter(s => s.type === 'text')
+      .map(s => `${s.name}${s.optional ? '?' : ''}(≤${s.max_chars ?? '∞'})`)
+      .join(', ')
+    return `- ${c.id}: [${textSlots}]  ← ${c.when_to_use}`
+  }).join('\n')
 
-  const userMessage = `Тема презентації: ${theme}
+  const fragmentsList = fragments
+    .map((f, i) => `[${i}] ${JSON.stringify(f.length > 200 ? f.slice(0, 200) + '…' : f)}`)
+    .join('\n')
 
-Каталог доступних композицій:
+  const userMessage = `Тема: ${theme}.
+
+Каталог SKELAR-композицій:
 ${catalogDescription}
 
-Текст ТЗ:
----
-${text}
----
+Фрагменти ТЗ (${fragments.length} шт.):
+${fragmentsList}
 
-Склади план слайдів у форматі JSON.`
+Поверни JSON з планом слайдів.`
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 4096,
-    system: SYSTEM_PROMPT,
+    system: SYSTEM_VERBATIM,
     messages: [{ role: 'user', content: userMessage }],
   })
   const content = response.content[0]
   if (content.type !== 'text') throw new Error('Unexpected response type from Anthropic')
 
-  const plan = parseJsonPlan(content.text.trim())
+  const raw = content.text.trim()
+  const json = raw.startsWith('```') ? raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '') : raw
+  const mapping = JSON.parse(json) as { slides: SlideAssignment[] }
 
-  // Surgical slot-level fix — up to 2 passes
-  for (let pass = 0; pass < 2; pass++) {
-    const violations = getPlanViolations(plan)
-    if (violations.length === 0) break
-    console.warn(`[mapToPlan] pass ${pass + 1}: ${violations.length} max_chars violation(s) — fixing slots`)
-    try {
-      await fixSlotViolations(violations)
-      // Apply fixes back to plan
-      for (const v of violations) {
-        const slide = plan.slides.find(s => s.id === v.slideId)
-        if (slide) slide.slots[v.slotName] = v.currentValue
-      }
-    } catch (e) {
-      console.warn('[mapToPlan] slot fix failed:', e instanceof Error ? e.message : String(e))
-      break
+  // Build SlidePlan — verbatim text from fragments, LLM never touched it
+  const slides = mapping.slides.map((m, i) => {
+    const slots: Record<string, string> = {}
+    for (const [slotName, ref] of Object.entries(m.assignment ?? {})) {
+      if (ref === null || ref === undefined) continue
+      const indices = Array.isArray(ref) ? ref : [ref]
+      const slotText = indices
+        .map(idx => (typeof idx === 'number' ? (fragments[idx] ?? '') : ''))
+        .filter(Boolean)
+        .join('\n')
+      if (slotText) slots[slotName] = slotText
+    }
+    return { id: `slide_${i + 1}`, composition: m.composition || 'title_body', slots, flags: {} }
+  })
+
+  // Hard-truncate overflow slots — word boundary, flag set, NO LLM rewrite
+  for (const slide of slides) {
+    const comp = PHASE0_COMPOSITIONS.find(c => c.id === slide.composition)
+    if (!comp) continue
+    for (const def of comp.slots) {
+      if (def.type !== 'text' || !def.max_chars) continue
+      const val = slide.slots[def.name]
+      if (!val || val.length <= def.max_chars) continue
+      let truncated = val.slice(0, def.max_chars)
+      const lastSpace = truncated.lastIndexOf(' ')
+      if (lastSpace > def.max_chars * 0.7) truncated = truncated.slice(0, lastSpace)
+      slide.slots[def.name] = truncated
+      const f = slide.flags as Record<string, unknown>
+      f.overflow = [...((f.overflow as string[] | undefined) ?? []), def.name]
+      console.warn(`[mapToPlan] ${slide.id}.${def.name}: truncated ${val.length} → ${truncated.length} chars`)
     }
   }
 
-  const remaining = getPlanViolations(plan)
-  if (remaining.length > 0) {
-    console.warn('[mapToPlan] remaining violations after fixes:', remaining.map(v => `${v.slideId}.${v.slotName}: ${v.currentValue.length}>${v.limit}`).join(', '))
-  }
-
-  return plan
+  return { theme, slides, sourceText: text }
 }

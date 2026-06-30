@@ -113,25 +113,50 @@ function checkMaxChars(slots: Record<string, string>, compId: string): CheckResu
   return { check: 'max_chars', pass: fails.length === 0, detail: fails.join('; ') || undefined }
 }
 
-// Invariant: every non-empty input slot must map to a known slot in the composition.
-// If a slot is provided but not defined → text is silently lost → FAIL.
-function checkContentIntegrity(slots: Record<string, string>, compId: string): CheckResult {
+// Invariant 9 — zero content loss:
+//   (a) every non-empty slot must be defined in the composition (no silently-lost text)
+//   (b) when sourceText is available: every non-empty line of each slot value must be
+//       a verbatim substring of the original input (LLM never invented / paraphrased)
+// Exemptions: image slots, closing composition (structural / default text).
+function checkContentIntegrity(
+  slots: Record<string, string>,
+  compId: string,
+  sourceText?: string,
+): CheckResult {
   const comp = getComposition(compId)
   if (!comp) return { check: 'content_integrity', pass: true, detail: 'composition not found — skipped' }
+
   const known = new Set(comp.slots.map(s => s.name))
-  const lost: string[] = []
+  const fails: string[] = []
+
   for (const [name, value] of Object.entries(slots)) {
-    if (!(value ?? '').trim()) continue           // empty — nothing to lose
-    if (name.startsWith('ЗОБРАЖЕННЯ_')) continue  // image slots are always ignored
+    const v = (value ?? '').trim()
+    if (!v) continue
+    if (name.startsWith('ЗОБРАЖЕННЯ_')) continue  // image slots always ignored
+
+    // (a) slot must exist in the composition
     if (!known.has(name)) {
-      const preview = value.length > 40 ? value.slice(0, 40) + '…' : value
-      lost.push(`${name}: "${preview}"`)
+      const preview = v.length > 40 ? v.slice(0, 40) + '…' : v
+      fails.push(`unmapped "${name}" (content lost): "${preview}"`)
+      continue
+    }
+
+    // (b) verbatim check — closing is structural, skip it
+    if (!sourceText || compId === 'closing') continue
+    const lines = v.split('\n').map(l => l.trim()).filter(Boolean)
+    for (const line of lines) {
+      if (!sourceText.includes(line)) {
+        const preview = line.length > 60 ? line.slice(0, 60) + '…' : line
+        fails.push(`${name}: non-verbatim line — "${preview}"`)
+        break  // one report per slot is enough
+      }
     }
   }
+
   return {
     check: 'content_integrity',
-    pass: lost.length === 0,
-    detail: lost.length > 0 ? `unmapped slots — content silently lost: ${lost.join('; ')}` : undefined,
+    pass: fails.length === 0,
+    detail: fails.length > 0 ? fails.join('; ') : undefined,
   }
 }
 
@@ -436,7 +461,7 @@ export async function validateDeck(
     checks.push(checkAutofit(slide))
     checks.push(checkFont(slide))
     checks.push(checkMaxChars(planSlide.slots, compId))
-    checks.push(checkContentIntegrity(planSlide.slots, compId))
+    checks.push(checkContentIntegrity(planSlide.slots, compId, plan.sourceText))
     checks.push(checkBadge(slide))
 
     if (compId === 'kpi_cards') {
