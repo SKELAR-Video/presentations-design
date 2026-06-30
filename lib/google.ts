@@ -277,13 +277,10 @@ function computeKpiAdaptive(
   const lblH  = Math.max(Math.ceil(lineH(14)),    maxLblH)
   const cardH = Math.min(cardMaxH, Math.max(cardMinH, valH + lblH + 2 * _INN + 2 * KPI_VERT_PAD))
 
-  // ── Card Y: comfortable gap from title+body; row centred in available zone ─
-  const kCY         = _PAD + _TH + bodyH + _TG
-  const availableH  = _H - _PAD - kCY
-  const rowOffset   = Math.max(0, Math.round((availableH - cardH) / 2))
-  const effectiveKCY = kCY + rowOffset  // row start Y (centred in available zone)
+  // ── Card Y: bottom-anchored at H-PAD=980 (top floats up from there) ─────────
+  const kCY = _H - _PAD - cardH   // bottom edge fixed at 980px
 
-  return { n, cw, activeIdxs, bodyH, bodyFontPt, cardH, valH, lblH, kCY: effectiveKCY, valPt }
+  return { n, cw, activeIdxs, bodyH, bodyFontPt, cardH, valH, lblH, kCY, valPt }
 }
 
 function buildKpiUpdateRequests(
@@ -538,7 +535,7 @@ function buildBentoRowLayoutRequests(
       if (h > maxContentH) maxContentH = h
     }
     const cardH = Math.max(100, maxContentH + 2 * BENTO_VERT_PAD)
-    const rowY  = Math.round(_CY + Math.max(0, (_CH - cardH) / 2))
+    const rowY  = _H - _PAD - cardH   // bottom-anchored at 980px
 
     const reqs: object[] = []
     for (const el of slide.pageElements ?? []) {
