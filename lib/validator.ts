@@ -301,39 +301,76 @@ function _vEstimateLines(text: string, wPx: number, pt: number): number {
   return lines
 }
 
+// Mirrors preprocessBentoText in lib/google.ts
+function _vPreprocessBentoText(text: string, compId: string, tok: string): string {
+  if (!text.trim()) return text
+  // Value+label cards (checked via splitValueLabel heuristic): skip
+  const nlIdx = text.indexOf('\n')
+  const isValLabel = nlIdx > 0 && nlIdx <= 35 && /\d/.test(text.slice(0, nlIdx))
+  if (isValLabel) return text
+  const colonIdx = text.indexOf(':')
+  const isValColon = colonIdx > 0 && colonIdx <= 35 && /\d/.test(text.slice(0, colonIdx))
+  if (isValColon) return text
+
+  if (text.includes(' · ')) {
+    const items = text.split(' · ').map(s => s.trim()).filter(Boolean)
+    if (items.length >= 2) return items.map(item => '• ' + item).join('\n')
+  }
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  if (lines.length >= 2) {
+    return lines.map(line =>
+      (line.startsWith('•') || line.startsWith('-') || line.startsWith('–')) ? line : '• ' + line,
+    ).join('\n')
+  }
+  return text
+}
+
 function checkBentoLayout(compId: string, slots: Record<string, string>): CheckResult {
   const dims   = _vBentoDims(compId)
   const tokens = _V_BENTO_TOKENS[compId]
   const maxPt  = _V_BENTO_MAX_PT[compId]
   if (!dims || !tokens || !maxPt) return { check: 'bento_layout', pass: true, detail: 'n/a' }
 
+  // Use preprocessed text (same conversion applied at generation time)
+  const processedSlots: Record<string, string> = {}
+  for (const tok of tokens) {
+    processedSlots[tok] = _vPreprocessBentoText(slots[tok] ?? '', compId, tok)
+  }
+
   const scale = [48, 36, 28, 22, 18, 14, 10].filter(s => s <= maxPt)
   let uniformPt = scale[scale.length - 1]
   for (const pt of scale) {
-    if (tokens.every(t => _vTextFits(slots[t] ?? '', dims.w, dims.h, pt))) { uniformPt = pt; break }
+    if (tokens.every(t => _vTextFits(processedSlots[t] ?? '', dims.w, dims.h, pt))) { uniformPt = pt; break }
   }
 
   const fails: string[] = []
-  if (uniformPt < 12) fails.push(`font too small (${uniformPt}pt) — text likely too long`)
+  if (uniformPt < 12) fails.push(`font too small (${uniformPt}pt)`)
 
-  const fillInfo: string[] = []
+  const _V_VERT_PAD = 40  // must match BENTO_VERT_PAD in lib/google.ts
+  const cardHInfo: string[] = []
   for (const tok of tokens) {
-    const text = (slots[tok] ?? '').trim()
+    const text = (processedSlots[tok] ?? '').trim()
     if (!text) continue
     if (!_vTextFits(text, dims.w, dims.h, uniformPt)) {
       fails.push(`${tok}: overflows at ${uniformPt}pt`)
-    } else {
-      const paragraphs = text.split('\n').filter(p => p.trim())
-      const totalLines = paragraphs.reduce((s, p) => s + _vEstimateLines(p, dims.w, uniformPt), 0)
-      const naturalH   = totalLines * uniformPt * 2.667 * 1.4
-      const fillPct    = Math.round(naturalH / dims.h * 100)
-      fillInfo.push(`${tok}=${fillPct}%`)
+      continue
     }
+    // Check: bullet separators present when list items detected
+    const raw = (slots[tok] ?? '').trim()
+    if (raw.includes(' · ') && !text.includes('•')) {
+      fails.push(`${tok}: list items joined with · instead of bullet lines`)
+    }
+    // Estimated card height vs max card zone height
+    const paras = text.split('\n').filter(p => p.trim())
+    const totalLines = paras.reduce((s, p) => s + _vEstimateLines(p, dims.w, uniformPt), 0)
+    const contentH   = Math.round(totalLines * uniformPt * 2.667 * 1.4)
+    const cardH      = contentH + 2 * _V_VERT_PAD
+    cardHInfo.push(`${tok}:h=${cardH}`)
   }
 
   const detail = fails.length > 0
     ? fails.join('; ')
-    : `pt=${uniformPt} fills:${fillInfo.join(' ')}`
+    : `pt=${uniformPt} ${cardHInfo.join(' ')}`
   return { check: 'bento_layout', pass: fails.length === 0, detail }
 }
 

@@ -13,7 +13,7 @@ Applies to: `kpi_cards`, `two_columns`, `three_columns`, `bento_right_2/3/2x2`.
 | 3 | 553 |
 | 4 | 407 |
 
-Ряд завжди від лівого поля (x=PAD) до правого (x=PAD+UW). Порожніх зазорів справа або зліва не лишати.
+Ряд завжди від лівого поля (x=PAD) до правого (x=PAD+UW).
 
 ## 2. Шрифт — єдиний по ряду, від role max вниз
 
@@ -28,53 +28,65 @@ Applies to: `kpi_cards`, `two_columns`, `three_columns`, `bento_right_2/3/2x2`.
 | `bento_right_2x2` | 22 pt |
 | `kpi_cards` ЗНАЧЕННЯ | 48 pt |
 
-Зменшувати лише якщо текст не влазить при role max.
+## 3. Висота картки — за вмістом
 
-## 3. Вертикальне заповнення картки
+**Правило**: `cardH = contentH + 2 × VERT_PAD`
 
-**Заборонено:** текст угорі + велика порожнеча знизу.
+- `contentH` — оцінена висота тексту при обраному pt
+- `VERT_PAD = 40px` для бенто-рядів; `30px` для `kpi_cards`
+- Усі картки ряду — ОДНАКОВОЇ висоти (= найвища з них)
+- **НЕ розтягувати картку на весь слайд**
+- **НЕ розганяти вміст штучно** (`spaceAbove/Below`) — залишки простору лишаються знизу коротшої картки
 
-Алгоритм після вибору `pt`:
+## 4. Позиція ряду — центр у контент-зоні
 
-1. Обчислити `naturalH = totalLines × lineH(pt)` де `lineH(pt) = pt × 2.667 × 1.4`.
-2. Якщо `naturalH ≥ innerH × 0.85` — простору достатньо, нічого не робити.
-3. Інакше — розподілити залишок рівномірно:
-   ```
-   extra = innerH - naturalH
-   spaceAbovePt = extra / (2 × nParagraphs × 2.667)
-   ```
-   Встановити `spaceAbove = spaceBelow = spaceAbovePt` для ВСІХ параграфів (via `updateParagraphStyle` на ALL range).
-
-Це розміщує рівний відступ до та після кожного пункту, поширюючи список на всю висоту картки.
-
-## 4. Висота картки (`kpi_cards`)
+Контент-зона: від `CY=300` до `H-PAD=980` (680px по вертикалі).
 
 ```
-kCY = PAD + TH + bodyH + TG      ← комфортний відступ від заголовка
-cardH = H - PAD - kCY             ← заповнює до нижнього поля
+rowY = CY + max(0, (contentZoneH - cardH) / 2)
 ```
 
-При `bodyH=0`: `kCY=300`, `cardH=680`.  
-При `bodyH=56`: `kCY=356`, `cardH=624` (= значення старого майстра, зворотна сумісність).
+Ряд карток центрується у доступній зоні. Зайвий вертикальний простір — **зовні карток** (зверху і знизу ряду), не всередині.
 
-## 5. Внутрішні відступи
+## 5. Вертикальна структура (kpi_cards)
 
-`INN = 30px` з усіх боків картки. Текстовий бокс займає `cw - 2×INN` × `cardH - 2×INN`.
+`кPI_cards` — tight group: цифра безпосередньо над підписом, без пропорційного розподілу.
 
-## 6. Валідатор
+```
+ЗНАЧЕННЯ box:  y = kCY + INN + KPI_VERT_PAD,   h = valH
+ПІДПИС box:    y = kCY + INN + KPI_VERT_PAD + valH, h = lblH
+cardH          = valH + lblH + 2×INN + 2×KPI_VERT_PAD
+```
 
-| Перевірка | Де |
+`kCY = PAD + TH + bodyH + TG` — комфортний відступ від заголовка/тіла.
+
+## 6. Буліти — кожен пункт з нового рядка
+
+**Правило**: якщо вміст картки — список пунктів, кожен пункт рендериться окремим рядком з маркером `•`.
+
+**Виняток**: короткий підзаголовок / цифра+підпис в одну стрічку — залишається без маркерів.
+
+Автоматичне перетворення (функція `preprocessBentoText` у `lib/google.ts`):
+- Текст з `·` між пунктами → `• пункт\n• пункт`
+- Текст з `\n` між рядками (не value+label) → `• рядок\n• рядок`
+
+## 7. Валідатор
+
+| Перевірка | Критерій |
 |---|---|
-| `kpi_row_geometry` — ряд від PAD до PAD+UW, дно = H-PAD, відступ ≥ TG | `validator.ts:checkKpiCardRowGeometry` |
-| `bento_layout` — pt > 10pt, текст не переповнює | `validator.ts:checkBentoLayout` |
+| `bento_layout` — pt >10pt, текст не переповнює | `validator.ts:checkBentoLayout` |
+| `bento_layout` — буліти присутні (якщо є `·`) | FAIL якщо є ` · ` без конвертації в `•` |
+| `bento_layout` — висота картки в деталях | detail: `pt=N КОЛОНКА_1:h=Xpx ...` |
+| `kpi_row_geometry` — ряд від PAD до PAD+UW, дно ≈ kCY+cardH | `validator.ts:checkKpiCardRowGeometry` |
 | `kpi_numeric_values` — ЗНАЧЕННЯ = числовий формат | `validator.ts:checkKpiNumeric` |
 | `kpi_gap` — зазор між body і картками ≥ gap_min | `validator.ts:checkKpiGap` |
 
-## 7. Де реалізовано
+## 8. Де реалізовано
 
 | Файл | Функція |
 |---|---|
-| `lib/google.ts` | `computeKpiAdaptive` — ширина/висота/pt для kpi_cards |
-| `lib/google.ts` | `buildKpiUpdateRequests` — перепозиціонування карток і кутів |
+| `lib/google.ts` | `preprocessBentoText` — конвертація `·` → bullets |
 | `lib/google.ts` | `pickBentoPt` — єдиний pt для бенто-рядів (scale UP→DOWN) |
-| `lib/google.ts` | `bentoParagraphSpacingPt` — spaceAbove/Below для вертикального заповнення |
+| `lib/google.ts` | `buildBentoRowLayoutRequests` — висота картки за вмістом + позиція ряду |
+| `lib/google.ts` | `computeKpiAdaptive` — ширина/висота/pt для kpi_cards |
+| `lib/google.ts` | `buildKpiUpdateRequests` — tight group (ЗНАЧЕННЯ + ПІДПИС) |
