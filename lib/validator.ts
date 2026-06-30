@@ -168,6 +168,37 @@ function checkKpiGap(slide: slides_v1.Schema$Page, gapMin: number): CheckResult 
   }
 }
 
+// cover: ДАТА must be full-width (≈ UW) and NOT stuck in the bottom corner.
+// Catches old-master decks where ДАТА was at y≈928, w=500.
+function checkCoverLayout(slide: slides_v1.Schema$Page): CheckResult {
+  const MIN_DATE_W = 1400  // ДАТА width must be close to UW (1720), not 500
+  const MAX_DATE_Y = 800   // ДАТА must not be near the bottom of the slide
+
+  let narrowOrLow = false
+  for (const el of slide.pageElements ?? []) {
+    if (el.shape?.shapeType !== 'TEXT_BOX' || !el.transform || !el.size) continue
+    const x = Math.round((el.transform.translateX ?? 0) / _FPX)
+    const y = Math.round((el.transform.translateY ?? 0) / _FPX)
+    const w = Math.round((el.size.width?.magnitude ?? 0) * (el.transform.scaleX ?? 1) / _FPX)
+    const h = Math.round((el.size.height?.magnitude ?? 0) * (el.transform.scaleY ?? 1) / _FPX)
+    // Match ДАТА: left-anchored, below the title area (y > PAD+some gap), small height
+    if (Math.abs(x - 100) < 20 && y > 150 && h < 150) {
+      if (w < MIN_DATE_W || y > MAX_DATE_Y) {
+        narrowOrLow = true
+        break
+      }
+    }
+  }
+
+  return {
+    check: 'cover_layout',
+    pass: !narrowOrLow,
+    detail: narrowOrLow
+      ? `ДАТА box is narrow or in the bottom corner — regenerate from updated master`
+      : undefined,
+  }
+}
+
 function checkTheme(plan: SlidePlan): CheckResult {
   const themes = new Set(plan.slides.map(s => s.theme ?? plan.theme))
   const pass   = themes.size <= 1
@@ -214,6 +245,10 @@ export async function validateDeck(
       const comp = getComposition('kpi_cards')
       checks.push(checkKpiNumeric(planSlide.slots))
       checks.push(checkKpiGap(slide, comp?.gap_min ?? 30))
+    }
+
+    if (compId === 'cover') {
+      checks.push(checkCoverLayout(slide))
     }
 
     // theme_consistency is deck-level; attach to slide 0

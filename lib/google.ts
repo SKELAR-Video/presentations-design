@@ -3,6 +3,7 @@ import type { slides_v1 } from 'googleapis'
 import type { SlidePlan } from './types'
 import { PHASE0_COMPOSITIONS, getComposition } from './compositions'
 import { validateDeck, type ValidationReport } from './validator'
+import { fixOverflowSlots } from './anthropic'
 import { autoPushIfPass } from './auto-push'
 
 // ─── Bento font-size auto-shrink ─────────────────────────────────────────────
@@ -361,6 +362,47 @@ function buildKpiUpdateRequests(
   return reqs
 }
 
+// ─── Cover: float ДАТА below ЗАГОЛОВОК ───────────────────────────────────────
+// Computes actual title height from text, resizes ЗАГОЛОВОК, then anchors ДАТА
+// right below it with a gap. Constants must mirror compositions.ts cover slots.
+const _COVER_H1_PT   = 44
+const _COVER_H1_W    = _UW        // 1720
+const _COVER_H1_MAX  = 400        // compositions.ts cover.ЗАГОЛОВОК.max_h
+const _COVER_DATE_PT = 18
+const _COVER_DATE_MAX= 80         // compositions.ts cover.ДАТА.max_h
+const _COVER_GAP     = 30         // compositions.ts cover.ДАТА.float_gap
+
+function buildCoverFloatRequests(
+  slide: slides_v1.Schema$Page,
+  slots: Record<string, string>,
+): object[] {
+  const titleText = (slots['ЗАГОЛОВОК'] ?? '').trim()
+  const dateText  = (slots['ДАТА']      ?? '').trim()
+  if (!titleText && !dateText) return []
+
+  const titleLines = estimateLineCount(titleText, _COVER_H1_W, _COVER_H1_PT)
+  const titleH     = Math.min(_COVER_H1_MAX,  Math.max(1, Math.ceil(titleLines * lineH(_COVER_H1_PT)))  + 4)
+
+  const dateLines  = estimateLineCount(dateText,  _COVER_H1_W, _COVER_DATE_PT)
+  const dateH      = Math.min(_COVER_DATE_MAX, Math.max(1, Math.ceil(dateLines  * lineH(_COVER_DATE_PT))) + 4)
+  const dateY      = _PAD + titleH + _COVER_GAP
+
+  const reqs: object[] = []
+  for (const el of slide.pageElements ?? []) {
+    if (el.shape?.shapeType !== 'TEXT_BOX' || !el.objectId || !el.transform || !el.size) continue
+    const raw = (el.shape?.text?.textElements ?? []).map(te => te.textRun?.content ?? '').join('')
+    const sW  = el.size.width?.magnitude  ?? 0
+    const sH  = el.size.height?.magnitude ?? 0
+    if (raw.includes('{{ЗАГОЛОВОК}}')) {
+      reqs.push(makeElemTransform(el.objectId, _PAD, _PAD, _COVER_H1_W, titleH, sW, sH))
+    }
+    if (raw.includes('{{ДАТА}}')) {
+      reqs.push(makeElemTransform(el.objectId, _PAD, dateY, _COVER_H1_W, dateH, sW, sH))
+    }
+  }
+  return reqs
+}
+
 // Returns the largest step (≤ defaultPt) at which every bento card on the slide fits.
 function pickBentoPt(compId: string, slots: Record<string, string>): number | null {
   const dims = bentoDims(compId)
@@ -372,6 +414,45 @@ function pickBentoPt(compId: string, slots: Record<string, string>): number | nu
     if (tokens.every(t => textFits(slots[t] ?? '', dims.w, dims.h, pt))) return pt
   }
   return steps[steps.length - 1]  // 14 pt — smallest step, use regardless
+}
+
+// ─── Post-generation self-repair ─────────────────────────────────────────────
+// After validateDeck, if max_chars FAILs remain, collect them with objectIds so
+// fixOverflowSlots can patch the live slide without re-running the full pipeline.
+type SlotRepairTarget = {
+  slideIndex: number
+  slotName: string
+  objectId: string
+  currentText: string
+  limit: number
+}
+
+function collectRepairTargets(
+  report: ValidationReport,
+  plan: SlidePlan,
+  slotObjectIds: Array<Record<string, string>>,
+): SlotRepairTarget[] {
+  const targets: SlotRepairTarget[] = []
+  for (const sv of report.slides) {
+    if (sv.pass) continue
+    if (!sv.checks.some(c => c.check === 'max_chars' && !c.pass)) continue
+    const comp = getComposition(sv.composition)
+    if (!comp) continue
+    const planSlide = plan.slides[sv.slideIndex]
+    if (!planSlide) continue
+    for (const slotDef of comp.slots) {
+      if (slotDef.type !== 'text' || !slotDef.max_chars) continue
+      const val = planSlide.slots[slotDef.name] ?? ''
+      if (val.length <= slotDef.max_chars) continue
+      const objectId = slotObjectIds[sv.slideIndex]?.[slotDef.name]
+      if (!objectId) {
+        console.warn(`[repair] no objectId for ${sv.composition}.${slotDef.name} slide ${sv.slideIndex} — skipped`)
+        continue
+      }
+      targets.push({ slideIndex: sv.slideIndex, slotName: slotDef.name, objectId, currentText: val, limit: slotDef.max_chars })
+    }
+  }
+  return targets
 }
 
 function getOAuth2Client(accessToken: string) {
@@ -456,8 +537,10 @@ export async function buildPresentation(
     }
   }
 
-  // Step 2.6: Enforce max_chars — truncate slot values that exceed composition limits.
-  // Applied before any replaceAllText so the API never receives content larger than the slot can display.
+  // Step 2.6: Log max_chars violations — DO NOT truncate.
+  // Text content belongs to the user; silent truncation corrupts meaning.
+  // Violations surface as FAIL in validateDeck (max_chars check).
+  // Fix: tighten the LLM prompt so it never generates over-length values.
   for (const slide of plan.slides) {
     const compDef = getComposition(slide.composition)
     if (!compDef) continue
@@ -465,16 +548,14 @@ export async function buildPresentation(
       if (slotDef.type !== 'text' || !slotDef.max_chars) continue
       const val = slide.slots[slotDef.name]
       if (val && val.length > slotDef.max_chars) {
-        console.warn(`[overflow] ${slide.composition}.${slotDef.name}: ${val.length} chars > max ${slotDef.max_chars} — truncated`)
-        slide.slots[slotDef.name] = val.slice(0, slotDef.max_chars - 1) + '…'
+        console.warn(`[overflow] ${slide.composition}.${slotDef.name}: ${val.length} chars > max ${slotDef.max_chars}`)
       }
     }
   }
 
   // Step 2.65: Sanitise kpi_cards — remove non-numeric КАРТКА_N_ЗНАЧЕННЯ.
-  // Non-numeric values pass through Step 2.6 (truncated but still non-numeric).
-  // Clearing them here ensures buildKpiUpdateRequests deletes the card elements,
-  // preventing a card from rendering with list/sentence text.
+  // Prevents a list/sentence from rendering inside a numeric metric card.
+  // Clearing the slot triggers deleteObject in buildKpiUpdateRequests.
   const _KPI_NUMERIC_RE = /^[\d\s+\-±×x.,/%$€£<>≤≥~≈MKBmkb]+$/i
   for (const slide of plan.slides) {
     if (slide.composition !== 'kpi_cards') continue
@@ -532,6 +613,22 @@ export async function buildPresentation(
   // Step 5: Build batchUpdate — delete unused slides + replace tokens
   const updatedPres = await slidesApi.presentations.get({ presentationId })
   const updatedSlides = updatedPres.data.slides ?? []
+
+  // Build token → objectId map for post-generation repair.
+  // Must be built from updatedSlides (still has {{TOKEN}} before batchUpdate).
+  const slotObjectIds: Array<Record<string, string>> = plan.slides.map(() => ({}))
+  for (let i = 0; i < plan.slides.length; i++) {
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    const slide = updatedSlides.find(s => s.objectId === pageId)
+    if (!slide) continue
+    for (const el of slide.pageElements ?? []) {
+      if (!el.objectId) continue
+      const raw = (el.shape?.text?.textElements ?? []).map(te => te.textRun?.content ?? '').join('')
+      const tok = raw.match(/\{\{([^}]+)\}\}/)?.[1]
+      if (tok) slotObjectIds[i][tok] = el.objectId
+    }
+  }
 
   const keepSet = new Set(planPageIds.filter(Boolean))
 
@@ -602,6 +699,16 @@ export async function buildPresentation(
     )
     requests.push(...buildKpiUpdateRequests(slide, layout, plan.slides[i].slots))
     kpiAdaptiveSlides.add(i)
+  }
+
+  // ── Cover adaptive: grow ЗАГОЛОВОК to fit text, float ДАТА below ─────────────
+  for (let i = 0; i < plan.slides.length; i++) {
+    if (plan.slides[i].composition !== 'cover') continue
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    const slide = updatedSlides.find(s => s.objectId === pageId)
+    if (!slide) continue
+    requests.push(...buildCoverFloatRequests(slide, plan.slides[i].slots))
   }
 
   // Font-size auto-shrink + colon-split colouring.
@@ -925,16 +1032,64 @@ export async function buildPresentation(
 
   const url = `https://docs.google.com/presentation/d/${presentationId}/edit`
 
-  const validation = await validateDeck(slidesApi, presentationId, plan, planPageIds)
+  let validation = await validateDeck(slidesApi, presentationId, plan, planPageIds)
   console.log('[validator]', validation.summary)
   for (const sv of validation.slides) {
     if (!sv.pass) {
-      const fails = sv.checks
-        .filter(c => !c.pass)
-        .map(c => `${c.check}${c.detail ? ': ' + c.detail : ''}`)
-        .join(' | ')
+      const fails = sv.checks.filter(c => !c.pass).map(c => `${c.check}${c.detail ? ': ' + c.detail : ''}`).join(' | ')
       console.warn(`[validator] slide ${sv.slideIndex} (${sv.composition}): ${fails}`)
     }
+  }
+
+  // ── Post-generation self-repair: fix max_chars FAILs in the live deck ────────
+  for (let repairPass = 0; repairPass < 2 && !validation.pass; repairPass++) {
+    const targets = collectRepairTargets(validation, plan, slotObjectIds)
+    if (targets.length === 0) break
+
+    console.warn(`[repair] pass ${repairPass + 1}: ${targets.length} max_chars violation(s) — calling LLM`)
+    let fixes: Array<{ id: string; value: string }> = []
+    try {
+      fixes = await fixOverflowSlots(targets.map(t => ({
+        id:          t.objectId,
+        slotName:    t.slotName,
+        currentText: t.currentText,
+        limit:       t.limit,
+      })))
+    } catch (e) {
+      console.warn('[repair] LLM call failed:', e instanceof Error ? e.message : String(e))
+      break
+    }
+
+    const validFixes = fixes.filter(f => {
+      const t = targets.find(t => t.objectId === f.id)
+      if (!t) return false
+      if (f.value.length > t.limit) {
+        console.warn(`[repair] ${t.slotName}: LLM fix still ${f.value.length}>${t.limit}`)
+        return false
+      }
+      return true
+    })
+
+    if (validFixes.length === 0) { console.warn('[repair] no valid fixes produced'); break }
+
+    await slidesApi.presentations.batchUpdate({
+      presentationId,
+      requestBody: {
+        requests: validFixes.flatMap(f => [
+          { deleteText: { objectId: f.id, textRange: { type: 'ALL' } } },
+          { insertText: { objectId: f.id, insertionIndex: 0, text: f.value } },
+        ]),
+      },
+    })
+
+    for (const f of validFixes) {
+      const t = targets.find(t => t.objectId === f.id)!
+      plan.slides[t.slideIndex].slots[t.slotName] = f.value
+    }
+
+    console.log(`[repair] applied ${validFixes.length}/${targets.length} fix(es) — re-validating`)
+    validation = await validateDeck(slidesApi, presentationId, plan, planPageIds)
+    console.log('[validator after repair]', validation.summary)
   }
 
   const compositions = [...new Set(plan.slides.map(s => s.composition))].join(', ')

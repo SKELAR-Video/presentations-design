@@ -25,7 +25,17 @@ export type SlidePlan = {
 export type CompositionSlot = {
   name: string
   type: 'text' | 'image'
-  max_chars?: number
+  // ── Content limits ──────────────────────────────────────────────────────────
+  max_chars?: number    // hard char limit — enforced by LLM prompt + validator
+  // ── Anchored grow-to-fit model ──────────────────────────────────────────────
+  // Each free text box has a fixed anchor (top-left) and grows right+down.
+  // Truncation (max_chars) is the last resort, not the default.
+  anchor?: { x: number; y: number }  // fixed top-left corner, Figma px
+  max_w?: number        // max grow width from anchor (Figma px)
+  max_h?: number        // max grow height from anchor (Figma px)
+  float_after?: string  // name of slot whose bottom-edge this box anchors below
+  float_gap?: number    // gap (Figma px) between float target's bottom and this box top
+  // ── Presentation style / meta ───────────────────────────────────────────────
   style?: string
   optional?: boolean
   ratio?: string

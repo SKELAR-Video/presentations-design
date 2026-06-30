@@ -8,8 +8,10 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     when_to_use: 'перший слайд презентації',
     themes: ['dark', 'red', 'light'],
     slots: [
-      { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 60, style: 'h1' },
-      { name: 'ДАТА', type: 'text', max_chars: 20, style: 'caption' },
+      // Anchor fixed at (PAD, PAD) = (100, 100); grows down to max_h before truncation
+      { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 60, anchor: { x: 100, y: 100 }, max_w: 1720, max_h: 400, style: 'h1' },
+      // Floats below ЗАГОЛОВОК (y = ЗАГОЛОВОК.bottom + float_gap), full-width
+      { name: 'ДАТА', type: 'text', max_chars: 20, anchor: { x: 100, y: 100 }, max_w: 1720, max_h: 80, float_after: 'ЗАГОЛОВОК', float_gap: 30, style: 'caption' },
       { name: 'ЗОБРАЖЕННЯ_1', type: 'image', ratio: '16:9', role: 'background' },
     ],
   },

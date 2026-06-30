@@ -162,9 +162,12 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
   switch (compId) {
 
     case 'cover': {
+      // H1_MAX must match compositions.ts cover.ЗАГОЛОВОК.max_h (= 400)
+      // Nominal ДАТА position (PAD + H1_MAX + GAP) is overridden dynamically in lib/google.ts
+      const H1_MAX = 400
       push(
-        tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, UW, 320, 44),
-        tb(mk(), slideId, 'ДАТА', PAD, H - PAD - 52, 500, 52, 18, MUTED),
+        tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, UW, H1_MAX, 44),
+        tb(mk(), slideId, 'ДАТА', PAD, PAD + H1_MAX + GAP, UW, 60, 18, MUTED),
       )
       break
     }
