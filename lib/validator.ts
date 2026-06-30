@@ -245,6 +245,74 @@ function checkCoverLayout(slide: slides_v1.Schema$Page): CheckResult {
   }
 }
 
+// ── Bento card layout (plan-level) ───────────────────────────────────────────
+// Verifies that the uniform font size chosen for a bento row is > 10pt and that
+// the longest card text doesn't overflow. Fills cannot be checked here (spacing
+// is applied by the generation pipeline; see lib/google.ts bentoParagraphSpacingPt).
+const _V_PAD = 100, _V_UW = 1720, _V_GAP = 30, _V_INN = 30, _V_TH = 100, _V_TG = 100, _V_CH = 1080 - _V_PAD - (_V_PAD + _V_TH + _V_TG)  // 680
+const _V_RBW = 860, _V_RBH = 1080 - 2 * _V_PAD  // 880
+
+function _vBentoDims(compId: string): { w: number; h: number } | null {
+  if (compId === 'two_columns')     { const cw = Math.floor((_V_UW - _V_GAP) / 2);   return { w: cw - 2*_V_INN, h: _V_CH - 2*_V_INN } }
+  if (compId === 'three_columns')   { const cw = Math.floor((_V_UW - 2*_V_GAP) / 3); return { w: cw - 2*_V_INN, h: _V_CH - 2*_V_INN } }
+  if (compId === 'bento_right_2')   { const ch = Math.floor((_V_RBH - _V_GAP) / 2);  return { w: _V_RBW - 2*_V_INN, h: ch - 2*_V_INN } }
+  if (compId === 'bento_right_3')   { const ch = Math.floor((_V_RBH - 2*_V_GAP) / 3);return { w: _V_RBW - 2*_V_INN, h: ch - 2*_V_INN } }
+  if (compId === 'bento_right_2x2') { const cw = Math.floor((_V_RBW - _V_GAP) / 2); const ch = Math.floor((_V_RBH - _V_GAP) / 2); return { w: cw - 2*_V_INN, h: ch - 2*_V_INN } }
+  return null
+}
+
+const _V_BENTO_TOKENS: Record<string, string[]> = {
+  two_columns:     ['КОЛОНКА_1', 'КОЛОНКА_2'],
+  three_columns:   ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3'],
+  bento_right_2:   ['КАРТКА_1', 'КАРТКА_2'],
+  bento_right_3:   ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3'],
+  bento_right_2x2: ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
+}
+
+const _V_BENTO_MAX_PT: Record<string, number> = {
+  two_columns: 48, three_columns: 28, bento_right_2: 36, bento_right_3: 22, bento_right_2x2: 22,
+}
+
+function _vTextFits(text: string, wPx: number, hPx: number, pt: number): boolean {
+  if (!text.trim()) return true
+  const px = pt * 2.667
+  const cpl = Math.max(1, Math.floor(wPx / (px * 0.48)))
+  const maxLines = Math.max(1, Math.floor(hPx / (px * 1.4)))
+  const words = text.split(/\s+/).filter(Boolean)
+  let lines = 1, cur = 0
+  for (const w of words) {
+    if (!cur) { cur = w.length }
+    else if (cur + 1 + w.length <= cpl) { cur += 1 + w.length }
+    else { lines++; cur = w.length }
+  }
+  return lines <= maxLines
+}
+
+function checkBentoLayout(compId: string, slots: Record<string, string>): CheckResult {
+  const dims   = _vBentoDims(compId)
+  const tokens = _V_BENTO_TOKENS[compId]
+  const maxPt  = _V_BENTO_MAX_PT[compId]
+  if (!dims || !tokens || !maxPt) return { check: 'bento_layout', pass: true, detail: 'n/a' }
+
+  const scale = [48, 36, 28, 22, 18, 14, 10].filter(s => s <= maxPt)
+  let uniformPt = scale[scale.length - 1]
+  for (const pt of scale) {
+    if (tokens.every(t => _vTextFits(slots[t] ?? '', dims.w, dims.h, pt))) { uniformPt = pt; break }
+  }
+
+  const fails: string[] = []
+  if (uniformPt < 12) fails.push(`font too small (${uniformPt}pt) — text likely too long`)
+  for (const tok of tokens) {
+    const text = (slots[tok] ?? '').trim()
+    if (!text) continue
+    if (!_vTextFits(text, dims.w, dims.h, uniformPt)) {
+      fails.push(`${tok}: overflows at ${uniformPt}pt`)
+    }
+  }
+
+  return { check: 'bento_layout', pass: fails.length === 0, detail: fails.join('; ') || `pt=${uniformPt}` }
+}
+
 function checkTheme(plan: SlidePlan): CheckResult {
   const themes = new Set(plan.slides.map(s => s.theme ?? plan.theme))
   const pass   = themes.size <= 1
@@ -296,6 +364,10 @@ export async function validateDeck(
 
     if (compId === 'cover') {
       checks.push(checkCoverLayout(slide))
+    }
+
+    if (_V_BENTO_TOKENS[compId]) {
+      checks.push(checkBentoLayout(compId, planSlide.slots))
     }
 
     // theme_consistency is deck-level; attach to slide 0

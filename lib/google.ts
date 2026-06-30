@@ -51,15 +51,19 @@ const BENTO_TOKENS: Record<string, string[]> = {
   bento_right_2x2: ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
 }
 
-const BENTO_DEFAULT_PT: Record<string, number> = {
-  two_columns:     18,
-  three_columns:   18,
-  bento_right_2:   18,
-  bento_right_3:   18,
-  bento_right_2x2: 18,
+// Role-max font size per composition (start here; shrink only if text overflows).
+// Values from Figma: 2-card → 48pt possible for short text, 3-card → 28pt ceiling.
+const BENTO_MAX_PT: Record<string, number> = {
+  two_columns:     48,
+  three_columns:   28,
+  bento_right_2:   36,
+  bento_right_3:   22,
+  bento_right_2x2: 22,
 }
 
 const FONT_STEPS = [22, 18, 14, 10] as const
+// Full scale including large sizes for upward scaling
+const BENTO_SCALE = [48, 36, 28, 22, 18, 14, 10] as const
 
 function textFits(text: string, wPx: number, hPx: number, pt: number): boolean {
   if (!text.trim()) return true
@@ -443,17 +447,39 @@ function buildCoverFloatRequests(
   return reqs
 }
 
-// Returns the largest step (≤ defaultPt) at which every bento card on the slide fits.
+// Returns the LARGEST pt (≤ BENTO_MAX_PT) at which every non-empty bento card fits.
+// Scales UP to role max when text is short; shrinks only when needed.
+// All cards in the row share ONE pt so the layout looks uniform.
 function pickBentoPt(compId: string, slots: Record<string, string>): number | null {
-  const dims = bentoDims(compId)
+  const dims   = bentoDims(compId)
   const tokens = BENTO_TOKENS[compId]
-  const defPt = BENTO_DEFAULT_PT[compId]
-  if (!dims || !tokens || !defPt) return null
-  const steps = FONT_STEPS.filter(s => s <= defPt)
-  for (const pt of steps) {
+  const maxPt  = BENTO_MAX_PT[compId]
+  if (!dims || !tokens || !maxPt) return null
+  const scale = (BENTO_SCALE as readonly number[]).filter(s => s <= maxPt)
+  for (const pt of scale) {
     if (tokens.every(t => textFits(slots[t] ?? '', dims.w, dims.h, pt))) return pt
   }
-  return steps[steps.length - 1]  // 14 pt — smallest step, use regardless
+  return scale[scale.length - 1]
+}
+
+// Vertical fill: distribute leftover card height as equal spaceAbove + spaceBelow per paragraph.
+// Returns the PT value to set on each paragraph (0 if naturalH already ≥ 85% of innerH).
+// Formula: total_added = nP × 2 × spaceAbovePt × 2.667 = extra → spaceAbovePt = extra / (2×nP×2.667)
+function bentoParagraphSpacingPt(
+  text: string,
+  pt: number,
+  innerW: number,
+  innerH: number,
+): number {
+  if (!text.trim()) return 0
+  const paragraphs = text.split('\n').filter(p => p.trim())
+  const nP = paragraphs.length
+  if (nP === 0) return 0
+  const totalLines = paragraphs.reduce((sum, p) => sum + estimateLineCount(p, innerW, pt), 0)
+  const naturalH   = totalLines * lineH(pt)
+  if (naturalH >= innerH * 0.85) return 0  // already fills enough
+  const extra = innerH - naturalH
+  return Math.max(1, Math.round(extra / (2 * nP * 2.667)))
 }
 
 // ─── Post-generation self-repair ─────────────────────────────────────────────
@@ -785,8 +811,32 @@ export async function buildPresentation(
         },
       })
 
-      // 2. Value+label (number + description) OR plain colon-split
       const slotValue = slots[matchedToken] ?? ''
+
+      // 2. Vertical fill: if text block < 85% of inner card height, distribute the
+      // leftover space as equal spaceAbove + spaceBelow per paragraph so content
+      // spans the full card height (no text-clusters-at-top / large empty bottom).
+      {
+        const dims = bentoDims(compId)
+        if (dims) {
+          const spacePt = bentoParagraphSpacingPt(slotValue, pt, dims.w, dims.h)
+          if (spacePt > 0) {
+            requests.push({
+              updateParagraphStyle: {
+                objectId: el.objectId,
+                style: {
+                  spaceAbove: { magnitude: spacePt, unit: 'PT' },
+                  spaceBelow: { magnitude: spacePt, unit: 'PT' },
+                },
+                fields: 'spaceAbove,spaceBelow',
+                textRange: { type: 'ALL' },
+              },
+            })
+          }
+        }
+      }
+
+      // 3. Value+label (number + description) OR plain colon-split
       const split = splitValueLabel(slotValue)
       if (split) {
         // Large value (number/metric) → white; small label → inherits muted from template
