@@ -699,6 +699,9 @@ export async function buildPresentation(
   const keepSet = new Set(planPageIds.filter(Boolean))
 
   const requests: object[] = []
+  // Paragraph spacing requests are sent in a SEPARATE batchUpdate after replaceAllText
+  // to ensure styles apply to final text content (not the template token).
+  const paragraphSpacingRequests: object[] = []
 
   // Delete slides not needed by the plan
   for (const slide of updatedSlides) {
@@ -813,15 +816,14 @@ export async function buildPresentation(
 
       const slotValue = slots[matchedToken] ?? ''
 
-      // 2. Vertical fill: if text block < 85% of inner card height, distribute the
-      // leftover space as equal spaceAbove + spaceBelow per paragraph so content
-      // spans the full card height (no text-clusters-at-top / large empty bottom).
+      // 2. Vertical fill: sent in a second batchUpdate (after replaceAllText completes)
+      // so paragraph styles are applied to the final text, not the template token.
       {
         const dims = bentoDims(compId)
         if (dims) {
           const spacePt = bentoParagraphSpacingPt(slotValue, pt, dims.w, dims.h)
           if (spacePt > 0) {
-            requests.push({
+            paragraphSpacingRequests.push({
               updateParagraphStyle: {
                 objectId: el.objectId,
                 style: {
@@ -1061,6 +1063,16 @@ export async function buildPresentation(
     await slidesApi.presentations.batchUpdate({
       presentationId,
       requestBody: { requests },
+    })
+  }
+
+  // Paragraph spacing — separate batch; must run AFTER replaceAllText so styles
+  // target the final text (not the {{TOKEN}} placeholder).
+  if (paragraphSpacingRequests.length > 0) {
+    console.log(`[bento-spacing] applying ${paragraphSpacingRequests.length} paragraph spacing request(s)`)
+    await slidesApi.presentations.batchUpdate({
+      presentationId,
+      requestBody: { requests: paragraphSpacingRequests },
     })
   }
 

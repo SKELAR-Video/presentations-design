@@ -288,6 +288,19 @@ function _vTextFits(text: string, wPx: number, hPx: number, pt: number): boolean
   return lines <= maxLines
 }
 
+function _vEstimateLines(text: string, wPx: number, pt: number): number {
+  if (!text.trim()) return 0
+  const cpl = Math.max(1, Math.floor(wPx / (pt * 2.667 * 0.48)))
+  const words = text.split(/\s+/).filter(Boolean)
+  let lines = 1, cur = 0
+  for (const w of words) {
+    if (!cur) cur = w.length
+    else if (cur + 1 + w.length <= cpl) cur += 1 + w.length
+    else { lines++; cur = w.length }
+  }
+  return lines
+}
+
 function checkBentoLayout(compId: string, slots: Record<string, string>): CheckResult {
   const dims   = _vBentoDims(compId)
   const tokens = _V_BENTO_TOKENS[compId]
@@ -302,15 +315,26 @@ function checkBentoLayout(compId: string, slots: Record<string, string>): CheckR
 
   const fails: string[] = []
   if (uniformPt < 12) fails.push(`font too small (${uniformPt}pt) — text likely too long`)
+
+  const fillInfo: string[] = []
   for (const tok of tokens) {
     const text = (slots[tok] ?? '').trim()
     if (!text) continue
     if (!_vTextFits(text, dims.w, dims.h, uniformPt)) {
       fails.push(`${tok}: overflows at ${uniformPt}pt`)
+    } else {
+      const paragraphs = text.split('\n').filter(p => p.trim())
+      const totalLines = paragraphs.reduce((s, p) => s + _vEstimateLines(p, dims.w, uniformPt), 0)
+      const naturalH   = totalLines * uniformPt * 2.667 * 1.4
+      const fillPct    = Math.round(naturalH / dims.h * 100)
+      fillInfo.push(`${tok}=${fillPct}%`)
     }
   }
 
-  return { check: 'bento_layout', pass: fails.length === 0, detail: fails.join('; ') || `pt=${uniformPt}` }
+  const detail = fails.length > 0
+    ? fails.join('; ')
+    : `pt=${uniformPt} fills:${fillInfo.join(' ')}`
+  return { check: 'bento_layout', pass: fails.length === 0, detail }
 }
 
 function checkTheme(plan: SlidePlan): CheckResult {
