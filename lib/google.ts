@@ -419,30 +419,45 @@ function buildKpiUpdateRequests(
   return reqs
 }
 
-// ─── Cover: float ДАТА below ЗАГОЛОВОК ───────────────────────────────────────
-// Computes actual title height from text, resizes ЗАГОЛОВОК, then anchors ДАТА
-// right below it with a gap. Constants must mirror compositions.ts cover slots.
+// ─── Cover: float ПІДЗАГОЛОВОК below ЗАГОЛОВОК, ДАТА below ПІДЗАГОЛОВОК ──────
+// Chain: ЗАГОЛОВОК (44pt) → gap 20px → ПІДЗАГОЛОВОК (22pt, optional) → gap 30px → ДАТА (18pt)
+// Constants must mirror compositions.ts cover slots and create-master/route.ts.
 const _COVER_H1_PT   = 44
 const _COVER_H1_W    = _UW        // 1720
 const _COVER_H1_MAX  = 400        // compositions.ts cover.ЗАГОЛОВОК.max_h
+const _COVER_SUB_PT  = 22
+const _COVER_SUB_MAX = 200        // compositions.ts cover.ПІДЗАГОЛОВОК.max_h
+const _COVER_SUB_GAP = 20        // gap between ЗАГОЛОВОК and ПІДЗАГОЛОВОК
 const _COVER_DATE_PT = 18
 const _COVER_DATE_MAX= 80         // compositions.ts cover.ДАТА.max_h
-const _COVER_GAP     = 30         // compositions.ts cover.ДАТА.float_gap
+const _COVER_GAP     = 30         // gap between last text block and ДАТА
 
 function buildCoverFloatRequests(
   slide: slides_v1.Schema$Page,
   slots: Record<string, string>,
 ): object[] {
-  const titleText = (slots['ЗАГОЛОВОК'] ?? '').trim()
-  const dateText  = (slots['ДАТА']      ?? '').trim()
-  if (!titleText && !dateText) return []
+  const titleText = (slots['ЗАГОЛОВОК']    ?? '').trim()
+  const subText   = (slots['ПІДЗАГОЛОВОК'] ?? '').trim()
+  const dateText  = (slots['ДАТА']         ?? '').trim()
+  if (!titleText && !subText && !dateText) return []
 
+  // ЗАГОЛОВОК: compute actual rendered height
   const titleLines = estimateLineCount(titleText, _COVER_H1_W, _COVER_H1_PT)
-  const titleH     = Math.min(_COVER_H1_MAX,  Math.max(1, Math.ceil(titleLines * lineH(_COVER_H1_PT)))  + 4)
+  const titleH     = Math.min(_COVER_H1_MAX, Math.max(1, Math.ceil(titleLines * lineH(_COVER_H1_PT))) + 4)
 
-  const dateLines  = estimateLineCount(dateText,  _COVER_H1_W, _COVER_DATE_PT)
-  const dateH      = Math.min(_COVER_DATE_MAX, Math.max(1, Math.ceil(dateLines  * lineH(_COVER_DATE_PT))) + 4)
-  const dateY      = _PAD + titleH + _COVER_GAP
+  // ПІДЗАГОЛОВОК: compute height only when present
+  const subLines = subText ? estimateLineCount(subText, _COVER_H1_W, _COVER_SUB_PT) : 0
+  const subH     = subText
+    ? Math.min(_COVER_SUB_MAX, Math.max(1, Math.ceil(subLines * lineH(_COVER_SUB_PT))) + 4)
+    : 1   // collapse to 1px when absent so it doesn't affect layout
+  const subY     = _PAD + titleH + (subText ? _COVER_SUB_GAP : 0)
+
+  // ДАТА: floats below ПІДЗАГОЛОВОК (or ЗАГОЛОВОК if subtitle absent)
+  const dateLines = estimateLineCount(dateText, _COVER_H1_W, _COVER_DATE_PT)
+  const dateH     = Math.min(_COVER_DATE_MAX, Math.max(1, Math.ceil(dateLines * lineH(_COVER_DATE_PT))) + 4)
+  const dateY     = subText
+    ? subY + subH + _COVER_GAP
+    : _PAD + titleH + _COVER_GAP
 
   const reqs: object[] = []
   for (const el of slide.pageElements ?? []) {
@@ -452,6 +467,9 @@ function buildCoverFloatRequests(
     const sH  = el.size.height?.magnitude ?? 0
     if (raw.includes('{{ЗАГОЛОВОК}}')) {
       reqs.push(makeElemTransform(el.objectId, _PAD, _PAD, _COVER_H1_W, titleH, sW, sH))
+    }
+    if (raw.includes('{{ПІДЗАГОЛОВОК}}')) {
+      reqs.push(makeElemTransform(el.objectId, _PAD, subY, _COVER_H1_W, subH, sW, sH))
     }
     if (raw.includes('{{ДАТА}}')) {
       reqs.push(makeElemTransform(el.objectId, _PAD, dateY, _COVER_H1_W, dateH, sW, sH))

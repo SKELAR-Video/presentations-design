@@ -113,6 +113,28 @@ function checkMaxChars(slots: Record<string, string>, compId: string): CheckResu
   return { check: 'max_chars', pass: fails.length === 0, detail: fails.join('; ') || undefined }
 }
 
+// Invariant: every non-empty input slot must map to a known slot in the composition.
+// If a slot is provided but not defined → text is silently lost → FAIL.
+function checkContentIntegrity(slots: Record<string, string>, compId: string): CheckResult {
+  const comp = getComposition(compId)
+  if (!comp) return { check: 'content_integrity', pass: true, detail: 'composition not found — skipped' }
+  const known = new Set(comp.slots.map(s => s.name))
+  const lost: string[] = []
+  for (const [name, value] of Object.entries(slots)) {
+    if (!(value ?? '').trim()) continue           // empty — nothing to lose
+    if (name.startsWith('ЗОБРАЖЕННЯ_')) continue  // image slots are always ignored
+    if (!known.has(name)) {
+      const preview = value.length > 40 ? value.slice(0, 40) + '…' : value
+      lost.push(`${name}: "${preview}"`)
+    }
+  }
+  return {
+    check: 'content_integrity',
+    pass: lost.length === 0,
+    detail: lost.length > 0 ? `unmapped slots — content silently lost: ${lost.join('; ')}` : undefined,
+  }
+}
+
 function checkBadge(slide: slides_v1.Schema$Page): CheckResult {
   const BADGE_X = 1730, BADGE_Y = 100, BADGE_TOL = 25
   for (const el of slide.pageElements ?? []) {
@@ -414,6 +436,7 @@ export async function validateDeck(
     checks.push(checkAutofit(slide))
     checks.push(checkFont(slide))
     checks.push(checkMaxChars(planSlide.slots, compId))
+    checks.push(checkContentIntegrity(planSlide.slots, compId))
     checks.push(checkBadge(slide))
 
     if (compId === 'kpi_cards') {
