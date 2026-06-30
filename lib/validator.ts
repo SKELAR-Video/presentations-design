@@ -168,8 +168,8 @@ function checkKpiGap(slide: slides_v1.Schema$Page, gapMin: number): CheckResult 
   }
 }
 
-// kpi_cards: card row must span full content width (PAD→PAD+UW), fill to bottom,
-// and maintain a comfortable gap from the title area.
+// kpi_cards: card row must span full content width (PAD→PAD+UW) and start below
+// the title+TG zone. Bottom is NOT checked — cards are content-sized and centred.
 function checkKpiCardRowGeometry(slide: slides_v1.Schema$Page): CheckResult {
   const PAD = 100, UW = 1720, H = 1080, TG = 100, TH = 100
   const TOL = 20
@@ -197,12 +197,6 @@ function checkKpiCardRowGeometry(slide: slides_v1.Schema$Page): CheckResult {
   }
   if (Math.abs(maxRight - (PAD + UW)) > TOL) {
     fails.push(`right edge x=${maxRight} ≠ PAD+UW(${PAD + UW})`)
-  }
-
-  // Cards must reach the bottom margin
-  const maxBottom = Math.max(...cardBgs.map(c => c.y + c.h))
-  if (maxBottom < H - PAD - TOL) {
-    fails.push(`bottom=${maxBottom} < H-PAD(${H - PAD})`)
   }
 
   // Comfortable gap (TG) between title area and card row
