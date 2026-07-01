@@ -436,15 +436,20 @@ function buildKpiUpdateRequests(
   return reqs
 }
 
+// ─── Universal fixed gap: ЗАГОЛОВОК bottom → ПІДЗАГОЛОВОК/ТЕКСТ top ─────────
+// Applied to all compositions that have ЗАГОЛОВОК + subtitle/body below it.
+// 60px on the 1920×1080 Figma grid. Must stay in sync with compositions.ts float_gap.
+const TITLE_GAP = 60
+
 // ─── Cover: float ПІДЗАГОЛОВОК below ЗАГОЛОВОК, ДАТА below ПІДЗАГОЛОВОК ──────
-// Chain: ЗАГОЛОВОК (44pt) → gap 20px → ПІДЗАГОЛОВОК (22pt, optional) → gap 30px → ДАТА (18pt)
+// Chain: ЗАГОЛОВОК (44pt) → gap 60px → ПІДЗАГОЛОВОК (22pt, optional) → gap 30px → ДАТА (18pt)
 // Constants must mirror compositions.ts cover slots and create-master/route.ts.
 const _COVER_H1_PT   = 44
 const _COVER_H1_W    = _TITLE_W   // 1610 — avoids logo reserved zone
 const _COVER_H1_MAX  = 400        // compositions.ts cover.ЗАГОЛОВОК.max_h
 const _COVER_SUB_PT  = 22
 const _COVER_SUB_MAX = 200        // compositions.ts cover.ПІДЗАГОЛОВОК.max_h
-const _COVER_SUB_GAP = 20        // gap between ЗАГОЛОВОК and ПІДЗАГОЛОВОК
+const _COVER_SUB_GAP = TITLE_GAP  // 60px — fixed, same on every composition
 const _COVER_DATE_PT = 18
 const _COVER_DATE_MAX= 80         // compositions.ts cover.ДАТА.max_h
 const _COVER_GAP     = 30         // gap between last text block and ДАТА
@@ -500,7 +505,7 @@ function buildCoverFloatRequests(
 // it overflows into ТЕКСТ. This function pins ТЕКСТ strictly below ЗАГОЛОВОК.
 const _BENTO_RIGHT_H1_PT    = 44
 const _BENTO_RIGHT_H1_H_MAX = 400  // allows up to 3 lines at 44pt (actual lineH ≈127px × 3 = 381)
-const _BENTO_RIGHT_TITLE_GAP = _GAP // 30px
+const _BENTO_RIGHT_TITLE_GAP = TITLE_GAP  // 60px — matches universal TITLE_GAP
 
 function buildBentoRightLeftColumnRequests(
   slide: slides_v1.Schema$Page,
@@ -534,6 +539,79 @@ function buildBentoRightLeftColumnRequests(
     }
     if (bodyText && raw.includes('{{ТЕКСТ}}')) {
       reqs.push(makeElemTransform(el.objectId, _PAD, textY, _LTW, textMaxH, sW, sH))
+    }
+  }
+  return reqs
+}
+
+// ─── section/section_red: float ПІДЗАГОЛОВОК below ЗАГОЛОВОК ─────────────────
+// Master has ЗАГОЛОВОК at y=100 h=260, ПІДЗАГОЛОВОК fixed at y=390 (100+260+30).
+// At runtime ПІДЗАГОЛОВОК top = bottom-of-actual-title + TITLE_GAP (60px).
+const _SECTION_H1_PT   = 44
+const _SECTION_H1_MAX  = 400   // up to ~3 lines at 44pt
+const _SECTION_SUB_MAX = 160   // from create-master/route.ts
+
+function buildSectionFloatRequests(
+  slide: slides_v1.Schema$Page,
+  slots: Record<string, string>,
+): object[] {
+  const titleText = (slots['ЗАГОЛОВОК']    ?? '').trim()
+  const subText   = (slots['ПІДЗАГОЛОВОК'] ?? '').trim()
+  if (!titleText) return []
+
+  const h1LineH    = Math.round(_SECTION_H1_PT * 2.667 * 1.08)
+  const titleLines = estimateLineCount(titleText, _TITLE_W, _SECTION_H1_PT)
+  const titleH     = Math.min(_SECTION_H1_MAX, titleLines * h1LineH + 4)
+  const subY       = _PAD + titleH + TITLE_GAP
+
+  const reqs: object[] = []
+  for (const el of slide.pageElements ?? []) {
+    if (el.shape?.shapeType !== 'TEXT_BOX' || !el.objectId || !el.transform || !el.size) continue
+    const raw = (el.shape?.text?.textElements ?? []).map(te => te.textRun?.content ?? '').join('')
+    const sW  = el.size.width?.magnitude  ?? 0
+    const sH  = el.size.height?.magnitude ?? 0
+    if (raw.includes('{{ЗАГОЛОВОК}}')) {
+      reqs.push(makeElemTransform(el.objectId, _PAD, _PAD, _TITLE_W, titleH, sW, sH))
+    }
+    if (subText && raw.includes('{{ПІДЗАГОЛОВОК}}')) {
+      reqs.push(makeElemTransform(el.objectId, _PAD, subY, _UW, _SECTION_SUB_MAX, sW, sH))
+    }
+  }
+  return reqs
+}
+
+// ─── title_body: float ТЕКСТ below ЗАГОЛОВОК ──────────────────────────────────
+// Master has ЗАГОЛОВОК at y=100 h=TH(100) (36pt), ТЕКСТ fixed at CY=300.
+// At runtime ТЕКСТ top = bottom-of-actual-title + TITLE_GAP (60px).
+const _TITLE_BODY_H1_PT  = 36
+const _TITLE_BODY_H1_MAX = 300  // generous: 36pt × 3 lines ≈ 338px
+
+function buildTitleBodyFloatRequests(
+  slide: slides_v1.Schema$Page,
+  slots: Record<string, string>,
+): object[] {
+  const titleText = (slots['ЗАГОЛОВОК'] ?? '').trim()
+  const bodyText  = (slots['ТЕКСТ']     ?? '').trim()
+  if (!titleText) return []
+
+  const h1LineH    = Math.round(_TITLE_BODY_H1_PT * 2.667 * 1.08)
+  const titleLines = estimateLineCount(titleText, _TITLE_W, _TITLE_BODY_H1_PT)
+  const titleH     = Math.min(_TITLE_BODY_H1_MAX, titleLines * h1LineH + 4)
+  const textY      = _PAD + titleH + TITLE_GAP
+  // Leave GAP (30px) above ПІДПИС which is fixed at H-PAD-52 = 928
+  const textMaxH   = Math.max(1, _H_SLIDE - _PAD - 52 - _GAP - textY)
+
+  const reqs: object[] = []
+  for (const el of slide.pageElements ?? []) {
+    if (el.shape?.shapeType !== 'TEXT_BOX' || !el.objectId || !el.transform || !el.size) continue
+    const raw = (el.shape?.text?.textElements ?? []).map(te => te.textRun?.content ?? '').join('')
+    const sW  = el.size.width?.magnitude  ?? 0
+    const sH  = el.size.height?.magnitude ?? 0
+    if (raw.includes('{{ЗАГОЛОВОК}}')) {
+      reqs.push(makeElemTransform(el.objectId, _PAD, _PAD, _TITLE_W, titleH, sW, sH))
+    }
+    if (bodyText && raw.includes('{{ТЕКСТ}}')) {
+      reqs.push(makeElemTransform(el.objectId, _PAD, textY, _UW, textMaxH, sW, sH))
     }
   }
   return reqs
@@ -1206,12 +1284,34 @@ export async function buildPresentation(
     requests.push(...buildBentoRightLeftColumnRequests(slide, plan.slides[i].slots))
   }
 
-  // ── Title logo-safe resize: clamp ЗАГОЛОВОК to _TITLE_W=1610 ────────────────────
-  // Fixes old-master slides (title right=1820) without requiring master regeneration.
-  // Cover: handled above by buildCoverFloatRequests. bento_right_*: safe (w=LTW=830).
+  // ── section/section_red: float ПІДЗАГОЛОВОК below ЗАГОЛОВОК (gap = TITLE_GAP) ────
   for (let i = 0; i < plan.slides.length; i++) {
     const compId = plan.slides[i].composition
-    if (compId === 'cover' || compId.startsWith('bento_right_')) continue
+    if (compId !== 'section' && compId !== 'section_red') continue
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    const slide = updatedSlides.find(s => s.objectId === pageId)
+    if (!slide) continue
+    requests.push(...buildSectionFloatRequests(slide, plan.slides[i].slots))
+  }
+
+  // ── title_body: float ТЕКСТ below ЗАГОЛОВОК (gap = TITLE_GAP) ────────────────────
+  for (let i = 0; i < plan.slides.length; i++) {
+    if (plan.slides[i].composition !== 'title_body') continue
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    const slide = updatedSlides.find(s => s.objectId === pageId)
+    if (!slide) continue
+    requests.push(...buildTitleBodyFloatRequests(slide, plan.slides[i].slots))
+  }
+
+  // ── Title logo-safe resize: clamp ЗАГОЛОВОК to _TITLE_W=1610 ────────────────────
+  // Fixes old-master slides (title right=1820) without requiring master regeneration.
+  // Cover / bento_right / section / title_body: handled above by their float functions.
+  for (let i = 0; i < plan.slides.length; i++) {
+    const compId = plan.slides[i].composition
+    if (compId === 'cover' || compId.startsWith('bento_right_') ||
+        compId === 'section' || compId === 'section_red' || compId === 'title_body') continue
     const titleObjId = slotObjectIds[i]?.['ЗАГОЛОВОК']
     if (!titleObjId) continue
     const pageId = planPageIds[i]
