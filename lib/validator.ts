@@ -170,8 +170,10 @@ function checkContentIntegrity(
     const isKpiValue = /^КАРТКА_\d+_ЗНАЧЕННЯ$/.test(name)
     const lines = v.split('\n').map(l => l.trim()).filter(Boolean)
     for (const line of lines) {
-      const verbatimOk = sourceText.includes(line)
-      const compactOk  = isKpiValue && isCompactNumberMatch(line, sourceText)
+      // NBSP (U+00A0) inserted by addNbsp is a display-only transform — treat as space for verbatim check.
+      const normalized = line.replace(/ /g, ' ')
+      const verbatimOk = sourceText.includes(normalized)
+      const compactOk  = isKpiValue && isCompactNumberMatch(normalized, sourceText)
       if (!verbatimOk && !compactOk) {
         const preview = line.length > 60 ? line.slice(0, 60) + '…' : line
         fails.push(`${name}: non-verbatim line — "${preview}"`)

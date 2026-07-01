@@ -529,6 +529,28 @@ export function compactNumber(text: string): string {
   return prefix + (v % 1 === 0 ? String(Math.round(v)) : v.toFixed(1)) + 'M' + suffix
 }
 
+// ─── Non-breaking space: hanging short words ────────────────────────────────
+// Replaces the regular space AFTER any all-letter word of 1–4 chars with NBSP
+// so that word cannot be the last token on a wrapped line.
+// Only all-letter words qualify; numeric tokens (digits) are never touched.
+// Last word in text has no space following it → is not affected (correct).
+// Applied to every text slot (titles, body, bullets, captions).
+export function addNbsp(text: string): string {
+  if (!text) return text
+  // Negative lookbehind ensures we match only complete words, not fragments of longer words.
+  // The space after the short word is replaced with U+00A0.
+  return text.replace(
+    /(?<![А-ЯЁІЇЄҐа-яёіїєґA-Za-z0-9])([А-ЯЁІЇЄҐа-яёіїєґA-Za-z]{1,4}) (?=\S)/g,
+    (_, word) => word + ' ',
+  )
+}
+
+// Strips a trailing period from heading text.
+// Preserves '?', '!', '…' (U+2026), and '...' (last dot preceded by dot → kept).
+function stripTrailingPeriod(text: string): string {
+  return text.replace(/(?<!\.)\.$/u, '')
+}
+
 // ─── Bento card content preprocessing ────────────────────────────────────────
 // Converts " · " list separators to proper bullet lines ("• item\n• item").
 // Applied before replaceAllText so font sizing also accounts for the converted text.
@@ -1049,7 +1071,9 @@ export async function buildPresentation(
     // Replace filled slots (bento card tokens use preprocessed text)
     for (const [slotName, slotValue] of Object.entries(slideSlots)) {
       if (!slotValue || slotName.startsWith('ЗОБРАЖЕННЯ')) continue
-      const replaceText = processedSlots?.[slotName] ?? slotValue
+      let replaceText = processedSlots?.[slotName] ?? slotValue
+      if (slotName === 'ЗАГОЛОВОК') replaceText = stripTrailingPeriod(replaceText)
+      replaceText = addNbsp(replaceText)
       requests.push({
         replaceAllText: {
           containsText: { text: `{{${slotName}}}`, matchCase: true },
