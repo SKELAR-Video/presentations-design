@@ -9,11 +9,12 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark', 'red', 'light'],
     slots: [
       // Anchor fixed at (PAD, PAD) = (100, 100); grows down to max_h before truncation
-      { name: 'ЗАГОЛОВОК',    type: 'text', max_chars: 60,  anchor: { x: 100, y: 100 }, max_w: 1720, max_h: 400, style: 'h1' },
+      // max_w = TITLE_W = 1610 (right edge at 1710, 20px clear of logo at x=1730)
+      { name: 'ЗАГОЛОВОК',    type: 'text', max_chars: 60,  anchor: { x: 100, y: 100 }, max_w: 1610, max_h: 400, style: 'h1' },
       // Optional subtitle — floats 20px below ЗАГОЛОВОК, 22pt MUTED
-      { name: 'ПІДЗАГОЛОВОК', type: 'text', max_chars: 160, anchor: { x: 100, y: 100 }, max_w: 1720, max_h: 200, float_after: 'ЗАГОЛОВОК', float_gap: 20, style: 'h2', optional: true },
+      { name: 'ПІДЗАГОЛОВОК', type: 'text', max_chars: 160, anchor: { x: 100, y: 100 }, max_w: 1610, max_h: 200, float_after: 'ЗАГОЛОВОК', float_gap: 20, style: 'h2', optional: true },
       // Date — floats 30px below ПІДЗАГОЛОВОК (or ЗАГОЛОВОК if subtitle absent)
-      { name: 'ДАТА',         type: 'text', max_chars: 20,  anchor: { x: 100, y: 100 }, max_w: 1720, max_h: 80,  float_after: 'ПІДЗАГОЛОВОК', float_gap: 30, style: 'caption' },
+      { name: 'ДАТА',         type: 'text', max_chars: 20,  anchor: { x: 100, y: 100 }, max_w: 1610, max_h: 80,  float_after: 'ПІДЗАГОЛОВОК', float_gap: 30, style: 'caption' },
       { name: 'ЗОБРАЖЕННЯ_1', type: 'image', ratio: '16:9', role: 'background' },
     ],
   },

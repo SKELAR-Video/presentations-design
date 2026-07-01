@@ -34,9 +34,14 @@ const RBH      = H - 2 * PAD     // 880 right bento column height
 const LTW      = UW - RBW - GAP  // 830 left text zone width
 const RBX      = PAD + LTW + GAP  // 960 right bento x-start (PAD + LTW + GAP)
 const LOGO_H   =  90              // logo height, px
-const LOGO_GAP =  20              // visual gap between ТЕКСТ bottom and logo top
+const LOGO_W   =  LOGO_H          // square logo
+const LOGO_GAP =  20              // gap: vertical (bento_right) and horizontal (title clearance)
 // ТЕКСТ height in bento_right: leaves space at bottom for logo (RBH-260-GAP-LOGO_H-LOGO_GAP = 480)
 const RTEXT_H  = RBH - 260 - GAP - LOGO_H - LOGO_GAP  // 480
+// Logo reserved zone (top-right position): x=[LOGO_X, LOGO_X+LOGO_W], y=[PAD, PAD+LOGO_H]
+const LOGO_X   = W - PAD - LOGO_W   // 1730 — logo left edge
+// Safe title width: right edge = LOGO_X - LOGO_GAP = 1710, well clear of logo zone
+const TITLE_W  = LOGO_X - LOGO_GAP - PAD  // 1610
 
 // ─── Palette ────────────────────────────────────────────────────────────────
 type RGB = { red: number; green: number; blue: number }
@@ -167,16 +172,16 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
       const H1_MAX  = 400
       const SUB_MAX = 200
       push(
-        tb(mk(), slideId, 'ЗАГОЛОВОК',    PAD, PAD,                              UW, H1_MAX,  44,     WHITE),
-        tb(mk(), slideId, 'ПІДЗАГОЛОВОК', PAD, PAD + H1_MAX + GAP,               UW, SUB_MAX, 22,     MUTED),
-        tb(mk(), slideId, 'ДАТА',         PAD, PAD + H1_MAX + GAP + SUB_MAX + GAP, UW, 60,    18,     MUTED),
+        tb(mk(), slideId, 'ЗАГОЛОВОК',    PAD, PAD,                              TITLE_W, H1_MAX,  44,     WHITE),
+        tb(mk(), slideId, 'ПІДЗАГОЛОВОК', PAD, PAD + H1_MAX + GAP,               TITLE_W, SUB_MAX, 22,     MUTED),
+        tb(mk(), slideId, 'ДАТА',         PAD, PAD + H1_MAX + GAP + SUB_MAX + GAP, TITLE_W, 60,    18,     MUTED),
       )
       break
     }
 
     case 'title_body': {
       push(
-        tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, UW, TH, 36),
+        tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, TITLE_W, TH, 36),
         tb(mk(), slideId, 'ТЕКСТ',     PAD, CY,  UW, CH - 60, 22, MUTED),
         tb(mk(), slideId, 'ПІДПИС',    PAD, H - PAD - 52, UW, 52, 14, MUTED),
       )
@@ -185,7 +190,7 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
 
     case 'two_columns': {
       const cw = Math.floor((UW - GAP) / 2)
-      push(tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, UW, TH, 32))
+      push(tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, TITLE_W, TH, 32))
       for (let k = 0; k < 2; k++) {
         const cx = PAD + k * (cw + GAP)
         roundedCard(cx, CY, cw, CH)
@@ -196,7 +201,7 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
 
     case 'three_columns': {
       const cw = Math.floor((UW - 2 * GAP) / 3)
-      push(tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, UW, TH, 28))
+      push(tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, TITLE_W, TH, 28))
       for (let k = 0; k < 3; k++) {
         const cx = PAD + k * (cw + GAP)
         roundedCard(cx, CY, cw, CH)
@@ -214,7 +219,7 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
       const valH  = Math.round(inner * 0.55)
       const lblH  = inner - valH
       push(
-        tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, UW, TH, 32),
+        tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, TITLE_W, TH, 32),
         tb(mk(), slideId, 'ТЕКСТ',     PAD, PAD + TH, UW, subH, 18, MUTED),
       )
       for (let k = 0; k < 4; k++) {
@@ -230,7 +235,7 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
 
     case 'section': {
       push(
-        tb(mk(), slideId, 'ЗАГОЛОВОК',    PAD, PAD, UW, 260, 44),
+        tb(mk(), slideId, 'ЗАГОЛОВОК',    PAD, PAD, TITLE_W, 260, 44),
         tb(mk(), slideId, 'ПІДЗАГОЛОВОК', PAD, PAD + 260 + GAP, UW, 160, 22, MUTED),
       )
       break
@@ -238,14 +243,14 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
 
     case 'section_red': {
       push(
-        tb(mk(), slideId, 'ЗАГОЛОВОК',    PAD, PAD, UW, 260, 44),
+        tb(mk(), slideId, 'ЗАГОЛОВОК',    PAD, PAD, TITLE_W, 260, 44),
         tb(mk(), slideId, 'ПІДЗАГОЛОВОК', PAD, PAD + 260 + GAP, UW, 160, 22, PINK),
       )
       break
     }
 
     case 'closing': {
-      push(tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, UW, 320, 44))
+      push(tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, TITLE_W, 320, 44))
       break
     }
 

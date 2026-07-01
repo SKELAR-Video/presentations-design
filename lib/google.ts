@@ -101,6 +101,9 @@ const _H_SLIDE = 1080
 const _LOGO_W = 90
 const _LOGO_H = 90
 const _eL     = (px: number) => Math.round(px * _FPX)
+// Safe title width: right edge = LOGO_X − 20 = 1710, clears logo zone by LOGO_GAP
+const _LOGO_X  = _W - _PAD - _LOGO_W  // 1730
+const _TITLE_W = _LOGO_X - 20 - _PAD  // 1610 (20 = logo_gap)
 
 // bento_right_* layouts occupy the top-right area — logo goes bottom-left instead
 function _logoPos(compId: string): { x: number; y: number } {
@@ -423,7 +426,7 @@ function buildKpiUpdateRequests(
 // Chain: ЗАГОЛОВОК (44pt) → gap 20px → ПІДЗАГОЛОВОК (22pt, optional) → gap 30px → ДАТА (18pt)
 // Constants must mirror compositions.ts cover slots and create-master/route.ts.
 const _COVER_H1_PT   = 44
-const _COVER_H1_W    = _UW        // 1720
+const _COVER_H1_W    = _TITLE_W   // 1610 — avoids logo reserved zone
 const _COVER_H1_MAX  = 400        // compositions.ts cover.ЗАГОЛОВОК.max_h
 const _COVER_SUB_PT  = 22
 const _COVER_SUB_MAX = 200        // compositions.ts cover.ПІДЗАГОЛОВОК.max_h
@@ -1105,6 +1108,31 @@ export async function buildPresentation(
     const slide = updatedSlides.find(s => s.objectId === pageId)
     if (!slide) continue
     requests.push(...buildCoverFloatRequests(slide, plan.slides[i].slots))
+  }
+
+  // ── Title logo-safe resize: clamp ЗАГОЛОВОК to _TITLE_W=1610 ────────────────────
+  // Fixes old-master slides (title right=1820) without requiring master regeneration.
+  // Cover: handled above by buildCoverFloatRequests. bento_right_*: safe (w=LTW=830).
+  for (let i = 0; i < plan.slides.length; i++) {
+    const compId = plan.slides[i].composition
+    if (compId === 'cover' || compId.startsWith('bento_right_')) continue
+    const titleObjId = slotObjectIds[i]?.['ЗАГОЛОВОК']
+    if (!titleObjId) continue
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    const slide = updatedSlides.find(s => s.objectId === pageId)
+    if (!slide) continue
+    const titleEl = slide.pageElements?.find(el => el.objectId === titleObjId)
+    if (!titleEl?.transform || !titleEl.size) continue
+    const sW  = titleEl.size.width?.magnitude  ?? 0
+    const sH  = titleEl.size.height?.magnitude ?? 0
+    const elX = Math.round((titleEl.transform.translateX ?? 0) / _FPX)
+    const elY = Math.round((titleEl.transform.translateY ?? 0) / _FPX)
+    const elW = Math.round(sW * (titleEl.transform.scaleX ?? 1) / _FPX)
+    const elH = Math.round(sH * (titleEl.transform.scaleY ?? 1) / _FPX)
+    if (elW > _TITLE_W) {
+      requests.push(makeElemTransform(titleObjId, elX, elY, _TITLE_W, elH, sW, sH))
+    }
   }
 
   // ── Bento row layout: resize cards to content height, centre row in zone ─────

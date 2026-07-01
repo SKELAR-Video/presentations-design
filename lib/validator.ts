@@ -293,6 +293,30 @@ function checkKpiCardRowGeometry(slide: slides_v1.Schema$Page): CheckResult {
   return { check: 'kpi_row_geometry', pass: fails.length === 0, detail: fails.join('; ') || undefined }
 }
 
+// logo_overlap: no TEXT_BOX may intersect the logo reserved zone.
+// Non-bento_right: zone = x∈[1730,1820], y∈[100,190].
+// bento_right_*:   zone = x∈[100,190],  y∈[890,980].
+// A correctly-built title box (right=1710) leaves 20px gap before logo starts at 1730.
+function checkLogoOverlap(slide: slides_v1.Schema$Page, compId: string): CheckResult {
+  const isBR   = compId.startsWith('bento_right_')
+  const LOGO_W = 90, LOGO_H = 90
+  const lX = isBR ? 100  : 1730
+  const lY = isBR ? 890  : 100
+  const lR = lX + LOGO_W   // 190 or 1820
+  const lB = lY + LOGO_H   // 980 or 190
+
+  const fails: string[] = []
+  for (const el of slide.pageElements ?? []) {
+    if (el.shape?.shapeType !== 'TEXT_BOX' || !el.transform || !el.size) continue
+    const { x, y, right, bottom } = elBounds(el)
+    if (right > lX && x < lR && bottom > lY && y < lB) {
+      const tok = elToken(el) ?? el.objectId ?? '?'
+      fails.push(`${tok} right=${Math.round(right)} intersects logo zone x=[${lX},${lR}] y=[${lY},${lB}]`)
+    }
+  }
+  return { check: 'logo_overlap', pass: fails.length === 0, detail: fails.join(' | ') || undefined }
+}
+
 // cover: ДАТА must be full-width (≈ UW) and NOT stuck in the bottom corner.
 // Catches old-master decks where ДАТА was at y≈928, w=500.
 function checkCoverLayout(slide: slides_v1.Schema$Page): CheckResult {
@@ -495,6 +519,7 @@ export async function validateDeck(
     checks.push(checkMaxChars(planSlide.slots, compId))
     checks.push(checkContentIntegrity(planSlide.slots, compId, plan.sourceText))
     checks.push(checkBadge(slide, compId))
+    checks.push(checkLogoOverlap(slide, compId))
 
     if (compId === 'kpi_cards') {
       const comp = getComposition('kpi_cards')
