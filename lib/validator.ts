@@ -113,10 +113,34 @@ function checkMaxChars(slots: Record<string, string>, compId: string): CheckResu
   return { check: 'max_chars', pass: fails.length === 0, detail: fails.join('; ') || undefined }
 }
 
+// Compact number match: "2M" is a valid equivalent of "2 000 000" in sourceText.
+// Only applies to КАРТКА_N_ЗНАЧЕННЯ slots (the sole allowed text transformation).
+// Guards: only accepts compact form for 5+ digit originals (4-digit numbers are never compacted).
+function isCompactNumberMatch(value: string, sourceText: string): boolean {
+  const m = value.trim().match(/^([^0-9]*)(\d+(?:\.\d+)?)(K|M)([^0-9]*)$/i)
+  if (!m) return false
+  const [, prefix, numStr, unit, suffix] = m
+  const factor = unit.toUpperCase() === 'M' ? 1_000_000 : 1_000
+  const expanded = Math.round(parseFloat(numStr) * factor)
+  if (!isFinite(expanded)) return false
+  // 4-digit originals (< 10 000) are never compacted under the current rules
+  const expandedStr = String(expanded)
+  if (expandedStr.length <= 4) return false
+  // Allow "2000000" or "2 000 000" (space-separated thousands) in sourceText
+  const withOptSpaces = expandedStr.replace(/(\d)(?=(\d{3})+$)/g, '$1 ?')
+  const re = new RegExp(
+    prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
+    withOptSpaces +
+    suffix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+  )
+  return re.test(sourceText)
+}
+
 // Invariant 9 — zero content loss:
 //   (a) every non-empty slot must be defined in the composition (no silently-lost text)
 //   (b) when sourceText is available: every non-empty line of each slot value must be
 //       a verbatim substring of the original input (LLM never invented / paraphrased)
+// Exception: КАРТКА_N_ЗНАЧЕННЯ may contain compact number form (e.g. "2M" ↔ "2 000 000").
 // Exemptions: image slots, closing composition (structural / default text).
 function checkContentIntegrity(
   slots: Record<string, string>,
@@ -143,9 +167,12 @@ function checkContentIntegrity(
 
     // (b) verbatim check — closing is structural, skip it
     if (!sourceText || compId === 'closing') continue
+    const isKpiValue = /^КАРТКА_\d+_ЗНАЧЕННЯ$/.test(name)
     const lines = v.split('\n').map(l => l.trim()).filter(Boolean)
     for (const line of lines) {
-      if (!sourceText.includes(line)) {
+      const verbatimOk = sourceText.includes(line)
+      const compactOk  = isKpiValue && isCompactNumberMatch(line, sourceText)
+      if (!verbatimOk && !compactOk) {
         const preview = line.length > 60 ? line.slice(0, 60) + '…' : line
         fails.push(`${name}: non-verbatim line — "${preview}"`)
         break  // one report per slot is enough
@@ -160,8 +187,12 @@ function checkContentIntegrity(
   }
 }
 
-function checkBadge(slide: slides_v1.Schema$Page): CheckResult {
-  const BADGE_X = 1730, BADGE_Y = 100, BADGE_TOL = 25
+function checkBadge(slide: slides_v1.Schema$Page, compId: string): CheckResult {
+  // bento_right_* places logo bottom-left (PAD, H-PAD-90) = (100, 890)
+  const isBentoRight = compId.startsWith('bento_right_')
+  const BADGE_X   = isBentoRight ? 100  : 1730
+  const BADGE_Y   = isBentoRight ? 890  : 100
+  const BADGE_TOL = 25
   for (const el of slide.pageElements ?? []) {
     if (!el.transform) continue
     const x = Math.round((el.transform.translateX ?? 0) / _FPX)
@@ -170,10 +201,11 @@ function checkBadge(slide: slides_v1.Schema$Page): CheckResult {
       return { check: 'skelar_badge', pass: true }
     }
   }
-  return { check: 'skelar_badge', pass: false, detail: 'badge not found near (1730, 100)' }
+  return { check: 'skelar_badge', pass: false, detail: `badge not found near (${BADGE_X}, ${BADGE_Y})` }
 }
 
-// kpi_cards: КАРТКА_N_ЗНАЧЕННЯ must be numeric (digits / ± / % / math prefixes / units)
+// kpi_cards: КАРТКА_N_ЗНАЧЕННЯ must be numeric (digits / ± / % / math prefixes / units).
+// Non-round numbers with spaces (e.g. "2 456 789") are valid — they cannot be compacted.
 const KPI_NUMERIC_RE = /^[\d\s+\-±×x.,/%$€£<>≤≥~≈MKBmkb]+$/i
 
 function checkKpiNumeric(slots: Record<string, string>): CheckResult {
@@ -462,7 +494,7 @@ export async function validateDeck(
     checks.push(checkFont(slide))
     checks.push(checkMaxChars(planSlide.slots, compId))
     checks.push(checkContentIntegrity(planSlide.slots, compId, plan.sourceText))
-    checks.push(checkBadge(slide))
+    checks.push(checkBadge(slide, compId))
 
     if (compId === 'kpi_cards') {
       const comp = getComposition('kpi_cards')

@@ -493,6 +493,39 @@ function pickBentoPt(compId: string, slots: Record<string, string>): number | nu
   return scale[scale.length - 1]
 }
 
+// ─── Compact number formatting for KPI values ────────────────────────────────
+// Applied ONLY to КАРТКА_N_ЗНАЧЕННЯ slots, never to regular paragraph text.
+// Rules:
+//   ≤ 4 digits (< 10 000, years, small counts) → unchanged
+//   5–6 digits → K  (only if result is round: ≤ 1 decimal place, i.e. value % 100 === 0)
+//   7+ digits  → M  (only if result is round: ≤ 1 decimal place, i.e. value % 100 000 === 0)
+//   Non-round (e.g. 2 456 789) → unchanged (each digit matters)
+// Examples: "2 000 000"→"2M"; "2 500 000"→"2.5M"; "150 000"→"150K"; "12 500"→"12.5K"
+//           "1500"→"1500"; "2026"→"2026"; "2 456 789"→unchanged; "$2 000 000"→"$2M"
+export function compactNumber(text: string): string {
+  const trimmed = text.trim()
+  if (!trimmed) return text
+  const m = trimmed.match(/^([^0-9]*)(\d[\d\s]*)([^0-9]*)$/)
+  if (!m) return text
+  const [, prefix, rawNum, suffix] = m
+  const digits = rawNum.replace(/\s/g, '')
+  const digitCount = digits.length
+  // ≤ 4 digits: years, small numbers — never compact
+  if (digitCount <= 4) return text
+  const value = parseFloat(digits)
+  if (isNaN(value) || !isFinite(value)) return text
+  // 5–6 digits → K, only when ≤ 1 decimal place (value divisible by 100)
+  if (digitCount <= 6) {
+    if (value % 100 !== 0) return text
+    const v = value / 1_000
+    return prefix + (v % 1 === 0 ? String(Math.round(v)) : v.toFixed(1)) + 'K' + suffix
+  }
+  // 7+ digits → M, only when ≤ 1 decimal place (value divisible by 100 000)
+  if (value % 100_000 !== 0) return text
+  const v = value / 1_000_000
+  return prefix + (v % 1 === 0 ? String(Math.round(v)) : v.toFixed(1)) + 'M' + suffix
+}
+
 // ─── Bento card content preprocessing ────────────────────────────────────────
 // Converts " · " list separators to proper bullet lines ("• item\n• item").
 // Applied before replaceAllText so font sizing also accounts for the converted text.
@@ -881,6 +914,22 @@ export async function buildPresentation(
       const val = slide.slots[slotDef.name]
       if (val && val.length > slotDef.max_chars) {
         console.warn(`[overflow] ${slide.composition}.${slotDef.name}: ${val.length} chars > max ${slotDef.max_chars}`)
+      }
+    }
+  }
+
+  // Step 2.60: Compact large numbers in КАРТКА_N_ЗНАЧЕННЯ slots.
+  // "2 000 000" → "2M"; "150 000" → "150K" — only for kpi_cards value slots.
+  for (const slide of plan.slides) {
+    if (slide.composition !== 'kpi_cards') continue
+    for (let n = 1; n <= 4; n++) {
+      const key = `КАРТКА_${n}_ЗНАЧЕННЯ`
+      const val = (slide.slots[key] ?? '').trim()
+      if (!val) continue
+      const compacted = compactNumber(val)
+      if (compacted !== val) {
+        slide.slots[key] = compacted
+        console.log(`[kpi_compact] ${slide.id}: ${key} "${val}" → "${compacted}"`)
       }
     }
   }

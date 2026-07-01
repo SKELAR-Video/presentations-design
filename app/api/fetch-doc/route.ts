@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
-import { google, slides_v1 } from 'googleapis'
+import { google, docs_v1, slides_v1 } from 'googleapis'
 
 type SourceType = 'gdoc' | 'gslides'
 
@@ -57,6 +57,59 @@ async function extractSlides(
   }))
 }
 
+// Extract plain text from a Google Docs structural element tree
+function readDocContent(content: docs_v1.Schema$StructuralElement[]): string {
+  return content.map(el => {
+    if (el.paragraph) {
+      return (el.paragraph.elements ?? [])
+        .map(pe => pe.textRun?.content ?? '')
+        .join('')
+    }
+    if (el.table) {
+      return (el.table.tableRows ?? []).map(row =>
+        (row.tableCells ?? []).map(cell =>
+          readDocContent(cell.content ?? [])
+        ).join('\t')
+      ).join('\n')
+    }
+    if (el.sectionBreak) return '\n'
+    return ''
+  }).join('')
+}
+
+async function fetchGoogleDocText(
+  auth2: ReturnType<typeof getOAuth2Client>,
+  fileId: string,
+): Promise<string> {
+  // Primary: Drive export — fast, no extra API scope needed
+  try {
+    const drive = google.drive({ version: 'v3', auth: auth2 })
+    const res = await drive.files.export(
+      { fileId, mimeType: 'text/plain' },
+      { responseType: 'text' },
+    )
+    return typeof res.data === 'string' ? res.data.trim() : JSON.stringify(res.data)
+  } catch {
+    // Fallback: Google Docs API — handles cases where Drive export returns fileNotExportable.
+    // Requires "Google Docs API" to be enabled in Google Cloud Console.
+    try {
+      const docsApi = google.docs({ version: 'v1', auth: auth2 })
+      const res = await docsApi.documents.get({ documentId: fileId })
+      const body = res.data.body?.content ?? []
+      return readDocContent(body).trim()
+    } catch (docsErr) {
+      const msg = docsErr instanceof Error ? docsErr.message : String(docsErr)
+      if (msg.includes('has not been used') || msg.includes('is disabled')) {
+        throw new Error('Увімкни Google Docs API у Google Cloud Console: https://console.developers.google.com/apis/api/docs.googleapis.com/overview')
+      }
+      if (msg.includes('Office file') || msg.includes('not supported for this document')) {
+        throw new Error('Документ у форматі Office (.docx). Відкрий його в Google Docs → Файл → Зберегти як Google Docs — і вставте посилання на новий файл.')
+      }
+      throw docsErr
+    }
+  }
+}
+
 export async function POST(req: NextRequest) {
   const session = await auth()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -85,12 +138,7 @@ export async function POST(req: NextRequest) {
       }
       return NextResponse.json({ text: text.trim(), type: 'gslides', slides })
     } else {
-      const drive = google.drive({ version: 'v3', auth: auth2 })
-      const res = await drive.files.export(
-        { fileId: parsed.id, mimeType: 'text/plain' },
-        { responseType: 'text' },
-      )
-      text = typeof res.data === 'string' ? res.data : JSON.stringify(res.data)
+      text = await fetchGoogleDocText(auth2, parsed.id)
     }
 
     if (!text?.trim()) {
