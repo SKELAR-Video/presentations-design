@@ -1,7 +1,11 @@
 /**
  * Runs plan-level validator checks without Slides API or auth.
- * Covers: max_chars (+ Step-2.6 truncation), kpi_numeric_values, theme_consistency.
+ * Covers: max_chars (violations logged, NOT truncated), kpi_numeric_values, theme_consistency.
  * Does NOT cover: bounds, autofit, font, skelar_badge (need real deck for those).
+ *
+ * Pipeline as of current code:
+ *   Step 2.6  — max_chars violations: console.warn only, NO truncation, text passes verbatim
+ *   Step 2.65 — non-numeric КАРТКА_N_ЗНАЧЕННЯ: card removed (content lost → validator FAIL)
  */
 import { getComposition } from '../lib/compositions'
 
@@ -44,24 +48,6 @@ const PROBLEM_PLAN = {
   ],
 }
 
-// ── Step 2.6 simulation (same logic as lib/google.ts) ────────────────────────
-function applyTruncation(slides: typeof PROBLEM_PLAN.slides) {
-  const truncated: string[] = []
-  for (const slide of slides) {
-    const comp = getComposition(slide.composition)
-    if (!comp) continue
-    for (const def of comp.slots) {
-      if (def.type !== 'text' || !def.max_chars) continue
-      const val = (slide.slots as unknown as Record<string,string>)[def.name]
-      if (val && val.length > def.max_chars) {
-        truncated.push(`  ${slide.composition}.${def.name}: ${val.length} → ${def.max_chars} chars`)
-        ;(slide.slots as unknown as Record<string,string>)[def.name] = val.slice(0, def.max_chars - 1) + '…'
-      }
-    }
-  }
-  return truncated
-}
-
 // ── Checks ────────────────────────────────────────────────────────────────────
 function checkMaxChars(slide: (typeof PROBLEM_PLAN.slides)[0]) {
   const comp = getComposition(slide.composition)
@@ -86,7 +72,10 @@ function checkKpiNumeric(slide: (typeof PROBLEM_PLAN.slides)[0]) {
   return fails
 }
 
-// ── Step 2.65 simulation ─────────────────────────────────────────────────────
+// ── Step 2.65 simulation (still active in lib/google.ts) ─────────────────────
+// Non-numeric KPI card slots are deleted before rendering. This IS content removal —
+// but it's intentional: a list/sentence in a metric card breaks the layout.
+// The validator flags kpi_numeric_values BEFORE this runs; fix by correcting the LLM mapping.
 function applyKpiSanitise(slides: typeof PROBLEM_PLAN.slides) {
   const removed: string[] = []
   for (const slide of slides) {
@@ -106,7 +95,7 @@ function applyKpiSanitise(slides: typeof PROBLEM_PLAN.slides) {
 }
 
 // ── Run ───────────────────────────────────────────────────────────────────────
-console.log('=== BEFORE Step 2.6 (truncation) ===\n')
+console.log('=== Violations BEFORE pipeline (raw plan) ===\n')
 for (const slide of PROBLEM_PLAN.slides) {
   const mcFails = checkMaxChars(slide)
   const kpiFails = checkKpiNumeric(slide)
@@ -117,17 +106,15 @@ for (const slide of PROBLEM_PLAN.slides) {
   if (kpiFails.length) console.log('   kpi_numeric:', kpiFails.join(', '))
 }
 
-console.log('\n=== Step 2.6 truncations applied ===')
-const truncations = applyTruncation(PROBLEM_PLAN.slides)
-if (truncations.length) truncations.forEach(t => console.log(t))
-else console.log('  (none)')
+console.log('\n=== Step 2.6 — max_chars: LOG ONLY, NO truncation ===')
+console.log('  Text passes through verbatim. Violations surface as FAIL in validateDeck.')
 
-console.log('\n=== Step 2.65 kpi sanitise ===')
+console.log('\n=== Step 2.65 — kpi_sanitise: removes non-numeric cards ===')
 const removed = applyKpiSanitise(PROBLEM_PLAN.slides)
-if (removed.length) removed.forEach(r => console.log(r))
+if (removed.length) removed.forEach(r => console.log(`  ${r}`))
 else console.log('  (none)')
 
-console.log('\n=== AFTER Steps 2.6 + 2.65 ===\n')
+console.log('\n=== After pipeline mutations (what validator sees) ===\n')
 let anyFail = false
 for (const slide of PROBLEM_PLAN.slides) {
   const mcFails = checkMaxChars(slide)
@@ -135,9 +122,9 @@ for (const slide of PROBLEM_PLAN.slides) {
   const allFails = [...mcFails, ...kpiFails]
   const icon = allFails.length ? '❌' : '✅'
   console.log(`${icon} slide ${slide.id} (${slide.composition})`)
-  if (mcFails.length)  console.log('   max_chars FAIL:', mcFails.join(', '))
+  if (mcFails.length)  console.log('   max_chars FAIL (text still present, verbatim):', mcFails.join(', '))
   if (kpiFails.length) console.log('   kpi_numeric FAIL:', kpiFails.join(', '))
   if (allFails.length) anyFail = true
 }
 
-console.log('\n' + (anyFail ? '❌ FAIL — є проблеми для виправлення' : '✅ PASS — план чистий'))
+console.log('\n' + (anyFail ? '❌ FAIL — порушення знайдені (max_chars: текст збережено; kpi_non_numeric: картку видалено)' : '✅ PASS — план чистий'))

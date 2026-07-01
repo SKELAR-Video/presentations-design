@@ -25,7 +25,7 @@ const SYSTEM_VERBATIM = `Ти маппінг-агент: ТЗ → SKELAR-пре�
 5. Перший слайд → cover. Останній → closing (ЗАГОЛОВОК: null — майстер дає дефолт).
 6. Ігноруй image-слоти (ЗОБРАЖЕННЯ_*) — залишай null.
 7. ДАТА: індекс фрагмента, що містить дату (≤20 символів). Якщо немає — null.
-8. Якщо фрагмент явно перевищить max_chars слота — assignuj null (краще порожньо).
+8. Призначай КОЖЕН значущий фрагмент — ніколи не пропускай через «здається довгим».
 
 ## Як обирати композицію
 - cover → перший слайд.
@@ -153,19 +153,13 @@ function parseFragments(text: string): string[] {
     .filter(Boolean)
 }
 
-// Called by google.ts after validateDeck — repairs slides that still have max_chars FAILs.
-// Each item carries the objectId of the text box so fixes are applied by ID, not by re-matching.
-// NOTE: this no longer rewrites text — it hard-truncates to preserve verbatim guarantee.
+// Called by google.ts after validateDeck — intentionally returns nothing.
+// Verbatim guarantee: text from the source ТЗ is NEVER modified after insertion.
+// Overflow (max_chars FAIL) surfaces in the validation report for the user to decide.
 export async function fixOverflowSlots(
-  items: Array<{ id: string; slotName: string; currentText: string; limit: number }>,
+  _items: Array<{ id: string; slotName: string; currentText: string; limit: number }>,
 ): Promise<Array<{ id: string; value: string }>> {
-  return items.map(it => {
-    let truncated = it.currentText.slice(0, it.limit)
-    const lastSpace = truncated.lastIndexOf(' ')
-    if (lastSpace > it.limit * 0.7) truncated = truncated.slice(0, lastSpace)
-    console.warn(`[fixOverflowSlots] ${it.slotName}: hard-truncated ${it.currentText.length} → ${truncated.length} chars`)
-    return { id: it.id, value: truncated }
-  })
+  return []
 }
 
 export async function mapToPlan(text: string, theme: Theme): Promise<SlidePlan> {
@@ -208,7 +202,9 @@ ${fragmentsList}
   const json = raw.startsWith('```') ? raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '') : raw
   const mapping = JSON.parse(json) as { slides: SlideAssignment[] }
 
-  // Build SlidePlan — verbatim text from fragments, LLM never touched it
+  // Build SlidePlan — verbatim text from fragments, LLM never touched it.
+  // NO truncation. If a slot exceeds max_chars → validator reports FAIL with details.
+  // The user decides how to shorten the source text; code never cuts it silently.
   const slides = mapping.slides.map((m, i) => {
     const slots: Record<string, string> = {}
     for (const [slotName, ref] of Object.entries(m.assignment ?? {})) {
@@ -222,24 +218,6 @@ ${fragmentsList}
     }
     return { id: `slide_${i + 1}`, composition: m.composition || 'title_body', slots, flags: {} }
   })
-
-  // Hard-truncate overflow slots — word boundary, flag set, NO LLM rewrite
-  for (const slide of slides) {
-    const comp = PHASE0_COMPOSITIONS.find(c => c.id === slide.composition)
-    if (!comp) continue
-    for (const def of comp.slots) {
-      if (def.type !== 'text' || !def.max_chars) continue
-      const val = slide.slots[def.name]
-      if (!val || val.length <= def.max_chars) continue
-      let truncated = val.slice(0, def.max_chars)
-      const lastSpace = truncated.lastIndexOf(' ')
-      if (lastSpace > def.max_chars * 0.7) truncated = truncated.slice(0, lastSpace)
-      slide.slots[def.name] = truncated
-      const f = slide.flags as Record<string, unknown>
-      f.overflow = [...((f.overflow as string[] | undefined) ?? []), def.name]
-      console.warn(`[mapToPlan] ${slide.id}.${def.name}: truncated ${val.length} → ${truncated.length} chars`)
-    }
-  }
 
   return { theme, slides, sourceText: text }
 }
