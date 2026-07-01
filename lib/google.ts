@@ -537,8 +537,10 @@ function buildBentoRightLeftColumnRequests(
     if (raw.includes('{{ЗАГОЛОВОК}}')) {
       reqs.push(makeElemTransform(el.objectId, _PAD, _PAD, _LTW, titleH, sW, sH))
     }
-    if (bodyText && raw.includes('{{ТЕКСТ}}')) {
-      reqs.push(makeElemTransform(el.objectId, _PAD, textY, _LTW, textMaxH, sW, sH))
+    if (raw.includes('{{ТЕКСТ}}')) {
+      // Always move ТЕКСТ below ЗАГОЛОВОК — even when slot is empty — so the box
+      // doesn't overlap with ЗАГОЛОВОК. Collapse to h=1 when text is absent.
+      reqs.push(makeElemTransform(el.objectId, _PAD, textY, _LTW, bodyText ? textMaxH : 1, sW, sH))
     }
   }
   return reqs
@@ -573,8 +575,8 @@ function buildSectionFloatRequests(
     if (raw.includes('{{ЗАГОЛОВОК}}')) {
       reqs.push(makeElemTransform(el.objectId, _PAD, _PAD, _TITLE_W, titleH, sW, sH))
     }
-    if (subText && raw.includes('{{ПІДЗАГОЛОВОК}}')) {
-      reqs.push(makeElemTransform(el.objectId, _PAD, subY, _UW, _SECTION_SUB_MAX, sW, sH))
+    if (raw.includes('{{ПІДЗАГОЛОВОК}}')) {
+      reqs.push(makeElemTransform(el.objectId, _PAD, subY, _UW, subText ? _SECTION_SUB_MAX : 1, sW, sH))
     }
   }
   return reqs
@@ -610,8 +612,8 @@ function buildTitleBodyFloatRequests(
     if (raw.includes('{{ЗАГОЛОВОК}}')) {
       reqs.push(makeElemTransform(el.objectId, _PAD, _PAD, _TITLE_W, titleH, sW, sH))
     }
-    if (bodyText && raw.includes('{{ТЕКСТ}}')) {
-      reqs.push(makeElemTransform(el.objectId, _PAD, textY, _UW, textMaxH, sW, sH))
+    if (raw.includes('{{ТЕКСТ}}')) {
+      reqs.push(makeElemTransform(el.objectId, _PAD, textY, _UW, bodyText ? textMaxH : 1, sW, sH))
     }
   }
   return reqs
