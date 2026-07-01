@@ -356,13 +356,15 @@ function checkCoverLayout(slide: slides_v1.Schema$Page): CheckResult {
 // is applied by the generation pipeline; see lib/google.ts bentoParagraphSpacingPt).
 const _V_PAD = 100, _V_UW = 1720, _V_GAP = 30, _V_INN = 30, _V_TH = 100, _V_TG = 100, _V_CH = 1080 - _V_PAD - (_V_PAD + _V_TH + _V_TG)  // 680
 const _V_RBW = 860, _V_RBH = 1080 - 2 * _V_PAD  // 880
+const _V_VERT_PAD = 40   // must match BENTO_VERT_PAD in lib/google.ts
 
 function _vBentoDims(compId: string): { w: number; h: number } | null {
-  if (compId === 'two_columns')     { const cw = Math.floor((_V_UW - _V_GAP) / 2);   return { w: cw - 2*_V_INN, h: _V_CH - 2*_V_INN } }
-  if (compId === 'three_columns')   { const cw = Math.floor((_V_UW - 2*_V_GAP) / 3); return { w: cw - 2*_V_INN, h: _V_CH - 2*_V_INN } }
-  if (compId === 'bento_right_2')   { const ch = Math.floor((_V_RBH - _V_GAP) / 2);  return { w: _V_RBW - 2*_V_INN, h: ch - 2*_V_INN } }
-  if (compId === 'bento_right_3')   { const ch = Math.floor((_V_RBH - 2*_V_GAP) / 3);return { w: _V_RBW - 2*_V_INN, h: ch - 2*_V_INN } }
-  if (compId === 'bento_right_2x2') { const cw = Math.floor((_V_RBW - _V_GAP) / 2); const ch = Math.floor((_V_RBH - _V_GAP) / 2); return { w: cw - 2*_V_INN, h: ch - 2*_V_INN } }
+  // h = max content height; mirrors bentoDims() in lib/google.ts (uses VERT_PAD not INN).
+  if (compId === 'two_columns')     { const cw = Math.floor((_V_UW - _V_GAP) / 2);   return { w: cw - 2*_V_INN, h: _V_CH - 2*_V_VERT_PAD } }
+  if (compId === 'three_columns')   { const cw = Math.floor((_V_UW - 2*_V_GAP) / 3); return { w: cw - 2*_V_INN, h: _V_CH - 2*_V_VERT_PAD } }
+  if (compId === 'bento_right_2')   { const ch = Math.floor((_V_RBH - _V_GAP) / 2);  return { w: _V_RBW - 2*_V_INN, h: ch - 2*_V_VERT_PAD } }
+  if (compId === 'bento_right_3')   { const ch = Math.floor((_V_RBH - 2*_V_GAP) / 3);return { w: _V_RBW - 2*_V_INN, h: ch - 2*_V_VERT_PAD } }
+  if (compId === 'bento_right_2x2') { const cw = Math.floor((_V_RBW - _V_GAP) / 2); const ch = Math.floor((_V_RBH - _V_GAP) / 2); return { w: cw - 2*_V_INN, h: ch - 2*_V_VERT_PAD } }
   return null
 }
 
@@ -391,6 +393,16 @@ function _vTextFits(text: string, wPx: number, hPx: number, pt: number): boolean
     else { lines++; cur = w.length }
   }
   return lines <= maxLines
+}
+
+// Paragraph-aware: mirrors textFitsParagraphs in lib/google.ts.
+function _vTextFitsParagraphs(text: string, wPx: number, hPx: number, pt: number): boolean {
+  if (!text.trim()) return true
+  const paras = text.split('\n').filter(p => p.trim())
+  if (paras.length <= 1) return _vTextFits(text, wPx, hPx, pt)
+  const totalLines = paras.reduce((s, p) => s + _vEstimateLines(p, wPx, pt), 0)
+  const maxLines   = Math.max(1, Math.floor(hPx / (pt * 2.667 * 1.4)))
+  return totalLines <= maxLines
 }
 
 function _vEstimateLines(text: string, wPx: number, pt: number): number {
@@ -445,18 +457,17 @@ function checkBentoLayout(compId: string, slots: Record<string, string>): CheckR
   const scale = [48, 36, 28, 22, 18, 14, 10].filter(s => s <= maxPt)
   let uniformPt = scale[scale.length - 1]
   for (const pt of scale) {
-    if (tokens.every(t => _vTextFits(processedSlots[t] ?? '', dims.w, dims.h, pt))) { uniformPt = pt; break }
+    if (tokens.every(t => _vTextFitsParagraphs(processedSlots[t] ?? '', dims.w, dims.h, pt))) { uniformPt = pt; break }
   }
 
   const fails: string[] = []
   if (uniformPt < 12) fails.push(`font too small (${uniformPt}pt)`)
 
-  const _V_VERT_PAD = 40  // must match BENTO_VERT_PAD in lib/google.ts
   const cardHInfo: string[] = []
   for (const tok of tokens) {
     const text = (processedSlots[tok] ?? '').trim()
     if (!text) continue
-    if (!_vTextFits(text, dims.w, dims.h, uniformPt)) {
+    if (!_vTextFitsParagraphs(text, dims.w, dims.h, uniformPt)) {
       fails.push(`${tok}: overflows at ${uniformPt}pt`)
       continue
     }
@@ -477,6 +488,52 @@ function checkBentoLayout(compId: string, slots: Record<string, string>): CheckR
     ? fails.join('; ')
     : `pt=${uniformPt} ${cardHInfo.join(' ')}`
   return { check: 'bento_layout', pass: fails.length === 0, detail }
+}
+
+// bento_right_*: ЗАГОЛОВОК and ТЕКСТ must not overlap.
+// After rendering, ЗАГОЛОВОК box bottom must be above ТЕКСТ box top.
+function checkBentoLeftOverlap(slide: slides_v1.Schema$Page, compId: string): CheckResult {
+  if (!compId.startsWith('bento_right_')) return { check: 'bento_left_overlap', pass: true, detail: 'n/a' }
+  const RBX = 960, TOL = _BOUNDS_TOL
+
+  // Collect left-column text boxes (x≈PAD, w≈LTW≈830, left of RBX)
+  const leftBoxes: Array<{ y: number; bottom: number }> = []
+  for (const el of slide.pageElements ?? []) {
+    if (el.shape?.shapeType !== 'TEXT_BOX' || !el.transform || !el.size) continue
+    const { x, y, w, bottom } = elBounds(el)
+    if (x < RBX - 50 && Math.abs(x - 100) < 30 && w > 500) {
+      leftBoxes.push({ y, bottom })
+    }
+  }
+  leftBoxes.sort((a, b) => a.y - b.y)
+
+  const fails: string[] = []
+  for (let i = 0; i + 1 < leftBoxes.length; i++) {
+    const a = leftBoxes[i], b = leftBoxes[i + 1]
+    if (a.bottom > b.y + TOL) {
+      fails.push(`box bottom=${Math.round(a.bottom)} > next top=${Math.round(b.y)} (overlap ${Math.round(a.bottom - b.y)}px)`)
+    }
+  }
+  return { check: 'bento_left_overlap', pass: fails.length === 0, detail: fails.join(' | ') || undefined }
+}
+
+// Bento card text must not end with a single trailing period (periods are auto-stripped in pipeline).
+// Checks the plan-level value after applying the same strip logic.
+function checkBentoTrailingPeriod(compId: string, slots: Record<string, string>): CheckResult {
+  const tokens = _V_BENTO_TOKENS[compId]
+  if (!tokens) return { check: 'bento_trailing_period', pass: true, detail: 'n/a' }
+  const fails: string[] = []
+  for (const tok of tokens) {
+    const val = (slots[tok] ?? '').trim()
+    if (!val) continue
+    // Apply same strip as pipeline: last char '.' that is not preceded by '.'
+    const stripped = val.replace(/(?<!\.)\.$/, '')
+    if (stripped !== val && stripped.endsWith('.')) {
+      // Edge case: e.g. "text.." — strip removed one '.' but '..' remains
+      fails.push(`${tok}: ends with '.' after strip — "${val.slice(-10)}"`)
+    }
+  }
+  return { check: 'bento_trailing_period', pass: fails.length === 0, detail: fails.join('; ') || undefined }
 }
 
 function checkTheme(plan: SlidePlan): CheckResult {
@@ -536,6 +593,11 @@ export async function validateDeck(
 
     if (_V_BENTO_TOKENS[compId]) {
       checks.push(checkBentoLayout(compId, planSlide.slots))
+      checks.push(checkBentoTrailingPeriod(compId, planSlide.slots))
+    }
+
+    if (compId.startsWith('bento_right_')) {
+      checks.push(checkBentoLeftOverlap(slide, compId))
     }
 
     // theme_consistency is deck-level; attach to slide 0

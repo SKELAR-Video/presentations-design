@@ -19,26 +19,29 @@ const _RBH = _H - 2 * _PAD  // 880
 const _KW = Math.floor((_UW - 3 * _GAP) / 4)  // 407
 
 function bentoDims(compId: string): { w: number; h: number } | null {
+  // h = max content height (lines * lineH(pt) must fit here).
+  // Must account for BENTO_VERT_PAD so the total column stays within slide bounds.
+  // Formula: maxCardH - 2*BENTO_VERT_PAD (not maxCardH - 2*INN which ignores padding).
   if (compId === 'two_columns') {
     const cw = Math.floor((_UW - _GAP) / 2)
-    return { w: cw - 2 * _INN, h: _CH - 2 * _INN }
+    return { w: cw - 2 * _INN, h: _CH - 2 * BENTO_VERT_PAD }
   }
   if (compId === 'three_columns') {
     const cw = Math.floor((_UW - 2 * _GAP) / 3)
-    return { w: cw - 2 * _INN, h: _CH - 2 * _INN }
+    return { w: cw - 2 * _INN, h: _CH - 2 * BENTO_VERT_PAD }
   }
   if (compId === 'bento_right_2') {
     const cardH = Math.floor((_RBH - _GAP) / 2)
-    return { w: _RBW - 2 * _INN, h: cardH - 2 * _INN }
+    return { w: _RBW - 2 * _INN, h: cardH - 2 * BENTO_VERT_PAD }
   }
   if (compId === 'bento_right_3') {
     const cardH = Math.floor((_RBH - 2 * _GAP) / 3)
-    return { w: _RBW - 2 * _INN, h: cardH - 2 * _INN }
+    return { w: _RBW - 2 * _INN, h: cardH - 2 * BENTO_VERT_PAD }
   }
   if (compId === 'bento_right_2x2') {
     const cellW = Math.floor((_RBW - _GAP) / 2)
     const cellH = Math.floor((_RBH - _GAP) / 2)
-    return { w: cellW - 2 * _INN, h: cellH - 2 * _INN }
+    return { w: cellW - 2 * _INN, h: cellH - 2 * BENTO_VERT_PAD }
   }
   return null
 }
@@ -78,6 +81,17 @@ function textFits(text: string, wPx: number, hPx: number, pt: number): boolean {
     else { lines++; cur = w.length }
   }
   return lines <= maxLines
+}
+
+// Paragraph-aware variant: splits on \n first so each paragraph starts on a new line.
+// textFits() treats \n as a space (wrong for bullet lists). This correctly sums lines per paragraph.
+function textFitsParagraphs(text: string, wPx: number, hPx: number, pt: number): boolean {
+  if (!text.trim()) return true
+  const paras = text.split('\n').filter(p => p.trim())
+  if (paras.length <= 1) return textFits(text, wPx, hPx, pt)
+  const totalLines = paras.reduce((s, p) => s + estimateLineCount(p, wPx, pt), 0)
+  const maxLines   = Math.max(1, Math.floor(hPx / (pt * 2.667 * 1.4)))
+  return totalLines <= maxLines
 }
 
 // ─── bento_right ТЕКСТ font-shrink ───────────────────────────────────────────
@@ -481,9 +495,54 @@ function buildCoverFloatRequests(
   return reqs
 }
 
+// ─── bento_right left column: float ТЕКСТ below ЗАГОЛОВОК ────────────────────
+// Master has ЗАГОЛОВОК at y=100 h=260, ТЕКСТ at y=390. When heading wraps >3 lines
+// it overflows into ТЕКСТ. This function pins ТЕКСТ strictly below ЗАГОЛОВОК.
+const _BENTO_RIGHT_H1_PT    = 44
+const _BENTO_RIGHT_H1_H_MAX = 400  // allows up to 3 lines at 44pt (actual lineH ≈127px × 3 = 381)
+const _BENTO_RIGHT_TITLE_GAP = _GAP // 30px
+
+function buildBentoRightLeftColumnRequests(
+  slide: slides_v1.Schema$Page,
+  slots: Record<string, string>,
+): object[] {
+  const titleText = (slots['ЗАГОЛОВОК'] ?? '').trim()
+  const bodyText  = (slots['ТЕКСТ']     ?? '').trim()
+  if (!titleText) return []
+
+  const titleLines = estimateLineCount(titleText, _LTW, _BENTO_RIGHT_H1_PT)
+  // 1.08 = 1.2×normal × 0.9 lineSpacing; more accurate than generic lineH (1.4) for 44pt headings
+  const h1LineH    = Math.round(_BENTO_RIGHT_H1_PT * 2.667 * 1.08)
+  const titleH     = Math.min(
+    _BENTO_RIGHT_H1_H_MAX,
+    Math.max(1, titleLines * h1LineH) + 4,
+  )
+
+  const textY     = _PAD + titleH + _BENTO_RIGHT_TITLE_GAP
+  // Logo is at y=890 (bottom-left in bento_right). Leave 20px above it.
+  const logoY     = _H_SLIDE - _PAD - _LOGO_H   // 890
+  const textMaxH  = Math.max(1, logoY - 20 - textY)
+
+  const reqs: object[] = []
+  for (const el of slide.pageElements ?? []) {
+    if (el.shape?.shapeType !== 'TEXT_BOX' || !el.objectId || !el.transform || !el.size) continue
+    const raw = (el.shape?.text?.textElements ?? []).map(te => te.textRun?.content ?? '').join('')
+    const sW  = el.size.width?.magnitude  ?? 0
+    const sH  = el.size.height?.magnitude ?? 0
+    if (raw.includes('{{ЗАГОЛОВОК}}')) {
+      reqs.push(makeElemTransform(el.objectId, _PAD, _PAD, _LTW, titleH, sW, sH))
+    }
+    if (bodyText && raw.includes('{{ТЕКСТ}}')) {
+      reqs.push(makeElemTransform(el.objectId, _PAD, textY, _LTW, textMaxH, sW, sH))
+    }
+  }
+  return reqs
+}
+
 // Returns the LARGEST pt (≤ BENTO_MAX_PT) at which every non-empty bento card fits.
 // Scales UP to role max when text is short; shrinks only when needed.
 // All cards in the row share ONE pt so the layout looks uniform.
+// Uses paragraph-aware line counting: "\n" forces a new line (important for bullet lists).
 function pickBentoPt(compId: string, slots: Record<string, string>): number | null {
   const dims   = bentoDims(compId)
   const tokens = BENTO_TOKENS[compId]
@@ -491,7 +550,7 @@ function pickBentoPt(compId: string, slots: Record<string, string>): number | nu
   if (!dims || !tokens || !maxPt) return null
   const scale = (BENTO_SCALE as readonly number[]).filter(s => s <= maxPt)
   for (const pt of scale) {
-    if (tokens.every(t => textFits(slots[t] ?? '', dims.w, dims.h, pt))) return pt
+    if (tokens.every(t => textFitsParagraphs(slots[t] ?? '', dims.w, dims.h, pt))) return pt
   }
   return scale[scale.length - 1]
 }
@@ -559,9 +618,9 @@ function preprocessBentoText(text: string): string {
   if (!text.trim()) return text
   if (splitValueLabel(text)) return text  // value+label: leave as-is
 
-  // Convert " · " list separator to bullet list
+  // Convert " · " list separator to bullet list; strip trailing period per item
   if (text.includes(' · ')) {
-    const items = text.split(' · ').map(s => s.trim()).filter(Boolean)
+    const items = text.split(' · ').map(s => stripTrailingPeriod(s.trim())).filter(Boolean)
     if (items.length >= 2) {
       return items.map(item => '• ' + item).join('\n')
     }
@@ -1072,7 +1131,9 @@ export async function buildPresentation(
     for (const [slotName, slotValue] of Object.entries(slideSlots)) {
       if (!slotValue || slotName.startsWith('ЗОБРАЖЕННЯ')) continue
       let replaceText = processedSlots?.[slotName] ?? slotValue
-      if (slotName === 'ЗАГОЛОВОК') replaceText = stripTrailingPeriod(replaceText)
+      if (slotName === 'ЗАГОЛОВОК' || BENTO_TOKENS[compId]?.includes(slotName)) {
+        replaceText = stripTrailingPeriod(replaceText)
+      }
       replaceText = addNbsp(replaceText)
       requests.push({
         replaceAllText: {
@@ -1132,6 +1193,17 @@ export async function buildPresentation(
     const slide = updatedSlides.find(s => s.objectId === pageId)
     if (!slide) continue
     requests.push(...buildCoverFloatRequests(slide, plan.slides[i].slots))
+  }
+
+  // ── bento_right left column: float ТЕКСТ strictly below ЗАГОЛОВОК ───────────────
+  for (let i = 0; i < plan.slides.length; i++) {
+    const compId = plan.slides[i].composition
+    if (!compId.startsWith('bento_right_')) continue
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    const slide = updatedSlides.find(s => s.objectId === pageId)
+    if (!slide) continue
+    requests.push(...buildBentoRightLeftColumnRequests(slide, plan.slides[i].slots))
   }
 
   // ── Title logo-safe resize: clamp ЗАГОЛОВОК to _TITLE_W=1610 ────────────────────
