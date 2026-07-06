@@ -118,6 +118,7 @@ const _eL     = (px: number) => Math.round(px * _FPX)
 // Safe title width: right edge = LOGO_X − 20 = 1710, clears logo zone by LOGO_GAP
 const _LOGO_X  = _W - _PAD - _LOGO_W  // 1730
 const _TITLE_W = _LOGO_X - 20 - _PAD  // 1610 (20 = logo_gap)
+const _INSET   = 19  // Figma px — Google Slides default content inset (~0.25cm); REST API v1 cannot set to 0
 
 // bento_right_* layouts occupy the top-right area — logo goes bottom-left instead
 function _logoPos(compId: string): { x: number; y: number } {
@@ -332,7 +333,8 @@ function buildKpiUpdateRequests(
       const token = rawText.match(/\{\{([^}]+)\}\}/)?.[1]
 
       if (token === 'ТЕКСТ') {
-        reqs.push(makeElemTransform(el.objectId, _PAD, _PAD + _TH, _UW, Math.max(bodyH, 1), sW, sH))
+        // No top expansion: box y stays at _PAD+_TH to avoid overlapping logo zone (y=[100,190])
+        reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, _PAD + _TH, _UW + 2 * _INSET, Math.max(bodyH, 1) + _INSET, sW, sH))
         if (bodyFontPt !== 18) {
           reqs.push({
             updateTextStyle: {
@@ -361,7 +363,7 @@ function buildKpiUpdateRequests(
           ? kCY + _INN + KPI_VERT_PAD
           : kCY + _INN + KPI_VERT_PAD + valH
         const boxH  = isVal ? valH : lblH
-        reqs.push(makeElemTransform(el.objectId, cx + _INN, boxY, cw - 2 * _INN, boxH, sW, sH))
+        reqs.push(makeElemTransform(el.objectId, cx + _INN - _INSET, boxY - _INSET, cw - 2 * _INN + 2 * _INSET, boxH + 2 * _INSET, sW, sH))
         // Apply font size only when it differs from the master default
         if (isVal && valPt !== 48) {
           reqs.push({
@@ -436,6 +438,171 @@ function buildKpiUpdateRequests(
   return reqs
 }
 
+// ─── Badges: pill layout constants ────────────────────────────────────────────
+const _BADGE_PT     = 18
+const _BADGE_H_PAD  = 30  // horizontal inner padding (px)
+const _BADGE_V_PAD  = 30  // vertical inner padding (px)
+// Single-line height with lineSpacing=90: pt × 2.667 × 0.9
+const _BADGE_LINE_H = Math.round(_BADGE_PT * 2.667 * 0.9)  // ≈ 43px
+const _BADGE_H      = _BADGE_V_PAD * 2 + _BADGE_LINE_H     // ≈ 103px
+const _BADGE_CHAR_W = Math.round(_BADGE_PT * 2.667 * 0.50) // ≈ 24px/char (average Inter)
+const _BADGE_GAP_H  = 16  // horizontal gap between badges
+const _BADGE_GAP_V  = 16  // vertical gap between rows
+const _BADGE_BG = { red: 26 / 255, green: 31 / 255, blue: 46 / 255 }  // #1A1F2E = CARD color
+
+// Float ЗАГОЛОВОК + delete ПУНКТИ placeholder + create pill shapes.
+// ПУНКТИ slot: items separated by \n (strip any leading •/-/– prefix at display time).
+// Uses ROUND_RECTANGLE for badge background — corner radius auto-proportional (~20px for h≈103px).
+function buildBadgesRequests(
+  slideIndex: number,
+  slide: slides_v1.Schema$Page,
+  slots: Record<string, string>,
+  pageId: string,
+): object[] {
+  const reqs: object[] = []
+
+  const titleText  = (slots['ЗАГОЛОВОК'] ?? '').trim()
+  const punkyText  = (slots['ПУНКТИ']    ?? '').trim()
+  if (!titleText) return reqs
+
+  // Float ЗАГОЛОВОК (identical logic to buildTitleBodyFloatRequests)
+  const h1LineH    = Math.round(_TITLE_BODY_H1_PT * 2.667 * 1.08)
+  const titleLines = estimateLineCount(titleText, _TITLE_W, _TITLE_BODY_H1_PT)
+  const titleH     = Math.min(_TITLE_BODY_H1_MAX, titleLines * h1LineH + 4)
+  for (const el of slide.pageElements ?? []) {
+    if (el.shape?.shapeType !== 'TEXT_BOX' || !el.objectId || !el.transform || !el.size) continue
+    const raw = (el.shape?.text?.textElements ?? []).map(te => te.textRun?.content ?? '').join('')
+    if (!raw.includes('{{ЗАГОЛОВОК}}')) continue
+    const sW = el.size.width?.magnitude  ?? 0
+    const sH = el.size.height?.magnitude ?? 0
+    reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, _PAD - _INSET, _TITLE_W + 2 * _INSET, titleH + 2 * _INSET, sW, sH))
+  }
+
+  if (!punkyText) return reqs
+
+  // Delete ПУНКТИ placeholder text box
+  for (const el of slide.pageElements ?? []) {
+    if (!el.objectId) continue
+    const raw = (el.shape?.text?.textElements ?? []).map(te => te.textRun?.content ?? '').join('')
+    if (raw.includes('{{ПУНКТИ}}')) {
+      reqs.push({ deleteObject: { objectId: el.objectId } })
+      break
+    }
+  }
+
+  const badgeZoneY = _PAD + titleH + TITLE_GAP
+
+  const items = punkyText
+    .split('\n')
+    .map(s => s.replace(/^[•\-–*]\s*/, '').trim())
+    .filter(Boolean)
+
+  const _WHITE_RGB = { red: 1, green: 1, blue: 1 }
+  let x = _PAD
+  let y = badgeZoneY
+
+  for (let bi = 0; bi < items.length; bi++) {
+    const label = items[bi]
+    const bw    = Math.max(80, Math.round(label.length * _BADGE_CHAR_W + 2 * _BADGE_H_PAD))
+
+    // Wrap row when badge doesn't fit
+    if (bi > 0 && x + bw > _PAD + _UW) {
+      x  = _PAD
+      y += _BADGE_H + _BADGE_GAP_V
+    }
+
+    // Stop if outside slide safe area
+    if (y + _BADGE_H > _H_SLIDE - _PAD) break
+
+    const bgId  = `bdg_${slideIndex}_${bi}_b`
+    const txtId = `bdg_${slideIndex}_${bi}_t`
+
+    // Badge background: ROUND_RECTANGLE (auto-proportional corners ≈ 20px at this height)
+    reqs.push({
+      createShape: {
+        objectId: bgId,
+        shapeType: 'ROUND_RECTANGLE',
+        elementProperties: {
+          pageObjectId: pageId,
+          size: {
+            width:  { magnitude: _eL(bw),      unit: 'EMU' },
+            height: { magnitude: _eL(_BADGE_H), unit: 'EMU' },
+          },
+          transform: { scaleX: 1, shearX: 0, translateX: _eL(x), shearY: 0, scaleY: 1, translateY: _eL(y), unit: 'EMU' },
+        },
+      },
+    })
+    reqs.push({
+      updateShapeProperties: {
+        objectId: bgId,
+        shapeProperties: {
+          shapeBackgroundFill: { solidFill: { color: { rgbColor: _BADGE_BG } } },
+          outline: { propertyState: 'NOT_RENDERED' },
+        },
+        fields: 'shapeBackgroundFill,outline',
+      },
+    })
+
+    // Text box centered inside badge
+    const txtX = x + _BADGE_H_PAD
+    const txtY = y + _BADGE_V_PAD
+    const txtW = bw - 2 * _BADGE_H_PAD
+    const txtH = _BADGE_H - 2 * _BADGE_V_PAD
+    reqs.push({
+      createShape: {
+        objectId: txtId,
+        shapeType: 'TEXT_BOX',
+        elementProperties: {
+          pageObjectId: pageId,
+          size: {
+            width:  { magnitude: _eL(txtW + 2 * _INSET), unit: 'EMU' },
+            height: { magnitude: _eL(txtH + 2 * _INSET), unit: 'EMU' },
+          },
+          transform: { scaleX: 1, shearX: 0, translateX: _eL(txtX - _INSET), shearY: 0, scaleY: 1, translateY: _eL(txtY - _INSET), unit: 'EMU' },
+        },
+      },
+    })
+    reqs.push({ insertText: { objectId: txtId, insertionIndex: 0, text: label } })
+    reqs.push({
+      updateTextStyle: {
+        objectId: txtId,
+        style: {
+          weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
+          foregroundColor: { opaqueColor: { rgbColor: _WHITE_RGB } },
+          fontSize: { magnitude: _BADGE_PT, unit: 'PT' },
+          bold: false,
+        },
+        fields: 'weightedFontFamily,foregroundColor,fontSize,bold',
+        textRange: { type: 'ALL' },
+      },
+    })
+    reqs.push({
+      updateParagraphStyle: {
+        objectId: txtId,
+        style: {
+          lineSpacing: 90,
+          alignment: 'CENTER',
+          spaceAbove: { magnitude: 0, unit: 'PT' },
+          spaceBelow: { magnitude: 0, unit: 'PT' },
+        },
+        fields: 'lineSpacing,alignment,spaceAbove,spaceBelow',
+        textRange: { type: 'ALL' },
+      },
+    })
+    reqs.push({
+      updateShapeProperties: {
+        objectId: txtId,
+        shapeProperties: { contentAlignment: 'MIDDLE', autofit: { autofitType: 'NONE' } },
+        fields: 'contentAlignment,autofit.autofitType',
+      },
+    })
+
+    x += bw + _BADGE_GAP_H
+  }
+
+  return reqs
+}
+
 // ─── Universal fixed gap: ЗАГОЛОВОК bottom → ПІДЗАГОЛОВОК/ТЕКСТ top ─────────
 // Applied to all compositions that have ЗАГОЛОВОК + subtitle/body below it.
 // 60px on the 1920×1080 Figma grid. Must stay in sync with compositions.ts float_gap.
@@ -488,13 +655,13 @@ function buildCoverFloatRequests(
     const sW  = el.size.width?.magnitude  ?? 0
     const sH  = el.size.height?.magnitude ?? 0
     if (raw.includes('{{ЗАГОЛОВОК}}')) {
-      reqs.push(makeElemTransform(el.objectId, _PAD, _PAD, _COVER_H1_W, titleH, sW, sH))
+      reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, _PAD - _INSET, _COVER_H1_W + 2 * _INSET, titleH + 2 * _INSET, sW, sH))
     }
     if (raw.includes('{{ПІДЗАГОЛОВОК}}')) {
-      reqs.push(makeElemTransform(el.objectId, _PAD, subY, _COVER_H1_W, subH, sW, sH))
+      reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, subY - _INSET, _COVER_H1_W + 2 * _INSET, subH + 2 * _INSET, sW, sH))
     }
     if (raw.includes('{{ДАТА}}')) {
-      reqs.push(makeElemTransform(el.objectId, _PAD, dateY, _COVER_H1_W, dateH, sW, sH))
+      reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, dateY - _INSET, _COVER_H1_W + 2 * _INSET, dateH + 2 * _INSET, sW, sH))
     }
   }
   return reqs
@@ -513,7 +680,23 @@ function buildBentoRightLeftColumnRequests(
 ): object[] {
   const titleText = (slots['ЗАГОЛОВОК'] ?? '').trim()
   const bodyText  = (slots['ТЕКСТ']     ?? '').trim()
-  if (!titleText) return []
+
+  if (!titleText) {
+    // ЗАГОЛОВОК absent (e.g. deduped in normalizePlan) — pin ТЕКСТ to top of left column.
+    if (!bodyText) return []
+    const logoY = _H_SLIDE - _PAD - _LOGO_H  // 890
+    const maxH  = Math.max(1, logoY - 20 - _PAD)  // 770
+    const reqs: object[] = []
+    for (const el of slide.pageElements ?? []) {
+      if (el.shape?.shapeType !== 'TEXT_BOX' || !el.objectId || !el.transform || !el.size) continue
+      const raw = (el.shape?.text?.textElements ?? []).map(te => te.textRun?.content ?? '').join('')
+      if (!raw.includes('{{ТЕКСТ}}')) continue
+      const sW = el.size.width?.magnitude  ?? 0
+      const sH = el.size.height?.magnitude ?? 0
+      reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, _PAD - _INSET, _LTW + 2 * _INSET, maxH + 2 * _INSET, sW, sH))
+    }
+    return reqs
+  }
 
   const titleLines = estimateLineCount(titleText, _LTW, _BENTO_RIGHT_H1_PT)
   // 1.08 = 1.2×normal × 0.9 lineSpacing; more accurate than generic lineH (1.4) for 44pt headings
@@ -535,12 +718,12 @@ function buildBentoRightLeftColumnRequests(
     const sW  = el.size.width?.magnitude  ?? 0
     const sH  = el.size.height?.magnitude ?? 0
     if (raw.includes('{{ЗАГОЛОВОК}}')) {
-      reqs.push(makeElemTransform(el.objectId, _PAD, _PAD, _LTW, titleH, sW, sH))
+      reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, _PAD - _INSET, _LTW + 2 * _INSET, titleH + 2 * _INSET, sW, sH))
     }
     if (raw.includes('{{ТЕКСТ}}')) {
       // Always move ТЕКСТ below ЗАГОЛОВОК — even when slot is empty — so the box
       // doesn't overlap with ЗАГОЛОВОК. Collapse to h=1 when text is absent.
-      reqs.push(makeElemTransform(el.objectId, _PAD, textY, _LTW, bodyText ? textMaxH : 1, sW, sH))
+      reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, textY - _INSET, _LTW + 2 * _INSET, (bodyText ? textMaxH : 1) + 2 * _INSET, sW, sH))
     }
   }
   return reqs
@@ -573,10 +756,10 @@ function buildSectionFloatRequests(
     const sW  = el.size.width?.magnitude  ?? 0
     const sH  = el.size.height?.magnitude ?? 0
     if (raw.includes('{{ЗАГОЛОВОК}}')) {
-      reqs.push(makeElemTransform(el.objectId, _PAD, _PAD, _TITLE_W, titleH, sW, sH))
+      reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, _PAD - _INSET, _TITLE_W + 2 * _INSET, titleH + 2 * _INSET, sW, sH))
     }
     if (raw.includes('{{ПІДЗАГОЛОВОК}}')) {
-      reqs.push(makeElemTransform(el.objectId, _PAD, subY, _UW, subText ? _SECTION_SUB_MAX : 1, sW, sH))
+      reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, subY - _INSET, _UW + 2 * _INSET, (subText ? _SECTION_SUB_MAX : 1) + 2 * _INSET, sW, sH))
     }
   }
   return reqs
@@ -610,10 +793,10 @@ function buildTitleBodyFloatRequests(
     const sW  = el.size.width?.magnitude  ?? 0
     const sH  = el.size.height?.magnitude ?? 0
     if (raw.includes('{{ЗАГОЛОВОК}}')) {
-      reqs.push(makeElemTransform(el.objectId, _PAD, _PAD, _TITLE_W, titleH, sW, sH))
+      reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, _PAD - _INSET, _TITLE_W + 2 * _INSET, titleH + 2 * _INSET, sW, sH))
     }
     if (raw.includes('{{ТЕКСТ}}')) {
-      reqs.push(makeElemTransform(el.objectId, _PAD, textY, _UW, bodyText ? textMaxH : 1, sW, sH))
+      reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, textY - _INSET, _UW + 2 * _INSET, (bodyText ? textMaxH : 1) + 2 * _INSET, sW, sH))
     }
   }
   return reqs
@@ -775,7 +958,7 @@ function buildBentoRowLayoutRequests(
       const isBottom = elY > _CY + _CH / 2
 
       if (el.shape?.shapeType === 'TEXT_BOX') {
-        reqs.push(makeElemTransform(el.objectId, cx + _INN, rowY + _INN, innerW, cardH - 2 * _INN, sW, sH))
+        reqs.push(makeElemTransform(el.objectId, cx + _INN - _INSET, rowY + _INN - _INSET, innerW + 2 * _INSET, cardH - 2 * _INN + 2 * _INSET, sW, sH))
       } else if (el.shape?.shapeType === 'RECTANGLE') {
         if (Math.abs(elW - cw) < TOL) {
           // Card body
@@ -871,7 +1054,7 @@ function buildBentoRowLayoutRequests(
         const isBottom = elY > origCy + mCellH / 2
 
         if (el.shape?.shapeType === 'TEXT_BOX') {
-          reqs.push(makeElemTransform(el.objectId, cx + _INN, cy + _INN, cellInnerW, cellH - 2 * _INN, sW, sH))
+          reqs.push(makeElemTransform(el.objectId, cx + _INN - _INSET, cy + _INN - _INSET, cellInnerW + 2 * _INSET, cellH - 2 * _INN + 2 * _INSET, sW, sH))
         } else if (el.shape?.shapeType === 'RECTANGLE') {
           if (Math.abs(elW - mCellW) < TOL) {
             reqs.push(makeElemTransform(el.objectId, cx, cy, cellW, cellH, sW, sH))
@@ -922,7 +1105,7 @@ function buildBentoRowLayoutRequests(
       const isBottom = elY > origCy + masterCardH / 2
 
       if (el.shape?.shapeType === 'TEXT_BOX') {
-        reqs.push(makeElemTransform(el.objectId, RBX + _INN, newCy + _INN, innerW, cardH - 2 * _INN, sW, sH))
+        reqs.push(makeElemTransform(el.objectId, RBX + _INN - _INSET, newCy + _INN - _INSET, innerW + 2 * _INSET, cardH - 2 * _INN + 2 * _INSET, sW, sH))
       } else if (el.shape?.shapeType === 'RECTANGLE') {
         if (Math.abs(elW - _RBW) < TOL) {
           reqs.push(makeElemTransform(el.objectId, RBX, newCy, _RBW, cardH, sW, sH))
@@ -1043,6 +1226,29 @@ export async function buildPresentation(
     if (compId) {
       if (!compMap[compId]) compMap[compId] = []
       compMap[compId].push(slide.objectId!)
+    }
+  }
+
+  // Step 2.1: Normalize plan slots.
+  // (a) Strip leading "* " bullet markers — verbatim source texts may use markdown bullets.
+  // (b) Dedup consecutive identical ЗАГОЛОВОК — section→content slides often share the same heading.
+  //     Uses "prevFinalTitle" (what the previous slide WILL show) so a repeated section heading
+  //     after an intervening null slide is not incorrectly deleted.
+  {
+    let prevFinalTitle: string | undefined
+    for (const slide of plan.slides) {
+      for (const [k, v] of Object.entries(slide.slots)) {
+        const stripped = v.replace(/^\*\s+/gm, '').trim()
+        if (stripped !== v) slide.slots[k] = stripped || undefined as unknown as string
+        if (stripped === '') delete slide.slots[k]
+      }
+      const title = (slide.slots['ЗАГОЛОВОК'] ?? '').trim()
+      if (title && title === prevFinalTitle) {
+        delete slide.slots['ЗАГОЛОВОК']
+        prevFinalTitle = undefined  // this slide now has no title — next slide is compared to null
+      } else {
+        prevFinalTitle = title || undefined
+      }
     }
   }
 
@@ -1210,6 +1416,8 @@ export async function buildPresentation(
     // Replace filled slots (bento card tokens use preprocessed text)
     for (const [slotName, slotValue] of Object.entries(slideSlots)) {
       if (!slotValue || slotName.startsWith('ЗОБРАЖЕННЯ')) continue
+      // badges: ПУНКТИ is deleted and replaced with pill shapes — skip replaceAllText
+      if (compId === 'badges' && slotName === 'ПУНКТИ') continue
       let replaceText = processedSlots?.[slotName] ?? slotValue
       if (slotName === 'ЗАГОЛОВОК' || BENTO_TOKENS[compId]?.includes(slotName)) {
         replaceText = stripTrailingPeriod(replaceText)
@@ -1307,13 +1515,24 @@ export async function buildPresentation(
     requests.push(...buildTitleBodyFloatRequests(slide, plan.slides[i].slots))
   }
 
+  // ── badges: float title + delete ПУНКТИ placeholder + create pill shapes ────
+  for (let i = 0; i < plan.slides.length; i++) {
+    if (plan.slides[i].composition !== 'badges') continue
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    const slide = updatedSlides.find(s => s.objectId === pageId)
+    if (!slide) continue
+    requests.push(...buildBadgesRequests(i, slide, plan.slides[i].slots, pageId))
+  }
+
   // ── Title logo-safe resize: clamp ЗАГОЛОВОК to _TITLE_W=1610 ────────────────────
   // Fixes old-master slides (title right=1820) without requiring master regeneration.
   // Cover / bento_right / section / title_body: handled above by their float functions.
   for (let i = 0; i < plan.slides.length; i++) {
     const compId = plan.slides[i].composition
     if (compId === 'cover' || compId.startsWith('bento_right_') ||
-        compId === 'section' || compId === 'section_red' || compId === 'title_body') continue
+        compId === 'section' || compId === 'section_red' || compId === 'title_body' ||
+        compId === 'badges') continue
     const titleObjId = slotObjectIds[i]?.['ЗАГОЛОВОК']
     if (!titleObjId) continue
     const pageId = planPageIds[i]
@@ -1328,8 +1547,8 @@ export async function buildPresentation(
     const elY = Math.round((titleEl.transform.translateY ?? 0) / _FPX)
     const elW = Math.round(sW * (titleEl.transform.scaleX ?? 1) / _FPX)
     const elH = Math.round(sH * (titleEl.transform.scaleY ?? 1) / _FPX)
-    if (elW > _TITLE_W) {
-      requests.push(makeElemTransform(titleObjId, elX, elY, _TITLE_W, elH, sW, sH))
+    if (elW > _TITLE_W + 2 * _INSET + 4) {
+      requests.push(makeElemTransform(titleObjId, elX, elY, _TITLE_W + 2 * _INSET, elH, sW, sH))
     }
   }
 

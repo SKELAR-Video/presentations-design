@@ -142,6 +142,17 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
       { name: 'КАРТКА_4', type: 'text', max_chars: 140, style: 'body' },
     ],
   },
+  {
+    id: 'badges',
+    name: 'Бейджі — плоский список',
+    // ЖОРСТКЕ ПРАВИЛО: плоский список = ЗАВЖДИ 1 слайд. ПУНКТИ = мітки через \n (1–3 слова, ≤20 символів).
+    when_to_use: 'плоский список коротких міток (1–3 слова, до 20 символів). ЗАВЖДИ 1 слайд — НІКОЛИ не розбивати.',
+    themes: ['dark', 'red'],
+    slots: [
+      { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 80, style: 'h1' },
+      { name: 'ПУНКТИ', type: 'text', max_chars: 400, style: 'body' },
+    ],
+  },
 ]
 
 export function getComposition(id: string): Composition | undefined {

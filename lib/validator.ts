@@ -500,6 +500,8 @@ function checkBentoLeftOverlap(slide: slides_v1.Schema$Page, compId: string): Ch
   const leftBoxes: Array<{ y: number; bottom: number }> = []
   for (const el of slide.pageElements ?? []) {
     if (el.shape?.shapeType !== 'TEXT_BOX' || !el.transform || !el.size) continue
+    const content = (el.shape?.text?.textElements ?? []).map(te => te.textRun?.content ?? '').join('').trim()
+    if (!content) continue  // skip empty boxes (e.g. collapsed ЗАГОЛОВОК after dedup)
     const { x, y, w, bottom } = elBounds(el)
     if (x < RBX - 50 && Math.abs(x - 100) < 30 && w > 500) {
       leftBoxes.push({ y, bottom })
@@ -546,6 +548,68 @@ function checkTheme(plan: SlidePlan): CheckResult {
   }
 }
 
+// Flat-list rules — plan-level, no Slides API required.
+
+// Reject literal "*" in any slot (LLM bullet bug: "* item" instead of "• item" or badges).
+function checkNoLiteralAsterisk(slots: Record<string, string>): CheckResult {
+  const fails: string[] = []
+  for (const [name, value] of Object.entries(slots)) {
+    if (name.startsWith('ЗОБРАЖЕННЯ_')) continue
+    if ((value ?? '').includes('*')) {
+      fails.push(`${name}: contains literal "*"`)
+    }
+  }
+  return { check: 'no_literal_asterisk', pass: fails.length === 0, detail: fails.join('; ') || undefined }
+}
+
+// Detect duplicated ЗАГОЛОВОК between consecutive slides (flat list split into multiple slides).
+function checkNoDuplicateTitle(plan: SlidePlan, slideIndex: number): CheckResult {
+  if (slideIndex === 0) return { check: 'no_duplicate_title', pass: true }
+  const cur  = (plan.slides[slideIndex].slots['ЗАГОЛОВОК'] ?? '').trim()
+  const prev = (plan.slides[slideIndex - 1].slots['ЗАГОЛОВОК'] ?? '').trim()
+  const dup  = Boolean(cur && cur === prev)
+  return {
+    check: 'no_duplicate_title',
+    pass: !dup,
+    detail: dup ? `ЗАГОЛОВОК "${cur.slice(0, 40)}" duplicated from slide ${slideIndex}` : undefined,
+  }
+}
+
+// badges: each item in ПУНКТИ must be ≤ MAX_BADGE_CHARS (1–3 words, label-sized).
+// Longer items indicate the wrong composition was chosen — use title_body instead.
+const MAX_BADGE_CHARS = 20
+function checkBadgesItems(slots: Record<string, string>): CheckResult {
+  const items = (slots['ПУНКТИ'] ?? '').split('\n').map(s => s.trim()).filter(Boolean)
+  if (items.length === 0) return { check: 'badge_item_max_chars', pass: false, detail: 'ПУНКТИ is empty' }
+  const fails = items.filter(it => it.length > MAX_BADGE_CHARS)
+    .map(it => `"${it.slice(0, 25)}" (${it.length}>${MAX_BADGE_CHARS})`)
+  return {
+    check: 'badge_item_max_chars',
+    pass: fails.length === 0,
+    detail: fails.length > 0 ? fails.join('; ') : `${items.length} items OK`,
+  }
+}
+
+// ─── Plan-only validation (no Slides API needed) ─────────────────────────────
+// Useful for fixture tests and pre-generation sanity checks.
+
+export type PlanCheckResult = CheckResult & { slideIndex: number }
+
+export function validatePlan(plan: SlidePlan): PlanCheckResult[] {
+  const results: PlanCheckResult[] = []
+  for (let i = 0; i < plan.slides.length; i++) {
+    const slide  = plan.slides[i]
+    const compId = slide.composition
+    const slots  = slide.slots
+    results.push({ slideIndex: i, ...checkNoLiteralAsterisk(slots) })
+    results.push({ slideIndex: i, ...checkNoDuplicateTitle(plan, i) })
+    if (compId === 'badges') {
+      results.push({ slideIndex: i, ...checkBadgesItems(slots) })
+    }
+  }
+  return results
+}
+
 // ─── main export ─────────────────────────────────────────────────────────────
 
 export async function validateDeck(
@@ -579,6 +643,9 @@ export async function validateDeck(
     checks.push(checkContentIntegrity(planSlide.slots, compId, plan.sourceText))
     checks.push(checkBadge(slide, compId))
     checks.push(checkLogoOverlap(slide, compId))
+    // Flat-list rules (plan-level, always run)
+    checks.push(checkNoLiteralAsterisk(planSlide.slots))
+    checks.push(checkNoDuplicateTitle(plan, i))
 
     if (compId === 'kpi_cards') {
       const comp = getComposition('kpi_cards')
@@ -589,6 +656,10 @@ export async function validateDeck(
 
     if (compId === 'cover') {
       checks.push(checkCoverLayout(slide))
+    }
+
+    if (compId === 'badges') {
+      checks.push(checkBadgesItems(planSlide.slots))
     }
 
     if (_V_BENTO_TOKENS[compId]) {

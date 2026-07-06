@@ -89,7 +89,7 @@ function tb(
   pt: number, color: RGB = WHITE,
 ): object[] {
   return [
-    { createShape: { objectId: id, shapeType: 'TEXT_BOX', elementProperties: elProps(slideId, x, y, w, h) } },
+    { createShape: { objectId: id, shapeType: 'TEXT_BOX', elementProperties: elProps(slideId, x - INSET, y - INSET, w + 2 * INSET, h + 2 * INSET) } },
     { insertText: { objectId: id, insertionIndex: 0, text: `{{${token}}}` } },
     { updateTextStyle: {
         objectId: id,
@@ -125,7 +125,8 @@ function tb(
 }
 
 // ─── Layouts ────────────────────────────────────────────────────────────────
-const R = 30  // fixed corner radius in Figma px
+const R     = 30   // fixed corner radius in Figma px
+const INSET = 19   // Figma px — Google Slides default content inset (~0.25cm); REST API v1 cannot set to 0
 
 function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number): object[] {
   const out: object[] = []
@@ -304,6 +305,15 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
           k++
         }
       }
+      break
+    }
+
+    case 'badges': {
+      // ПУНКТИ is a zone placeholder — replaced at generation time by buildBadgesRequests with pill shapes.
+      push(
+        tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, TITLE_W, TH, 36),
+        tb(mk(), slideId, 'ПУНКТИ', PAD, CY, UW, CH, 18, MUTED),
+      )
       break
     }
   }
