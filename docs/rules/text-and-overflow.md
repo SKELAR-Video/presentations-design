@@ -186,6 +186,22 @@ subY   = PAD + titleH + 60
 
 **compositions.ts**: кожен слот нижче ЗАГОЛОВОК матиме `float_after: 'ЗАГОЛОВОК', float_gap: 60` для документування.
 
+#### Порожній secondary-слот — обов'язково переміщуємо, h=1
+
+Якщо `ПІДЗАГОЛОВОК`/`ТЕКСТ` відсутній у плані — майстер-бокс все одно залишається у DOM (просто порожній після `replaceAllText`). Якщо не перемістити — він стоїть на фіксованій y=390 і перетинає ЗАГОЛОВОК, коли той займає більше 290px.
+
+**Правило**: float-функції завжди емітують `makeElemTransform` для secondary-боксу — навіть якщо слот порожній. Висота: `bodyText ? textMaxH : 1` (h=1 = невидимий, але не перетинає заголовок).
+
+```ts
+// Завжди, незалежно від наявності тексту:
+if (raw.includes('{{ТЕКСТ}}')) {
+  reqs.push(makeElemTransform(el.objectId, x, textY, w, bodyText ? textMaxH : 1, sW, sH))
+}
+```
+
+**Де реалізовано**: `buildBentoRightLeftColumnRequests`, `buildSectionFloatRequests`, `buildTitleBodyFloatRequests`.  
+**Валідатор**: `bento_left_overlap` — перевіряє будь-які боксові перетини, навіть порожні.
+
 ---
 
 ### bento_right — ліва колонка (ЗАГОЛОВОК → ТЕКСТ float)
