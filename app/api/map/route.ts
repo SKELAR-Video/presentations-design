@@ -26,13 +26,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Текст ТЗ не може бути порожнім' }, { status: 400 })
   }
 
-  const rawText = body.text.trim()
-  const underscoreCount = (rawText.match(/___/g) ?? []).length
-  const newlineCount    = (rawText.match(/\n/g) ?? []).length
-  const vtabCount       = (rawText.match(//g) ?? []).length
-  console.log(`[map] len=${rawText.length}  ___×${underscoreCount}  \\n×${newlineCount}  \\u000b×${vtabCount}`)
-  console.log(`[map] full text: ${JSON.stringify(rawText.slice(0, 800))}`)
-  const plan = await mapToPlan(rawText, theme)
-  console.log(`[map] sheetCount=${plan.sheetCount ?? 'none'}  slides=${plan.slides.length}`)
+  const plan = await mapToPlan(body.text.trim(), theme)
   return NextResponse.json({ plan })
 }
