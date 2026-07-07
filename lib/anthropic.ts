@@ -26,6 +26,7 @@ const SYSTEM_VERBATIM = `Ти маппінг-агент: ТЗ → SKELAR-пре�
 6. Ігноруй image-слоти (ЗОБРАЖЕННЯ_*) — залишай null.
 7. ДАТА: індекс фрагмента, що містить дату (≤20 символів). Якщо немає — null.
 8. Призначай КОЖЕН значущий фрагмент — ніколи не пропускай через «здається довгим».
+9. Якщо вхід розбитий на аркуші (=== Аркуш N ===): виводь РІВНО стільки слайдів, скільки аркушів. Кожен слайд використовує ТІЛЬКИ фрагменти свого аркуша — не виходь за межі аркуша.
 
 ## Як обирати композицію
 - cover → перший слайд.
@@ -150,16 +151,38 @@ JSON з рівно ${slides.length} елементами в "slides".`
   }
 }
 
-// ─── Fragment parsing ─────────────────────────────────────────────────────────
-// Splits ТЗ text into verbatim lines (one fragment per line).
-// Each fragment IS a literal substring of the original text, enabling
-// the verbatim content-integrity validator check.
-function parseFragments(text: string): string[] {
-  return text
-    .replace(/\r\n/g, '\n')
-    .split('\n')
-    .map(l => l.trim())
-    .filter(Boolean)
+// ─── Sheet + fragment parsing ─────────────────────────────────────────────────
+// Splits ТЗ by ___ / --- delimiters into sheets, then into verbatim line fragments.
+// When sheets.length >= 2 the 1-sheet-per-slide invariant is enforced.
+// Each fragment IS a literal substring of the original text (verbatim guarantee).
+type SheetParse = {
+  sheets: string[][]                  // lines grouped per sheet
+  fragments: string[]                 // flat array (global indices for LLM)
+  sheetRanges: Array<[number, number]> // [startIdx, endIdx] inclusive per sheet
+}
+
+function parseSheets(text: string): SheetParse {
+  const DELIMITER = /^[_\-]{3,}$/
+  const lines = text.replace(/\r\n/g, '\n').split('\n').map(l => l.trim())
+
+  const sheets: string[][] = [[]]
+  for (const line of lines) {
+    if (DELIMITER.test(line)) {
+      if (sheets[sheets.length - 1].length > 0) sheets.push([])
+    } else if (line) {
+      sheets[sheets.length - 1].push(line)
+    }
+  }
+
+  const nonEmpty = sheets.filter(s => s.length > 0)
+  const fragments: string[] = []
+  const sheetRanges: Array<[number, number]> = []
+  for (const sheet of nonEmpty) {
+    const start = fragments.length
+    fragments.push(...sheet)
+    sheetRanges.push([start, fragments.length - 1])
+  }
+  return { sheets: nonEmpty, fragments, sheetRanges }
 }
 
 // Called by google.ts after validateDeck — intentionally returns nothing.
@@ -172,8 +195,8 @@ export async function fixOverflowSlots(
 }
 
 export async function mapToPlan(text: string, theme: Theme): Promise<SlidePlan> {
-  // Split ТЗ into verbatim line fragments — each is a literal substring of `text`
-  const fragments = parseFragments(text)
+  const { sheets, fragments, sheetRanges } = parseSheets(text)
+  const hasSheets = sheets.length >= 2
 
   // Compact catalog: slot names + max_chars so LLM knows what fits
   const catalogDescription = PHASE0_COMPOSITIONS.map((c) => {
@@ -184,11 +207,26 @@ export async function mapToPlan(text: string, theme: Theme): Promise<SlidePlan> 
     return `- ${c.id}: [${textSlots}]  ← ${c.when_to_use}`
   }).join('\n')
 
-  const fragmentsList = fragments
-    .map((f, i) => `[${i}] ${JSON.stringify(f.length > 200 ? f.slice(0, 200) + '…' : f)}`)
-    .join('\n')
+  // When sheets detected: show fragments grouped by sheet so LLM knows boundaries.
+  // When no delimiter: fall back to flat list (legacy behaviour, no 1:1 constraint).
+  const fragmentsList = hasSheets
+    ? sheets.map((sheetLines, si) => {
+        const [start] = sheetRanges[si]
+        const items = sheetLines.map((line, li) => {
+          const idx = start + li
+          return `  [${idx}] ${JSON.stringify(line.length > 200 ? line.slice(0, 200) + '…' : line)}`
+        }).join('\n')
+        return `=== Аркуш ${si + 1} ===\n${items}`
+      }).join('\n\n')
+    : fragments
+        .map((f, i) => `[${i}] ${JSON.stringify(f.length > 200 ? f.slice(0, 200) + '…' : f)}`)
+        .join('\n')
 
-  const userMessage = `Тема: ${theme}.
+  const sheetConstraint = hasSheets
+    ? `\nБриф містить РІВНО ${sheets.length} аркушів — виведи РІВНО ${sheets.length} слайдів.`
+    : ''
+
+  const userMessage = `Тема: ${theme}.${sheetConstraint}
 
 Каталог SKELAR-композицій:
 ${catalogDescription}
@@ -211,9 +249,16 @@ ${fragmentsList}
   const json = raw.startsWith('```') ? raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '') : raw
   const mapping = JSON.parse(json) as { slides: SlideAssignment[] }
 
+  // Enforce 1 sheet = 1 slide when delimiter was used
+  if (hasSheets && mapping.slides.length !== sheets.length) {
+    throw new Error(
+      `LLM повернув ${mapping.slides.length} слайдів, але бриф містить ${sheets.length} аркушів. ` +
+      `Очікується рівно ${sheets.length} слайдів.`,
+    )
+  }
+
   // Build SlidePlan — verbatim text from fragments, LLM never touched it.
   // NO truncation. If a slot exceeds max_chars → validator reports FAIL with details.
-  // The user decides how to shorten the source text; code never cuts it silently.
   const slides = mapping.slides.map((m, i) => {
     const slots: Record<string, string> = {}
     for (const [slotName, ref] of Object.entries(m.assignment ?? {})) {
@@ -228,5 +273,5 @@ ${fragmentsList}
     return { id: `slide_${i + 1}`, composition: m.composition || 'title_body', slots, flags: {} }
   })
 
-  return { theme, slides, sourceText: text }
+  return { theme, slides, sourceText: text, sheetCount: hasSheets ? sheets.length : undefined }
 }

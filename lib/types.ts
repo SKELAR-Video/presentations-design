@@ -23,6 +23,9 @@ export type SlidePlan = {
   // Original input text, stored for verbatim content-integrity validation.
   // Each non-empty slot value must be a line-by-line substring of this text.
   sourceText?: string
+  // Number of sheets (аркушів) detected by ___-delimiter parsing.
+  // When set, slide count must equal this value (1 sheet = 1 slide invariant).
+  sheetCount?: number
 }
 
 export type CompositionSlot = {

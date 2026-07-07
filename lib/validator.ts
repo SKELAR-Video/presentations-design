@@ -599,6 +599,20 @@ export type PlanCheckResult = CheckResult & { slideIndex: number }
 
 export function validatePlan(plan: SlidePlan): PlanCheckResult[] {
   const results: PlanCheckResult[] = []
+
+  // Deck-level: slide count must match sheet count when delimiter was used
+  if (plan.sheetCount !== undefined) {
+    const pass = plan.slides.length === plan.sheetCount
+    results.push({
+      slideIndex: -1,
+      check: 'slide_count_matches_sheets',
+      pass,
+      detail: pass
+        ? `${plan.slides.length} slides = ${plan.sheetCount} sheets`
+        : `${plan.slides.length} slides ≠ ${plan.sheetCount} sheets`,
+    })
+  }
+
   for (let i = 0; i < plan.slides.length; i++) {
     const slide  = plan.slides[i]
     const compId = slide.composition
@@ -673,8 +687,20 @@ export async function validateDeck(
       checks.push(checkBentoLeftOverlap(slide, compId))
     }
 
-    // theme_consistency is deck-level; attach to slide 0
-    if (i === 0) checks.push(themeCheck)
+    // deck-level checks — attach to slide 0
+    if (i === 0) {
+      checks.push(themeCheck)
+      if (plan.sheetCount !== undefined) {
+        const pass = plan.slides.length === plan.sheetCount
+        checks.push({
+          check: 'slide_count_matches_sheets',
+          pass,
+          detail: pass
+            ? `${plan.slides.length} slides = ${plan.sheetCount} sheets`
+            : `${plan.slides.length} slides ≠ ${plan.sheetCount} sheets`,
+        })
+      }
+    }
 
     const pass = checks.every(c => c.pass)
     results.push({ slideIndex: i, composition: compId, checks, pass })
