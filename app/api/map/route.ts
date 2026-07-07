@@ -27,9 +27,11 @@ export async function POST(req: NextRequest) {
   }
 
   const rawText = body.text.trim()
-  const hasUnderscore = rawText.includes('___')
-  const hasDash       = /^-{3,}$/m.test(rawText)
-  console.log(`[map] text=${rawText.length}chars  ___=${hasUnderscore}  ---=${hasDash}  preview: ${JSON.stringify(rawText.slice(0, 120))}`)
+  const underscoreCount = (rawText.match(/___/g) ?? []).length
+  const newlineCount    = (rawText.match(/\n/g) ?? []).length
+  const vtabCount       = (rawText.match(//g) ?? []).length
+  console.log(`[map] len=${rawText.length}  ___×${underscoreCount}  \\n×${newlineCount}  \\u000b×${vtabCount}`)
+  console.log(`[map] full text: ${JSON.stringify(rawText.slice(0, 800))}`)
   const plan = await mapToPlan(rawText, theme)
   console.log(`[map] sheetCount=${plan.sheetCount ?? 'none'}  slides=${plan.slides.length}`)
   return NextResponse.json({ plan })
