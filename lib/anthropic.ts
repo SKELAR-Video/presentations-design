@@ -164,13 +164,30 @@ type SheetParse = {
 function parseSheets(text: string): SheetParse {
   const DELIMITER = /^[_\-]{3,}$/
   const lines = text.replace(/\r\n/g, '\n').replace(//g, '\n').split('\n').map(l => l.trim())
+  // Multiple \x0b (Google Docs Shift+Enter) in a row = section boundary after normalization
 
+  const hasDelimiters = lines.some(l => DELIMITER.test(l))
   const sheets: string[][] = [[]]
-  for (const line of lines) {
-    if (DELIMITER.test(line)) {
-      if (sheets[sheets.length - 1].length > 0) sheets.push([])
-    } else if (line) {
-      sheets[sheets.length - 1].push(line)
+
+  if (hasDelimiters) {
+    for (const line of lines) {
+      if (DELIMITER.test(line)) {
+        if (sheets[sheets.length - 1].length > 0) sheets.push([])
+      } else if (line) {
+        sheets[sheets.length - 1].push(line)
+      }
+    }
+  } else {
+    // Auto-split: 2+ consecutive blank lines = section boundary
+    let blankRun = 0
+    for (const line of lines) {
+      if (!line) {
+        blankRun++
+        if (blankRun === 2 && sheets[sheets.length - 1].length > 0) sheets.push([])
+      } else {
+        blankRun = 0
+        sheets[sheets.length - 1].push(line)
+      }
     }
   }
 
@@ -182,6 +199,7 @@ function parseSheets(text: string): SheetParse {
     fragments.push(...sheet)
     sheetRanges.push([start, fragments.length - 1])
   }
+  console.log(`[parseSheets] hasDelimiters=${hasDelimiters} sheets=${nonEmpty.length} fragments=${fragments.length}`)
   return { sheets: nonEmpty, fragments, sheetRanges }
 }
 
@@ -197,6 +215,7 @@ export async function fixOverflowSlots(
 // Detect number of logical sections via a cheap Haiku call.
 // Used when no explicit ___ delimiters are found in the text.
 async function detectSectionCount(text: string): Promise<number> {
+  console.log(`[detectSectionCount] text len=${text.length} preview=${JSON.stringify(text.slice(0, 300))}`)
   const response = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 10,
@@ -208,6 +227,7 @@ async function detectSectionCount(text: string): Promise<number> {
   })
   const raw = response.content[0].type === 'text' ? response.content[0].text.trim() : ''
   const n = parseInt(raw)
+  console.log(`[detectSectionCount] haiku raw="${raw}" parsed=${n} result=${isNaN(n) || n < 2 ? 0 : n}`)
   return isNaN(n) || n < 2 ? 0 : n
 }
 
