@@ -120,6 +120,14 @@ const _LOGO_X  = _W - _PAD - _LOGO_W  // 1730
 const _TITLE_W = _LOGO_X - 20 - _PAD  // 1610 (20 = logo_gap)
 const _INSET   = 19  // Figma px — Google Slides default content inset (~0.25cm); REST API v1 cannot set to 0
 
+// Fixed title/subtitle box heights — 2-line comfortable capacity at role font size.
+// Positions of elements below (ТЕКСТ, ПІДЗАГОЛОВОК, ДАТА) are therefore constant.
+// software auto-shrink loop handles longer titles; positions stay fixed.
+const _H1_FIXED_44  = 260  // 44pt headings: 2 × (44×2.667×1.08) ≈ 254 → 260
+const _H1_FIXED_36  = 220  // 36pt headings: 2 × (36×2.667×1.08) ≈ 208 → 220
+const _SUB_FIXED_22 = 130  // 22pt cover subtitle: 2-line comfortable capacity
+const _DATE_FIXED   = 70   // 18pt cover date: 1-line comfortable capacity
+
 // bento_right_* layouts occupy the top-right area — logo goes bottom-left instead
 function _logoPos(compId: string): { x: number; y: number } {
   if (compId.startsWith('bento_right_')) {
@@ -465,10 +473,8 @@ function buildBadgesRequests(
   const punkyText  = (slots['ПУНКТИ']    ?? '').trim()
   if (!titleText) return reqs
 
-  // Float ЗАГОЛОВОК (identical logic to buildTitleBodyFloatRequests)
-  const h1LineH    = Math.round(_TITLE_BODY_H1_PT * 2.667 * 1.08)
-  const titleLines = estimateLineCount(titleText, _TITLE_W, _TITLE_BODY_H1_PT)
-  const titleH     = Math.min(_TITLE_BODY_H1_MAX, titleLines * h1LineH + 4)
+  // Float ЗАГОЛОВОК — fixed 2-line height; software auto-shrink handles longer titles
+  const titleH = _H1_FIXED_36
   for (const el of slide.pageElements ?? []) {
     if (el.shape?.shapeType !== 'TEXT_BOX' || !el.objectId || !el.transform || !el.size) continue
     const raw = (el.shape?.text?.textElements ?? []).map(te => te.textRun?.content ?? '').join('')
@@ -609,17 +615,10 @@ function buildBadgesRequests(
 const TITLE_GAP = 60
 
 // ─── Cover: float ПІДЗАГОЛОВОК below ЗАГОЛОВОК, ДАТА below ПІДЗАГОЛОВОК ──────
-// Chain: ЗАГОЛОВОК (44pt) → gap 60px → ПІДЗАГОЛОВОК (22pt, optional) → gap 30px → ДАТА (18pt)
-// Constants must mirror compositions.ts cover slots and create-master/route.ts.
-const _COVER_H1_PT   = 44
-const _COVER_H1_W    = _TITLE_W   // 1610 — avoids logo reserved zone
-const _COVER_H1_MAX  = 400        // compositions.ts cover.ЗАГОЛОВОК.max_h
-const _COVER_SUB_PT  = 22
-const _COVER_SUB_MAX = 200        // compositions.ts cover.ПІДЗАГОЛОВОК.max_h
-const _COVER_SUB_GAP = TITLE_GAP  // 60px — fixed, same on every composition
-const _COVER_DATE_PT = 18
-const _COVER_DATE_MAX= 80         // compositions.ts cover.ДАТА.max_h
-const _COVER_GAP     = 30         // gap between last text block and ДАТА
+// Chain: ЗАГОЛОВОК → gap 60px → ПІДЗАГОЛОВОК (optional) → gap 30px → ДАТА
+// All heights are fixed; positions of ПІДЗАГОЛОВОК and ДАТА are constants.
+const _COVER_H1_W = _TITLE_W  // 1610 — avoids logo reserved zone
+const _COVER_GAP  = 30        // gap between ПІДЗАГОЛОВОК and ДАТА
 
 function buildCoverFloatRequests(
   slide: slides_v1.Schema$Page,
@@ -630,23 +629,11 @@ function buildCoverFloatRequests(
   const dateText  = (slots['ДАТА']         ?? '').trim()
   if (!titleText && !subText && !dateText) return []
 
-  // ЗАГОЛОВОК: compute actual rendered height
-  const titleLines = estimateLineCount(titleText, _COVER_H1_W, _COVER_H1_PT)
-  const titleH     = Math.min(_COVER_H1_MAX, Math.max(1, Math.ceil(titleLines * lineH(_COVER_H1_PT))) + 4)
-
-  // ПІДЗАГОЛОВОК: compute height only when present
-  const subLines = subText ? estimateLineCount(subText, _COVER_H1_W, _COVER_SUB_PT) : 0
-  const subH     = subText
-    ? Math.min(_COVER_SUB_MAX, Math.max(1, Math.ceil(subLines * lineH(_COVER_SUB_PT))) + 4)
-    : 1   // collapse to 1px when absent so it doesn't affect layout
-  const subY     = _PAD + titleH + (subText ? _COVER_SUB_GAP : 0)
-
-  // ДАТА: floats below ПІДЗАГОЛОВОК (or ЗАГОЛОВОК if subtitle absent)
-  const dateLines = estimateLineCount(dateText, _COVER_H1_W, _COVER_DATE_PT)
-  const dateH     = Math.min(_COVER_DATE_MAX, Math.max(1, Math.ceil(dateLines * lineH(_COVER_DATE_PT))) + 4)
-  const dateY     = subText
-    ? subY + subH + _COVER_GAP
-    : _PAD + titleH + _COVER_GAP
+  const titleH = _H1_FIXED_44
+  const subH   = subText ? _SUB_FIXED_22 : 1
+  const subY   = _PAD + titleH + (subText ? TITLE_GAP : 0)
+  const dateH  = _DATE_FIXED
+  const dateY  = subText ? subY + subH + _COVER_GAP : _PAD + titleH + _COVER_GAP
 
   const reqs: object[] = []
   for (const el of slide.pageElements ?? []) {
@@ -668,11 +655,8 @@ function buildCoverFloatRequests(
 }
 
 // ─── bento_right left column: float ТЕКСТ below ЗАГОЛОВОК ────────────────────
-// Master has ЗАГОЛОВОК at y=100 h=260, ТЕКСТ at y=390. When heading wraps >3 lines
-// it overflows into ТЕКСТ. This function pins ТЕКСТ strictly below ЗАГОЛОВОК.
-const _BENTO_RIGHT_H1_PT    = 44
-const _BENTO_RIGHT_H1_H_MAX = 400  // allows up to 3 lines at 44pt (actual lineH ≈127px × 3 = 381)
-const _BENTO_RIGHT_TITLE_GAP = TITLE_GAP  // 60px — matches universal TITLE_GAP
+// ЗАГОЛОВОК fixed height = _H1_FIXED_44 (260px). ТЕКСТ always at fixed y=420 (PAD+260+60).
+// ТЕКСТ always at fixed y=420; software auto-shrink handles long titles.
 
 function buildBentoRightLeftColumnRequests(
   slide: slides_v1.Schema$Page,
@@ -698,18 +682,10 @@ function buildBentoRightLeftColumnRequests(
     return reqs
   }
 
-  const titleLines = estimateLineCount(titleText, _LTW, _BENTO_RIGHT_H1_PT)
-  // 1.08 = 1.2×normal × 0.9 lineSpacing; more accurate than generic lineH (1.4) for 44pt headings
-  const h1LineH    = Math.round(_BENTO_RIGHT_H1_PT * 2.667 * 1.08)
-  const titleH     = Math.min(
-    _BENTO_RIGHT_H1_H_MAX,
-    Math.max(1, titleLines * h1LineH) + 4,
-  )
-
-  const textY     = _PAD + titleH + _BENTO_RIGHT_TITLE_GAP
-  // Logo is at y=890 (bottom-left in bento_right). Leave 20px above it.
-  const logoY     = _H_SLIDE - _PAD - _LOGO_H   // 890
-  const textMaxH  = Math.max(1, logoY - 20 - textY)
+  const titleH   = _H1_FIXED_44
+  const textY    = _PAD + titleH + TITLE_GAP  // 420 (fixed)
+  const logoY    = _H_SLIDE - _PAD - _LOGO_H  // 890
+  const textMaxH = Math.max(1, logoY - 20 - textY)  // 450 (fixed)
 
   const reqs: object[] = []
   for (const el of slide.pageElements ?? []) {
@@ -730,11 +706,8 @@ function buildBentoRightLeftColumnRequests(
 }
 
 // ─── section/section_red: float ПІДЗАГОЛОВОК below ЗАГОЛОВОК ─────────────────
-// Master has ЗАГОЛОВОК at y=100 h=260, ПІДЗАГОЛОВОК fixed at y=390 (100+260+30).
-// At runtime ПІДЗАГОЛОВОК top = bottom-of-actual-title + TITLE_GAP (60px).
-const _SECTION_H1_PT   = 44
-const _SECTION_H1_MAX  = 400   // up to ~3 lines at 44pt
-const _SECTION_SUB_MAX = 160   // from create-master/route.ts
+// ЗАГОЛОВОК fixed height = _H1_FIXED_44 (260px). ПІДЗАГОЛОВОК always at fixed y=420 (PAD+260+60).
+const _SECTION_SUB_MAX = 160  // from create-master/route.ts
 
 function buildSectionFloatRequests(
   slide: slides_v1.Schema$Page,
@@ -744,10 +717,8 @@ function buildSectionFloatRequests(
   const subText   = (slots['ПІДЗАГОЛОВОК'] ?? '').trim()
   if (!titleText) return []
 
-  const h1LineH    = Math.round(_SECTION_H1_PT * 2.667 * 1.08)
-  const titleLines = estimateLineCount(titleText, _TITLE_W, _SECTION_H1_PT)
-  const titleH     = Math.min(_SECTION_H1_MAX, titleLines * h1LineH + 4)
-  const subY       = _PAD + titleH + TITLE_GAP
+  const titleH = _H1_FIXED_44
+  const subY   = _PAD + titleH + TITLE_GAP  // 420 (fixed)
 
   const reqs: object[] = []
   for (const el of slide.pageElements ?? []) {
@@ -766,10 +737,8 @@ function buildSectionFloatRequests(
 }
 
 // ─── title_body: float ТЕКСТ below ЗАГОЛОВОК ──────────────────────────────────
-// Master has ЗАГОЛОВОК at y=100 h=TH(100) (36pt), ТЕКСТ fixed at CY=300.
-// At runtime ТЕКСТ top = bottom-of-actual-title + TITLE_GAP (60px).
-const _TITLE_BODY_H1_PT  = 36
-const _TITLE_BODY_H1_MAX = 300  // generous: 36pt × 3 lines ≈ 338px
+// ЗАГОЛОВОК fixed height = _H1_FIXED_36 (220px). ТЕКСТ always at fixed y=380 (PAD+220+60).
+// textMaxH = 518px (fixed: H-PAD-52-GAP-380).
 
 function buildTitleBodyFloatRequests(
   slide: slides_v1.Schema$Page,
@@ -779,12 +748,9 @@ function buildTitleBodyFloatRequests(
   const bodyText  = (slots['ТЕКСТ']     ?? '').trim()
   if (!titleText) return []
 
-  const h1LineH    = Math.round(_TITLE_BODY_H1_PT * 2.667 * 1.08)
-  const titleLines = estimateLineCount(titleText, _TITLE_W, _TITLE_BODY_H1_PT)
-  const titleH     = Math.min(_TITLE_BODY_H1_MAX, titleLines * h1LineH + 4)
-  const textY      = _PAD + titleH + TITLE_GAP
-  // Leave GAP (30px) above ПІДПИС which is fixed at H-PAD-52 = 928
-  const textMaxH   = Math.max(1, _H_SLIDE - _PAD - 52 - _GAP - textY)
+  const titleH   = _H1_FIXED_36
+  const textY    = _PAD + titleH + TITLE_GAP  // 380 (fixed)
+  const textMaxH = Math.max(1, _H_SLIDE - _PAD - 52 - _GAP - textY)  // 518 (fixed)
 
   const reqs: object[] = []
   for (const el of slide.pageElements ?? []) {

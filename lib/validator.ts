@@ -68,15 +68,17 @@ function checkBounds(slide: slides_v1.Schema$Page): CheckResult {
 }
 
 function checkAutofit(slide: slides_v1.Schema$Page): CheckResult {
+  // SHAPE_AUTOFIT expands the box to fit text — shifts layout, forbidden.
+  // NONE is the only settable value via REST API v1; TEXT_AUTOFIT is read-only in the API.
   const fails: string[] = []
   for (const el of slide.pageElements ?? []) {
     if (el.shape?.shapeType !== 'TEXT_BOX') continue
     const aft = el.shape.shapeProperties?.autofit?.autofitType
-    if (aft && aft !== 'NONE') {
-      fails.push(`${elToken(el) ?? el.objectId}: ${aft}`)
+    if (aft === 'SHAPE_AUTOFIT') {
+      fails.push(`${elToken(el) ?? el.objectId}: SHAPE_AUTOFIT`)
     }
   }
-  return { check: 'autofit_none', pass: fails.length === 0, detail: fails.join('; ') || undefined }
+  return { check: 'autofit_no_expand', pass: fails.length === 0, detail: fails.join('; ') || undefined }
 }
 
 function checkFont(slide: slides_v1.Schema$Page): CheckResult {
