@@ -163,7 +163,7 @@ type SheetParse = {
 
 function parseSheets(text: string): SheetParse {
   const DELIMITER = /^[_\-]{3,}$/
-  const lines = text.replace(/\r\n/g, '\n').split('\n').map(l => l.trim())
+  const lines = text.replace(/\r\n/g, '\n').replace(//g, '\n').split('\n').map(l => l.trim())
 
   const sheets: string[][] = [[]]
   for (const line of lines) {

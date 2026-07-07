@@ -57,10 +57,15 @@ async function extractSlides(
   }))
 }
 
-// Extract plain text from a Google Docs structural element tree
+// Extract plain text from a Google Docs structural element tree.
+// Horizontal rules (auto-converted from ___ by Google Docs) are emitted as \n___\n
+// so parseSheets can use them as sheet delimiters.
 function readDocContent(content: docs_v1.Schema$StructuralElement[]): string {
   return content.map(el => {
     if (el.paragraph) {
+      // Horizontal rule element = sheet delimiter
+      const hasHR = (el.paragraph.elements ?? []).some(pe => pe.horizontalRule)
+      if (hasHR) return '\n___\n'
       return (el.paragraph.elements ?? [])
         .map(pe => pe.textRun?.content ?? '')
         .join('')
@@ -81,33 +86,35 @@ async function fetchGoogleDocText(
   auth2: ReturnType<typeof getOAuth2Client>,
   fileId: string,
 ): Promise<string> {
-  // Primary: Drive export — fast, no extra API scope needed
+  // Primary: Docs API — preserves structure (horizontal rules → ___), requires drive scope.
   try {
-    const drive = google.drive({ version: 'v3', auth: auth2 })
-    const res = await drive.files.export(
-      { fileId, mimeType: 'text/plain' },
-      { responseType: 'text' },
-    )
-    return typeof res.data === 'string' ? res.data.trim() : JSON.stringify(res.data)
-  } catch {
-    // Fallback: Google Docs API — handles cases where Drive export returns fileNotExportable.
-    // Requires "Google Docs API" to be enabled in Google Cloud Console.
-    try {
-      const docsApi = google.docs({ version: 'v1', auth: auth2 })
-      const res = await docsApi.documents.get({ documentId: fileId })
-      const body = res.data.body?.content ?? []
-      return readDocContent(body).trim()
-    } catch (docsErr) {
-      const msg = docsErr instanceof Error ? docsErr.message : String(docsErr)
-      if (msg.includes('has not been used') || msg.includes('is disabled')) {
-        throw new Error('Увімкни Google Docs API у Google Cloud Console: https://console.developers.google.com/apis/api/docs.googleapis.com/overview')
-      }
-      if (msg.includes('Office file') || msg.includes('not supported for this document')) {
-        throw new Error('Документ у форматі Office (.docx). Відкрий його в Google Docs → Файл → Зберегти як Google Docs — і вставте посилання на новий файл.')
-      }
-      throw docsErr
+    const docsApi = google.docs({ version: 'v1', auth: auth2 })
+    const res = await docsApi.documents.get({ documentId: fileId })
+    const body = res.data.body?.content ?? []
+    const text = readDocContent(body).trim()
+    if (text) {
+      console.log(`[fetch-doc] docsApi ok  len=${text.length}  ___=${text.includes('___')}`)
+      return text
     }
+  } catch (docsErr) {
+    const msg = docsErr instanceof Error ? docsErr.message : String(docsErr)
+    if (msg.includes('has not been used') || msg.includes('is disabled')) {
+      throw new Error('Увімкни Google Docs API у Google Cloud Console: https://console.developers.google.com/apis/api/docs.googleapis.com/overview')
+    }
+    if (msg.includes('Office file') || msg.includes('not supported for this document')) {
+      throw new Error('Документ у форматі Office (.docx). Відкрий його в Google Docs → Файл → Зберегти як Google Docs — і вставте посилання на новий файл.')
+    }
+    console.warn('[fetch-doc] docsApi failed, falling back to Drive export:', msg)
   }
+  // Fallback: Drive export — no structural info (horizontal rules lost), but handles edge cases.
+  const drive = google.drive({ version: 'v3', auth: auth2 })
+  const res = await drive.files.export(
+    { fileId, mimeType: 'text/plain' },
+    { responseType: 'text' },
+  )
+  const text = typeof res.data === 'string' ? res.data.trim() : JSON.stringify(res.data)
+  console.log(`[fetch-doc] drive export fallback  len=${text.length}  ___=${text.includes('___')}`)
+  return text
 }
 
 export async function POST(req: NextRequest) {
