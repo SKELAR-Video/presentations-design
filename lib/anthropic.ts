@@ -194,9 +194,29 @@ export async function fixOverflowSlots(
   return []
 }
 
+// Detect number of logical sections via a cheap Haiku call.
+// Used when no explicit ___ delimiters are found in the text.
+async function detectSectionCount(text: string): Promise<number> {
+  const response = await client.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 10,
+    system: 'Відповідай ТІЛЬКИ числом. Без пояснень, без слів.',
+    messages: [{
+      role: 'user',
+      content: `Скільки самостійних тематичних блоків у цьому брифі для презентації?\nКожен блок = один слайд. Перший — обкладинка, останній — закриваючий слайд.\n\n${text.slice(0, 4000)}`,
+    }],
+  })
+  const raw = response.content[0].type === 'text' ? response.content[0].text.trim() : ''
+  const n = parseInt(raw)
+  return isNaN(n) || n < 2 ? 0 : n
+}
+
 export async function mapToPlan(text: string, theme: Theme): Promise<SlidePlan> {
   const { sheets, fragments, sheetRanges } = parseSheets(text)
   const hasSheets = sheets.length >= 2
+
+  // Target slide count: explicit sheets OR auto-detected via Haiku
+  const targetCount = hasSheets ? sheets.length : await detectSectionCount(text)
 
   // Compact catalog: slot names + max_chars so LLM knows what fits
   const catalogDescription = PHASE0_COMPOSITIONS.map((c) => {
@@ -208,7 +228,7 @@ export async function mapToPlan(text: string, theme: Theme): Promise<SlidePlan> 
   }).join('\n')
 
   // When sheets detected: show fragments grouped by sheet so LLM knows boundaries.
-  // When no delimiter: fall back to flat list (legacy behaviour, no 1:1 constraint).
+  // Otherwise: flat list with count constraint from auto-detection.
   const fragmentsList = hasSheets
     ? sheets.map((sheetLines, si) => {
         const [start] = sheetRanges[si]
@@ -222,11 +242,11 @@ export async function mapToPlan(text: string, theme: Theme): Promise<SlidePlan> 
         .map((f, i) => `[${i}] ${JSON.stringify(f.length > 200 ? f.slice(0, 200) + '…' : f)}`)
         .join('\n')
 
-  const sheetConstraint = hasSheets
-    ? `\nБриф містить РІВНО ${sheets.length} аркушів — виведи РІВНО ${sheets.length} слайдів.`
+  const slideConstraint = targetCount >= 2
+    ? `\nБриф містить РІВНО ${targetCount} логічних блоків — виведи РІВНО ${targetCount} слайдів.`
     : ''
 
-  const userMessage = `Тема: ${theme}.${sheetConstraint}
+  const userMessage = `Тема: ${theme}.${slideConstraint}
 
 Каталог SKELAR-композицій:
 ${catalogDescription}
@@ -249,16 +269,15 @@ ${fragmentsList}
   const json = raw.startsWith('```') ? raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '') : raw
   const mapping = JSON.parse(json) as { slides: SlideAssignment[] }
 
-  // Enforce 1 sheet = 1 slide when delimiter was used
-  if (hasSheets && mapping.slides.length !== sheets.length) {
+  // Enforce exact count when we have a target
+  if (targetCount >= 2 && mapping.slides.length !== targetCount) {
     throw new Error(
-      `LLM повернув ${mapping.slides.length} слайдів, але бриф містить ${sheets.length} аркушів. ` +
-      `Очікується рівно ${sheets.length} слайдів.`,
+      `LLM повернув ${mapping.slides.length} слайдів, але бриф містить ${targetCount} блоків. ` +
+      `Очікується рівно ${targetCount} слайдів.`,
     )
   }
 
   // Build SlidePlan — verbatim text from fragments, LLM never touched it.
-  // NO truncation. If a slot exceeds max_chars → validator reports FAIL with details.
   const slides = mapping.slides.map((m, i) => {
     const slots: Record<string, string> = {}
     for (const [slotName, ref] of Object.entries(m.assignment ?? {})) {
@@ -273,5 +292,5 @@ ${fragmentsList}
     return { id: `slide_${i + 1}`, composition: m.composition || 'title_body', slots, flags: {} }
   })
 
-  return { theme, slides, sourceText: text, sheetCount: hasSheets ? sheets.length : undefined }
+  return { theme, slides, sourceText: text, sheetCount: targetCount >= 2 ? targetCount : undefined }
 }
