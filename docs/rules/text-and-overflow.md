@@ -1,137 +1,199 @@
-# Text Layout — Fixed Gaps + SHRINK Safety Model
+# Text Layout — Word-Fit Guard + Deterministic Font Selection
 
-## Принцип (оновлено)
+## Принцип
 
-**Фіксовані висоти заголовків + фіксовані відступи між елементами + TEXT_AUTOFIT як запобіжник.**
+**Детермінований підбір кегля + фіксована сітка.**
 
-Попередній підхід «точна висота боксу = виміряний текст» давав нестабільні результати: оцінка кількості рядків у Slides API ненадійна, тому текст або вилазив за межі, або залишав порожнину між елементами. Новий підхід:
+Slides API v1 не підтримує `TEXT_AUTOFIT` / `SHRINK_TEXT_ON_OVERFLOW` при записі через API (тип `autofitType` може бути лише `NONE`). Тому ніякого autofit у коді немає — весь розмір тексту розраховується на стороні сервера до відправки запиту.
 
-1. **Фіксована висота ЗАГОЛОВОК** — 2-рядковий "комфортний" розмір. Якщо заголовок займає більше рядків — `TEXT_AUTOFIT` зменшить кегль в межах боксу.
-2. **Фіксований відступ TITLE_GAP = 60px** — відстань від нижнього краю ЗАГОЛОВОК-боксу до верху ПІДЗАГОЛОВОК/ТЕКСТ — **завжди однакова**, незалежно від довжини заголовка.
-3. **TEXT_AUTOFIT** — встановлюється для ВСІХ TEXT_BOX. Запобігає видимому переповненню навіть у крайніх випадках.
+Два рівні захисту:
+1. **Word-fit guard** — жодне ціле слово не виходить за межі ширини боксу
+2. **Height check** — загальна висота рядків не перевищує висоту боксу
 
-## Фіксовані висоти заголовків
+---
+
+## Константи
 
 ```
-_H1_FIXED_44 = 260px  — 44pt headings: cover, bento_right, section, badges
-                        (2 × 44 × 2.667 × 1.08 ≈ 254 → 260)
-_H1_FIXED_36 = 220px  — 36pt headings: title_body
-                        (2 × 36 × 2.667 × 1.08 ≈ 208 → 220)
-_SUB_FIXED_22 = 130px — 22pt cover subtitle: 2-line capacity
-_DATE_FIXED  = 70px   — 18pt cover date: 1-line capacity
+CHAR_W   = 0.65   — коефіцієнт ширини символу (Inter Medium, Cyrillic-safe)
+SAFETY   = 1.2    — запас безпеки для word-fit guard
+LINE_H   = pt × 2.667 × 1.4  — висота рядка в px
+_INSET   = 19px   — внутрішній відступ Google Slides (незнімний)
 ```
 
-## Фіксовані позиції елементів
+Формули через Figma px → EMU: `1 Figma px = 4762.5 EMU` (= 9144000 / 1920).
 
-Всі позиції похідні від фіксованих констант, не від виміряного тексту:
+---
 
-| Композиція | ЗАГОЛОВОК h | ТЕКСТ/ПІД y | textMaxH |
-|---|---|---|---|
-| `cover` | 260 | sub: 420; date: 580 (з sub) / 390 (без) | — |
-| `section`/`section_red` | 260 | 420 | 160 (фіксований) |
-| `title_body` | 220 | 380 | 518 (фіксований) |
-| `bento_right_*` | 260 | 420 | 450 (фіксований) |
-| `badges` | 220 | 380 (zone Y для бейджів) | — |
+## Word-fit guard
 
-> **Розрахунок textMaxH:**
-> - title_body: `1080 − 100 − 52 − 30 − 380 = 518`
-> - bento_right: `890 − 20 − 420 = 450`
+```
+longestWordPx(text, pt) = max(word.length) × pt × 2.667 × CHAR_W
+```
 
-## Запобіжник від переповнення
+Умова проходження: `longestWordPx × 1.2 ≤ inner_width`
 
-Slides API v1 підтримує лише `NONE` для `autofitType` (TEXT_AUTOFIT/SHAPE_AUTOFIT — read-only). Тому роль запобіжника виконує **software auto-shrink loop** (наприкінці `buildPresentation`):
+де `inner_width = element_width - 2 × _INSET`.
 
-- Читає rendered розміри кожного TEXT_BOX
-- Якщо текст не вміщається при дефолтному pt → зменшує кегль по кроках (22→18→14→10pt)
-- Не впливає на позиції боксів (тільки `updateTextStyle`)
+Логування формату:
+```
+[word-fit] <label>: longest_word_len=N | est_width=NNN | est×1.2=NNN | inner_width=NNN | chosen_font=NN → PASS/FAIL
+```
 
-Поєднання **фіксованих позицій** + **software shrink** гарантує стабільний ритм.
+---
 
-## Зарезервовані зони
+## Height check
 
-| Зона | Координати (Figma px) | Правило |
+```
+cpl = floor(inner_width / (pt × 2.667 × CHAR_W))   — chars per line
+lines = word-wrap simulation over paragraphs
+text_height = lines × lineH(pt)
+```
+
+Умова проходження: `text_height ≤ inner_height`
+
+де `inner_height = element_height - 2 × _INSET`.
+
+Логування:
+```
+[bento-height] <label>: lines=N | text_height=NNN | inner_height=NNN | font=NN → PASS/FAIL
+```
+
+---
+
+## Кроки підбору кегля
+
+### Заголовки (ЗАГОЛОВОК slot)
+
+Кроки: `[44, 40, 36, 32, 28]`  
+Перший крок, при якому `longestWordPx × 1.2 ≤ _LTW` (де `_LTW = 830px`) — обраний кегль.
+
+> `estimateLineCount` з фактором 0.48 використовується **лише** для розрахунку позицій (layout positioning), не для overflow detection.
+
+### Бенто-картки (bento_right_*)
+
+Кроки: `[48, 36, 28, 22, 18, 14, 10]` з обмеженням `maxPt` на компонент.
+
+Один кегль на всі картки групи (`pickBentoPt` повертає один pt, що задовольняє всі картки одночасно). Перевірка для кожної картки: `textFitsParagraphs(text, dims.w, dims.h, pt)` — враховує і word-fit, і висоту.
+
+---
+
+## Grid-driven bento геометрія
+
+Висоти карток визначаються **виключно** константами сітки, незалежно від кегля:
+
+```
+_PAD  = 100    — відступ слайда
+_H    = 1080   — висота слайда
+_RBH  = _H - 2 × _PAD = 880   — висота правого блоку
+_CH   = 680    — висота контентної зони (two_columns / three_columns)
+_CY   = 300    — Y контентної зони
+_GAP  = 30     — відступ між картками
+```
+
+| Композиція | Висота картки | Y старт |
 |---|---|---|
-| Поля слайда | x < 100 або x+w > 1820; y < 100 або y+h > 980 | Жоден бокс не виходить за PAD=100 |
-| Логотип SKELAR (top-right) | x ∈ [1730,1820], y ∈ [100,190] | Текстові бокси не перекривають логотип |
-| Логотип SKELAR (bottom-left, bento_right_*) | x ∈ [100,190], y ∈ [890,980] | Аналогічно |
+| `two_columns` | `_CH = 680` | `_CY = 300` |
+| `three_columns` | `_CH = 680` | `_CY = 300` |
+| `bento_right_2x2` | `floor((_RBH - _GAP) / 2)` | `_PAD = 100` |
+| `bento_right_2` | `masterH = floor((_RBH - _GAP) / 2)`; остання: `_RBH - (n-1)×(masterH+_GAP)` | `_PAD = 100` |
+| `bento_right_3` | `masterH = floor((_RBH - 2×_GAP) / 3)`; остання: `_RBH - (n-1)×(masterH+_GAP)` | `_PAD = 100` |
 
-### TITLE_W — ширина заголовкових боксів у верхній смузі
+**Інваріант**: нижній край останньої картки завжди = `_H - _PAD = 980`. Остання картка поглинає залишок від `floor()`.
+
+---
+
+## INSET компенсація
+
+`_INSET = 19px` — фіксований внутрішній відступ Google Slides (~0.25cm). REST API v1 не може його прибрати.
+
+Всі TEXT_BOX отримують компенсацію через `makeElemTransform`:
+```
+box_x = text_x − 19,  box_y = text_y − 19
+box_w = text_w + 38,  box_h = text_h + 38
+```
+
+`inner_width = box_w - 38 = text_w`  
+`inner_height = box_h - 38 = text_h`
+
+---
+
+## Типографіка
+
+### Нерозривні пробіли
+
+Короткі слова (1–4 символи: `у`, `і`, `з`, `та`, `на`, `до` тощо) — пробіл після них замінюється на ` `.
+
+**Де**: `lib/google.ts` → `addNbsp(text)`, у циклі `replaceAllText`.
+
+### Крапка наприкінці
+
+| Кінцевий символ | Дія |
+|---|---|
+| `.` | прибрати |
+| `?`, `!`, `…`, `...` | залишити |
+
+Застосовується до ЗАГОЛОВОК та всіх бенто-карток. **Де**: `stripTrailingPeriod()`.
+
+### Шрифт
+
+Inter Medium (вага 500) — **завжди**. Ієрархія тільки через розмір кегля, без bold.
+
+---
+
+## Content integrity (fragmentGroups)
+
+```ts
+SlidePlan.fragmentGroups?: string[][]
+```
+
+Кожен рядок з вихідного тексту (brief) трекується як фрагмент у `fragmentGroups`. `checkFragmentCoverage` у `validatePlan` перевіряє, що кожен фрагмент присутній verbatim у слотах хоча б одного слайда. При провалі: retry loop у `mapToPlan`, throw при persistent failure.
+
+---
+
+## Фіксовані позиції
 
 ```
-LOGO_X   = W − PAD − LOGO_W = 1920 − 100 − 90 = 1730
-LOGO_GAP = 20
-TITLE_W  = LOGO_X − LOGO_GAP − PAD = 1610
+_H1_FIXED_44 = 260px   — 44pt заголовки (cover, bento_right, section, badges)
+_H1_FIXED_36 = 220px   — 36pt заголовки (title_body)
+TITLE_GAP    = 60px    — відступ від заголовка до контенту нижче
+_TITLE_W     = 1610px  — ширина заголовкових боксів (LOGO_X − LOGO_GAP − PAD)
 ```
 
-Правий край тексту: `100 + 1610 = 1710`. Зазор до логотипа: `1730 − 1710 = 20px`.
+| Композиція | titleH | textY |
+|---|---|---|
+| `cover` | 260 | 420 |
+| `section` / `section_red` | 260 | 420 |
+| `title_body` | 220 | 380 |
+| `bento_right_*` | 260 | 420 |
+| `badges` | 220 | 380 |
+
+---
 
 ## Валідатор
 
 | Перевірка | Що перевіряє |
 |---|---|
-| `autofit_no_expand` | Жоден TEXT_BOX не має `SHAPE_AUTOFIT` (box-expand — небезпечний; через UI встановлюється). |
+| `no_literal_asterisk` | Жоден слот не містить `*` (маркдаун-залишки) |
+| `no_duplicate_title` | Заголовки унікальні у межах плану |
+| `badge_item_max_chars` | Кожен пункт ПУНКТИ ≤ max_chars |
+| `fragment_coverage` | Кожен вихідний фрагмент присутній у слотах |
 | `bounds` | Жоден елемент не виходить за межі слайда |
 | `logo_overlap` | TEXT_BOX не перетинається з зоною логотипа |
-| `bento_left_overlap` | Ліво-колонкові TEXT_BOX в `bento_right_*` не перекриваються (порожні бокси ігноруються) |
-| `cover_layout` | ДАТА не в нижньому куті (x≈100, y<800, w≥1400) |
 
-## INSET компенсація (глобальна)
+---
 
-`_INSET = 19px` — фіксований внутрішній відступ Google Slides (~0.25cm). REST API v1 не може його прибрати.
+## Fixture-валідатор
 
-Всі TEXT_BOX, що передаються через `makeElemTransform`, отримують компенсацію:
+```bash
+npx ts-node --skip-project scripts/validate-fixture.ts
 ```
-box_x = text_x − 19,  box_y = text_y − 19
-box_w = text_w + 38,  box_h = text_h + 38
-```
-Виняток: kpi ТЕКСТ — немає top expansion (залишається y=200, щоб не перекривати logo zone).
 
----
-
-## Типографіка — нерозривні пробіли (висячі короткі слова)
-
-Короткі літерні слова (1–4 символи) — `у`, `і`, `з`, `та`, `на`, `до`, `для`, `від` тощо — не повинні залишатися в кінці рядка. Пробіл ПІСЛЯ такого слова замінюється на нерозривний (U+00A0).
-
-**Де реалізовано**: `lib/google.ts` → `addNbsp(text)`, виклик у циклі `replaceAllText`.
-
----
-
-## Крапка наприкінці заголовка
-
-| Кінцевий символ | Дія |
-|---|---|
-| `.` (крапка) | прибрати |
-| `?` або `!` | залишити |
-| `…` або `...` | залишити |
-
-Застосовується до `ЗАГОЛОВОК` та всіх бенто-карток.
-
-**Де реалізовано**: `lib/google.ts` → `stripTrailingPeriod()`.
-
----
-
-## Фіксований відступ TITLE_GAP = 60px
-
-Всюди: `subY = PAD + titleH + 60`. З фіксованим `titleH` це стає чистою константою.
-
-| Композиція | ЗАГОЛОВОК (pt) | Slot нижче | subY |
-|---|---|---|---|
-| `cover` | 44pt | `ПІДЗАГОЛОВОК` | 420 |
-| `section`/`section_red` | 44pt | `ПІДЗАГОЛОВОК` | 420 |
-| `title_body` | 36pt | `ТЕКСТ` | 380 |
-| `bento_right_*` | 44pt | `ТЕКСТ` | 420 |
-| `badges` | 36pt | Badge zone Y | 380 |
-
-#### Порожній secondary-слот — завжди переміщуємо, h=1
-
-Якщо ТЕКСТ/ПІДЗАГОЛОВОК відсутній — `makeElemTransform` все одно емітується з h=1. Бокс стає невидимим, але не перетинає ЗАГОЛОВОК.
-
----
-
-## Як додати нову композицію
-
-1. Вибрати `_H1_FIXED_44` або `_H1_FIXED_36` залежно від кегля заголовка.
-2. Розрахувати `textY = PAD + titleH + TITLE_GAP` (це чиста константа).
-3. Додати `buildXxxFloatRequests` у `lib/google.ts` за зразком `buildTitleBodyFloatRequests`.
-4. Викликати `makeAutofit` після кожного `makeElemTransform`.
-5. Глобальний sweep у `buildPresentation` закриє будь-які пропущені бокси автоматично.
+Чотири набори (+ детермінізм-перезапуск):
+- **Fixture 1** — коректний badges-слайд, очікується PASS
+- **Fixture 2** — asterisks, дублікат заголовка, довгий badge → FAIL
+- **Fixture 3** — fragmentGroups, всі фрагменти присутні → PASS
+- **Fixture 4** — fragmentGroups, один фрагмент відсутній → FAIL
+- **Bento height+width** — math: word-fit + height-check для bento_right_2/3
+- **Bento geometry** — math: інваріант `card_bottom = 980` для 5 композицій
+- **Word-break** — math: `longestWordPx × 1.2 ≤ innerW` для bento + title кроків
