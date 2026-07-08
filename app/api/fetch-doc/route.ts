@@ -72,18 +72,25 @@ function readDocContent(content: docs_v1.Schema$StructuralElement[]): string {
         parts.push('\n___\n')
         continue
       }
-      // 2. Page break — emit text before break (if any), then delimiter
-      const hasPageBreak = elements.some(pe => pe.pageBreak)
       const text = elements
-        .filter(pe => !pe.pageBreak)      // skip the pageBreak token itself
+        .filter(pe => !pe.pageBreak)
         .map(pe => pe.textRun?.content ?? '')
         .join('')
-      if (hasPageBreak) {
-        if (text.trim()) parts.push(text)  // text before the break belongs to current section
+
+      // 2. pageBreakBefore — Google Docs sets this on first paragraph of each new page
+      if (el.paragraph.paragraphStyle?.pageBreakBefore) {
+        parts.push('\n___\n' + text)
+        continue
+      }
+
+      // 3. Inline page break element (older format)
+      if (elements.some(pe => pe.pageBreak)) {
+        if (text.trim()) parts.push(text)
         parts.push('\n___\n')
         continue
       }
-      // 3. Heading style — delimiter BEFORE heading text so heading becomes first fragment
+
+      // 4. Heading style — delimiter BEFORE heading text
       const style = el.paragraph.paragraphStyle?.namedStyleType ?? ''
       if (style === 'HEADING_1' || style === 'HEADING_2') {
         parts.push('\n___\n' + text)
