@@ -276,12 +276,15 @@ ${fragmentsList}
   const json = raw.startsWith('```') ? raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '') : raw
   const mapping = JSON.parse(json) as { slides: SlideAssignment[] }
 
-  // Enforce exact count when we have a target
-  if (targetCount >= 2 && mapping.slides.length !== targetCount) {
+  // Strict enforcement only for explicit ___ delimiters — auto-detected count is a hint
+  if (hasSheets && mapping.slides.length !== targetCount) {
     throw new Error(
-      `LLM повернув ${mapping.slides.length} слайдів, але бриф містить ${targetCount} блоків. ` +
+      `LLM повернув ${mapping.slides.length} слайдів, але бриф містить ${targetCount} аркушів. ` +
       `Очікується рівно ${targetCount} слайдів.`,
     )
+  }
+  if (!hasSheets && targetCount >= 2 && mapping.slides.length !== targetCount) {
+    console.warn(`[mapToPlan] Haiku estimated ${targetCount} sections, Sonnet returned ${mapping.slides.length} — accepting Sonnet result`)
   }
 
   // Build SlidePlan — verbatim text from fragments, LLM never touched it.
