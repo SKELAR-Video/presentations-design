@@ -72,12 +72,17 @@ function readDocContent(content: docs_v1.Schema$StructuralElement[]): string {
         parts.push('\n___\n')
         continue
       }
-      // 2. Page break element
-      if (elements.some(pe => pe.pageBreak)) {
+      // 2. Page break — emit text before break (if any), then delimiter
+      const hasPageBreak = elements.some(pe => pe.pageBreak)
+      const text = elements
+        .filter(pe => !pe.pageBreak)      // skip the pageBreak token itself
+        .map(pe => pe.textRun?.content ?? '')
+        .join('')
+      if (hasPageBreak) {
+        if (text.trim()) parts.push(text)  // text before the break belongs to current section
         parts.push('\n___\n')
         continue
       }
-      const text = elements.map(pe => pe.textRun?.content ?? '').join('')
       // 3. Heading style — delimiter BEFORE heading text so heading becomes first fragment
       const style = el.paragraph.paragraphStyle?.namedStyleType ?? ''
       if (style === 'HEADING_1' || style === 'HEADING_2') {
