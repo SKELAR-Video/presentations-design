@@ -1498,6 +1498,10 @@ export async function buildPresentation(
       if (slotName === 'ЗАГОЛОВОК' || BENTO_TOKENS[compId]?.includes(slotName)) {
         replaceText = stripTrailingPeriod(replaceText)
       }
+      // MARKER TEST — remove after confirming code changes reach the deck
+      if (compId === 'cover' && slotName === 'ПІДЗАГОЛОВОК' && replaceText.trim()) {
+        replaceText = replaceText + ' TEST-A1'
+      }
       replaceText = addNbsp(replaceText)
       requests.push({
         replaceAllText: {
