@@ -153,41 +153,27 @@ JSON з рівно ${slides.length} елементами в "slides".`
 
 // ─── Sheet + fragment parsing ─────────────────────────────────────────────────
 // Splits ТЗ by ___ / --- delimiters into sheets, then into verbatim line fragments.
-// When sheets.length >= 2 the 1-sheet-per-slide invariant is enforced.
+// Only delimiter-based splits are authoritative (1 sheet = 1 slide guarantee).
 // Each fragment IS a literal substring of the original text (verbatim guarantee).
 type SheetParse = {
-  sheets: string[][]                  // lines grouped per sheet
-  fragments: string[]                 // flat array (global indices for LLM)
+  sheets: string[][]                   // lines grouped per sheet
+  fragments: string[]                  // flat array (global indices for LLM)
   sheetRanges: Array<[number, number]> // [startIdx, endIdx] inclusive per sheet
+  hasDelimiters: boolean               // true only when explicit ___ was found
 }
 
 function parseSheets(text: string): SheetParse {
   const DELIMITER = /^[_\-]{3,}$/
   const lines = text.replace(/\r\n/g, '\n').replace(//g, '\n').split('\n').map(l => l.trim())
-  // Multiple \x0b (Google Docs Shift+Enter) in a row = section boundary after normalization
 
   const hasDelimiters = lines.some(l => DELIMITER.test(l))
   const sheets: string[][] = [[]]
 
-  if (hasDelimiters) {
-    for (const line of lines) {
-      if (DELIMITER.test(line)) {
-        if (sheets[sheets.length - 1].length > 0) sheets.push([])
-      } else if (line) {
-        sheets[sheets.length - 1].push(line)
-      }
-    }
-  } else {
-    // Auto-split: 2+ consecutive blank lines = section boundary
-    let blankRun = 0
-    for (const line of lines) {
-      if (!line) {
-        blankRun++
-        if (blankRun === 2 && sheets[sheets.length - 1].length > 0) sheets.push([])
-      } else {
-        blankRun = 0
-        sheets[sheets.length - 1].push(line)
-      }
+  for (const line of lines) {
+    if (DELIMITER.test(line)) {
+      if (sheets[sheets.length - 1].length > 0) sheets.push([])
+    } else if (line) {
+      sheets[sheets.length - 1].push(line)
     }
   }
 
@@ -200,7 +186,7 @@ function parseSheets(text: string): SheetParse {
     sheetRanges.push([start, fragments.length - 1])
   }
   console.log(`[parseSheets] hasDelimiters=${hasDelimiters} sheets=${nonEmpty.length} fragments=${fragments.length}`)
-  return { sheets: nonEmpty, fragments, sheetRanges }
+  return { sheets: nonEmpty, fragments, sheetRanges, hasDelimiters }
 }
 
 // Called by google.ts after validateDeck — intentionally returns nothing.
@@ -212,30 +198,31 @@ export async function fixOverflowSlots(
   return []
 }
 
-// Detect number of logical sections via a cheap Haiku call.
-// Used when no explicit ___ delimiters are found in the text.
+// Detect number of logical sections via Haiku — asks for a NUMBERED LIST so we can
+// count items instead of trusting a single integer output (more robust).
 async function detectSectionCount(text: string): Promise<number> {
-  console.log(`[detectSectionCount] text len=${text.length} preview=${JSON.stringify(text.slice(0, 300))}`)
   const response = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 10,
-    system: 'Відповідай ТІЛЬКИ числом. Без пояснень, без слів.',
+    max_tokens: 400,
+    system: 'Відповідай ТІЛЬКИ пронумерованим списком. Одна секція — один рядок.',
     messages: [{
       role: 'user',
-      content: `Скільки самостійних тематичних блоків у цьому брифі для презентації?\nКожен блок = один слайд. Перший — обкладинка, останній — закриваючий слайд.\n\n${text.slice(0, 4000)}`,
+      content: `Визнач усі тематичні секції (слайди) у цьому брифі для презентації.\nДля кожної секції виведи рядок у форматі: "1. <перші кілька слів заголовку>"\nПерша — обкладинка. Остання — закриваючий слайд.\n\n${text.slice(0, 4000)}`,
     }],
   })
   const raw = response.content[0].type === 'text' ? response.content[0].text.trim() : ''
-  const n = parseInt(raw)
-  console.log(`[detectSectionCount] haiku raw="${raw}" parsed=${n} result=${isNaN(n) || n < 2 ? 0 : n}`)
-  return isNaN(n) || n < 2 ? 0 : n
+  const lines = raw.split('\n').filter(l => /^\d+\./.test(l.trim()))
+  const n = lines.length
+  console.log(`[detectSectionCount] haiku lines=${n} output=${JSON.stringify(raw.slice(0, 300))}`)
+  return n < 2 ? 0 : n
 }
 
 export async function mapToPlan(text: string, theme: Theme): Promise<SlidePlan> {
-  const { sheets, fragments, sheetRanges } = parseSheets(text)
-  const hasSheets = sheets.length >= 2
+  const { sheets, fragments, sheetRanges, hasDelimiters } = parseSheets(text)
+  // Only explicit ___ delimiters guarantee 1-sheet-per-slide
+  const hasSheets = hasDelimiters && sheets.length >= 2
 
-  // Target slide count: explicit sheets OR auto-detected via Haiku
+  // Target count: delimiter count (authoritative) OR Haiku numbered-list detection
   const targetCount = hasSheets ? sheets.length : await detectSectionCount(text)
 
   // Compact catalog: slot names + max_chars so LLM knows what fits
