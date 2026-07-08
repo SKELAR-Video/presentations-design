@@ -97,11 +97,33 @@ function textFitsParagraphs(text: string, wPx: number, hPx: number, pt: number):
 // ─── bento_right ТЕКСТ font-shrink ───────────────────────────────────────────
 const _LTW  = _UW - _RBW - _GAP  // 830 — left text zone width in bento_right
 
+// Font size steps for bento_right titles (narrowest zone: 830px).
+// Largest pt where the longest word fits horizontally (no mid-word break).
+const TITLE_PT_STEPS = [44, 40, 36, 32, 28] as const
+type TitlePt = typeof TITLE_PT_STEPS[number]
+
+// Returns estimated render width (px) of the longest whitespace-delimited word at given pt.
+// Uses factor 0.55: slightly above the line-count estimator (0.48) so we
+// overestimate rather than underestimate — safe side for "does it fit" checks.
+function longestWordPx(text: string, pt: number): number {
+  const pxPerChar = pt * 2.667 * 0.55
+  return Math.round(Math.max(...text.trim().split(/\s+/).map(w => w.length * pxPerChar)))
+}
+
+// Choose largest title pt where the longest word fits in wPx.
+function pickTitlePt(text: string, wPx: number): TitlePt {
+  for (const pt of TITLE_PT_STEPS) {
+    if (longestWordPx(text, pt) <= wPx) return pt
+  }
+  return TITLE_PT_STEPS[TITLE_PT_STEPS.length - 1]
+}
+
 // Compute actual available height for ТЕКСТ given a (possibly long) title.
-// The dynamic title may push textY down, shrinking the available body zone.
+// Uses exact text height (no minimum floor) so textY is as high as possible.
 function bentoRightTextAvailH(titleText: string): number {
-  const tLines  = estimateLineCount(titleText.trim(), _LTW, 44)
-  const dynH    = Math.max(_H1_FIXED_44, Math.ceil(tLines * lineH(44)))
+  const titlePt = pickTitlePt(titleText.trim(), _LTW)
+  const tLines  = estimateLineCount(titleText.trim(), _LTW, titlePt)
+  const dynH    = Math.ceil(tLines * lineH(titlePt))  // exact height, no floor
   const textY   = _PAD + dynH + TITLE_GAP
   const logoY   = _H_SLIDE - _PAD - _LOGO_H
   return Math.max(50, logoY - 20 - textY)
@@ -697,14 +719,22 @@ function buildBentoRightLeftColumnRequests(
     return reqs
   }
 
-  // Dynamic title height: expands beyond 2-line default when title wraps to 3+ lines.
-  // Prevents ЗАГОЛОВОК box from overflowing into ТЕКСТ (which starts TITLE_GAP below).
-  const titleLines = estimateLineCount(titleText, _LTW, 44)
-  const titleH     = Math.max(_H1_FIXED_44, Math.ceil(titleLines * lineH(44)))
+  // Title font stepping: largest pt where longest word fits in 830px (no mid-word break).
+  const titlePt    = pickTitlePt(titleText, _LTW)
+  const titleLines = estimateLineCount(titleText, _LTW, titlePt)
+  const titleH     = Math.ceil(titleLines * lineH(titlePt))  // exact — no floor → empty_space = 0
   const textY      = _PAD + titleH + TITLE_GAP
   const logoY      = _H_SLIDE - _PAD - _LOGO_H  // 890
-  console.log(`[bento-right-left] ЗАГОЛОВОК: ${titleLines} lines → titleH=${titleH}px, ТЕКСТ y=${textY}px`)
-  const textMaxH = Math.max(1, logoY - 20 - textY)  // 450 (fixed)
+  const textMaxH   = Math.max(1, logoY - 20 - textY)
+
+  // ── Audit log ────────────────────────────────────────────────────────────────
+  const lwPx        = longestWordPx(titleText, titlePt)
+  const computedGap = textY - _PAD - titleH          // must equal TITLE_GAP = 60
+  const emptySpace  = titleH - Math.ceil(titleLines * lineH(titlePt))  // must be 0
+  const pass = lwPx <= _LTW && computedGap === TITLE_GAP && emptySpace === 0
+  console.log(
+    `[bento-right-title] longest_word=${lwPx} ≤ box=${_LTW} | font=${titlePt} | lines=${titleLines} | gap=${computedGap} | empty_space=${emptySpace} → ${pass ? 'PASS' : 'FAIL'}`,
+  )
 
   const reqs: object[] = []
   for (const el of slide.pageElements ?? []) {
@@ -714,6 +744,17 @@ function buildBentoRightLeftColumnRequests(
     const sH  = el.size.height?.magnitude ?? 0
     if (raw.includes('{{ЗАГОЛОВОК}}')) {
       reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, _PAD - _INSET, _LTW + 2 * _INSET, titleH + 2 * _INSET, sW, sH))
+      // Apply stepped font size if it differs from the 44pt template default.
+      if (titlePt !== 44) {
+        reqs.push({
+          updateTextStyle: {
+            objectId: el.objectId,
+            style: { fontSize: { magnitude: titlePt, unit: 'PT' }, bold: false },
+            fields: 'fontSize,bold',
+            textRange: { type: 'ALL' },
+          },
+        })
+      }
     }
     if (raw.includes('{{ТЕКСТ}}')) {
       // Always move ТЕКСТ below ЗАГОЛОВОК — even when slot is empty — so the box
