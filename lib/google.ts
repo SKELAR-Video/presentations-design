@@ -453,10 +453,12 @@ const _BADGE_V_PAD  = 30  // vertical inner padding (px)
 // Single-line height with lineSpacing=90: pt × 2.667 × 0.9
 const _BADGE_LINE_H = Math.round(_BADGE_PT * 2.667 * 0.9)  // ≈ 43px
 const _BADGE_H      = _BADGE_V_PAD * 2 + _BADGE_LINE_H     // ≈ 103px
-const _BADGE_CHAR_W = Math.round(_BADGE_PT * 2.667 * 0.50) // ≈ 24px/char (average Inter)
+// 0.65 multiplier accounts for Cyrillic Inter widths; prevents text wrapping inside badges
+const _BADGE_CHAR_W = Math.round(_BADGE_PT * 2.667 * 0.65) // ≈ 31px/char
 const _BADGE_GAP_H  = 16  // horizontal gap between badges
 const _BADGE_GAP_V  = 16  // vertical gap between rows
-const _BADGE_BG = { red: 26 / 255, green: 31 / 255, blue: 46 / 255 }  // #1A1F2E = CARD color
+const _BADGE_BG  = { red: 26  / 255, green: 31  / 255, blue: 46  / 255 }  // #1A1F2E = CARD color
+const _BADGE_FG  = { red: 162 / 255, green: 166 / 255, blue: 177 / 255 }  // #A2A6B1 = secondary text
 
 // Float ЗАГОЛОВОК + delete ПУНКТИ placeholder + create pill shapes.
 // ПУНКТИ slot: items separated by \n (strip any leading •/-/– prefix at display time).
@@ -503,7 +505,6 @@ function buildBadgesRequests(
     .map(s => s.replace(/^[•\-–*]\s*/, '').trim())
     .filter(Boolean)
 
-  const _WHITE_RGB = { red: 1, green: 1, blue: 1 }
   let x = _PAD
   let y = badgeZoneY
 
@@ -574,7 +575,7 @@ function buildBadgesRequests(
         objectId: txtId,
         style: {
           weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
-          foregroundColor: { opaqueColor: { rgbColor: _WHITE_RGB } },
+          foregroundColor: { opaqueColor: { rgbColor: _BADGE_FG } },
           fontSize: { magnitude: _BADGE_PT, unit: 'PT' },
           bold: false,
         },
