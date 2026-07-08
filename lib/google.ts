@@ -70,7 +70,7 @@ const BENTO_SCALE = [48, 36, 28, 22, 18, 14, 10] as const
 
 function textFits(text: string, wPx: number, hPx: number, pt: number): boolean {
   if (!text.trim()) return true
-  if (longestWordPx(text, pt) > wPx) return false  // word-break guard: single word wider than box
+  if (longestWordPx(text, pt) * 1.2 > wPx) return false  // 1.2× safety margin
   const px = pt * 2.667
   const cpl = Math.max(1, Math.floor(wPx / (px * 0.48)))   // conservative: Cyrillic chars wider
   const maxLines = Math.max(1, Math.floor(hPx / (px * 1.4))) // conservative; ≥1 so tiny boxes are never 0
@@ -88,7 +88,7 @@ function textFits(text: string, wPx: number, hPx: number, pt: number): boolean {
 // textFits() treats \n as a space (wrong for bullet lists). This correctly sums lines per paragraph.
 function textFitsParagraphs(text: string, wPx: number, hPx: number, pt: number): boolean {
   if (!text.trim()) return true
-  if (longestWordPx(text, pt) > wPx) return false  // word-break guard
+  if (longestWordPx(text, pt) * 1.2 > wPx) return false  // 1.2× safety margin
   const paras = text.split('\n').filter(p => p.trim())
   if (paras.length <= 1) return textFits(text, wPx, hPx, pt)
   const totalLines = paras.reduce((s, p) => s + estimateLineCount(p, wPx, pt), 0)
@@ -105,17 +105,32 @@ const TITLE_PT_STEPS = [44, 40, 36, 32, 28] as const
 type TitlePt = typeof TITLE_PT_STEPS[number]
 
 // Returns estimated render width (px) of the longest whitespace-delimited word at given pt.
-// Uses factor 0.55: slightly above the line-count estimator (0.48) so we
-// overestimate rather than underestimate — safe side for "does it fit" checks.
+// Factor 0.65: conservative for Inter Medium with Cyrillic wide glyphs (Ф, Ш, Щ, Ж etc.).
+// Prefer overestimate over underestimate — safer for word-break guard.
 function longestWordPx(text: string, pt: number): number {
-  const pxPerChar = pt * 2.667 * 0.55
-  return Math.round(Math.max(...text.trim().split(/\s+/).map(w => w.length * pxPerChar)))
+  const pxPerChar = pt * 2.667 * 0.65
+  const words = text.trim().split(/\s+/).filter(Boolean)
+  return words.length === 0 ? 0 : Math.round(Math.max(...words.map(w => w.length * pxPerChar)))
 }
 
-// Choose largest title pt where the longest word fits in wPx.
+// Logs word-fit check in the standard format for every text box.
+// PASS iff longestWordPx(text, pt) × 1.2 ≤ innerW.
+function logWordFit(label: string, text: string, innerW: number, pt: number): void {
+  if (!text.trim()) return
+  const words = text.trim().split(/\s+/).filter(Boolean)
+  const longestWord = words.reduce((a, b) => a.length >= b.length ? a : b, '')
+  const est  = longestWordPx(text, pt)
+  const est12 = Math.round(est * 1.2)
+  const pass  = est12 <= innerW
+  console.log(
+    `[word-fit] ${label}: longest_word_len=${longestWord.length} | est_width=${est} | est×1.2=${est12} | inner_width=${innerW} | chosen_font=${pt} → ${pass ? 'PASS' : 'FAIL'}`,
+  )
+}
+
+// Choose largest title pt where the longest word (×1.2 safety margin) fits in wPx.
 function pickTitlePt(text: string, wPx: number): TitlePt {
   for (const pt of TITLE_PT_STEPS) {
-    if (longestWordPx(text, pt) <= wPx) return pt
+    if (longestWordPx(text, pt) * 1.2 <= wPx) return pt
   }
   return TITLE_PT_STEPS[TITLE_PT_STEPS.length - 1]
 }
@@ -730,12 +745,11 @@ function buildBentoRightLeftColumnRequests(
   const textMaxH   = Math.max(1, logoY - 20 - textY)
 
   // ── Audit log ────────────────────────────────────────────────────────────────
-  const lwPx        = longestWordPx(titleText, titlePt)
+  logWordFit('bento-right/ЗАГОЛОВОК', titleText, _LTW, titlePt)
   const computedGap = textY - _PAD - titleH          // must equal TITLE_GAP = 60
   const emptySpace  = titleH - Math.ceil(titleLines * lineH(titlePt))  // must be 0
-  const pass = lwPx <= _LTW && computedGap === TITLE_GAP && emptySpace === 0
   console.log(
-    `[bento-right-title] longest_word=${lwPx} ≤ box=${_LTW} | font=${titlePt} | lines=${titleLines} | gap=${computedGap} | empty_space=${emptySpace} → ${pass ? 'PASS' : 'FAIL'}`,
+    `[bento-right-title] font=${titlePt} | lines=${titleLines} | gap=${computedGap} | empty_space=${emptySpace}`,
   )
 
   const reqs: object[] = []
@@ -847,19 +861,10 @@ function pickBentoPt(compId: string, slots: Record<string, string>): number | nu
       break
     }
   }
-  const parts = tokens
-    .map((t, idx) => {
-      const text = slots[t] ?? ''
-      if (!text.trim()) return null
-      const lw = longestWordPx(text, chosenPt)
-      return `card${idx + 1}: ${lw}≤${dims.w} f${chosenPt}`
-    })
-    .filter((s): s is string => s !== null)
-  const allFit = tokens.every(t => {
+  for (const [idx, t] of tokens.entries()) {
     const text = slots[t] ?? ''
-    return !text.trim() || longestWordPx(text, chosenPt) <= dims.w
-  })
-  console.log(`[bento-cards] ${compId} ${parts.join(' | ')} → ${allFit ? 'PASS' : 'FAIL'}`)
+    if (text.trim()) logWordFit(`${compId}/card${idx + 1}`, text, dims.w, chosenPt)
+  }
   return chosenPt
 }
 
@@ -1814,9 +1819,13 @@ export async function buildPresentation(
       if (!slotValue.trim()) continue
 
       // Use RENDERED dimensions: size.magnitude × transform.scale (intrinsic alone = always 630px)
-      const wPx = Math.round((el.size.width?.magnitude  ?? 0) * (el.transform?.scaleX ?? 1) / _FPX)
-      const hPx = Math.round((el.size.height?.magnitude ?? 0) * (el.transform?.scaleY ?? 1) / _FPX)
-      if (!wPx || !hPx) continue
+      // All master elements are created with _INSET compensation: element = content + 2*_INSET.
+      // Subtract 2*_INSET to get the actual text content area.
+      const elW = Math.round((el.size.width?.magnitude  ?? 0) * (el.transform?.scaleX ?? 1) / _FPX)
+      const elH = Math.round((el.size.height?.magnitude ?? 0) * (el.transform?.scaleY ?? 1) / _FPX)
+      if (!elW || !elH) continue
+      const innerW = Math.max(1, elW - 2 * _INSET)
+      const innerH = Math.max(1, elH - 2 * _INSET)
 
       // Read default pt from template element's text style
       const defaultPt = (el.shape?.text?.textElements ?? [])
@@ -1826,9 +1835,10 @@ export async function buildPresentation(
       const steps = (FONT_STEPS as readonly number[]).filter(s => s <= defaultPt)
       let chosenPt: number | null = null
       for (const pt of steps) {
-        if (textFits(slotValue, wPx, hPx, pt)) { chosenPt = pt; break }
+        if (textFits(slotValue, innerW, innerH, pt)) { chosenPt = pt; break }
       }
       if (chosenPt === null) chosenPt = steps[steps.length - 1] ?? 10
+      logWordFit(`${compId}/${slotName}`, slotValue, innerW, chosenPt)
       if (chosenPt >= defaultPt) continue  // already fits at default, no change
 
       requests.push({

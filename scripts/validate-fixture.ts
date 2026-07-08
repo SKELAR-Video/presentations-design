@@ -129,3 +129,80 @@ run('Fixture 4 — fragment_coverage FAIL (1 block dropped)', fixture4fail)
 console.log('\n--- second run (determinism check) ---')
 run('Fixture 1 — run 2', fixture1)
 run('Fixture 2 — run 2', fixture2)
+
+// ─── Word-break fixture ────────────────────────────────────────────────────────
+// Pure math — same formulas as lib/google.ts word-fit guard. No API calls.
+// PASS iff longestWordPx(text, pt) × 1.2 ≤ innerW
+{
+  const CHAR_W = 0.65   // Inter Medium, Cyrillic-safe factor
+  const SAFETY = 1.2
+
+  function lwPx(text: string, pt: number): number {
+    const pxPerChar = pt * 2.667 * CHAR_W
+    const words = text.trim().split(/\s+/).filter(Boolean)
+    return words.length === 0 ? 0 : Math.round(Math.max(...words.map(w => w.length * pxPerChar)))
+  }
+
+  function checkWord(label: string, text: string, innerW: number, pt: number): boolean {
+    const words = text.trim().split(/\s+/).filter(Boolean)
+    const longest = words.reduce((a, b) => a.length >= b.length ? a : b, '')
+    const est   = lwPx(text, pt)
+    const est12 = Math.round(est * SAFETY)
+    const pass  = est12 <= innerW
+    console.log(
+      `  [${label}] longest_word_len=${longest.length} | est_width=${est} | est×1.2=${est12} | inner_width=${innerW} | chosen_font=${pt} → ${pass ? 'PASS' : 'FAIL'}`,
+    )
+    return pass
+  }
+
+  // Font picking — same stepping logic as google.ts
+  function pickBentoPt(text: string, innerW: number, maxPt: number): number {
+    const scale = [48, 36, 28, 22, 18, 14, 10].filter(p => p <= maxPt)
+    for (const pt of scale) {
+      if (lwPx(text, pt) * SAFETY <= innerW) return pt
+    }
+    return scale[scale.length - 1]
+  }
+  function pickTitlePt(text: string): number {
+    for (const pt of [44, 40, 36, 32, 28]) {
+      if (lwPx(text, pt) * SAFETY <= 830) return pt  // _LTW = 830
+    }
+    return 28
+  }
+
+  // Layout constants (must match google.ts)
+  const RBW = 860, INN = 30
+  const bentoInnerW = RBW - 2 * INN  // 800
+
+  function runBento(label: string, text: string, maxPt: number) {
+    const pt = pickBentoPt(text, bentoInnerW, maxPt)
+    return checkWord(label, text, bentoInnerW, pt)
+  }
+  function runTitle(label: string, text: string) {
+    const pt = pickTitlePt(text)
+    return checkWord(label, text, 830, pt)
+  }
+
+  console.log('\n=== Word-break fixture (CHAR_W=0.65, safety×1.2) — run 1 ===')
+
+  // bento_right_2: maxPt=36, bentoInnerW=800
+  runBento('bento_right_2 / short metric',   '80% лікарів рекомендують',   36)
+  runBento('bento_right_2 / long word',      'рекомендують',                36)
+  runBento('bento_right_2 / Продуктивність', 'Продуктивність визначається', 36)
+
+  // bento_right_3: maxPt=22, bentoInnerW=800
+  runBento('bento_right_3 / Продуктивність', 'Продуктивність', 22)
+
+  // bento titles (_LTW=830), steps [44,40,36,32,28]
+  runTitle('title / short',        'Чому бігати важливо')
+  runTitle('title / one long word', 'Продуктивність підприємства')
+
+  console.log('\n=== Word-break fixture — run 2 (determinism) ===')
+
+  runBento('bento_right_2 / short metric',   '80% лікарів рекомендують',   36)
+  runBento('bento_right_2 / long word',      'рекомендують',                36)
+  runBento('bento_right_2 / Продуктивність', 'Продуктивність визначається', 36)
+  runBento('bento_right_3 / Продуктивність', 'Продуктивність', 22)
+  runTitle('title / short',        'Чому бігати важливо')
+  runTitle('title / one long word', 'Продуктивність підприємства')
+}
