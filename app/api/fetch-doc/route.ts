@@ -58,28 +58,50 @@ async function extractSlides(
 }
 
 // Extract plain text from a Google Docs structural element tree.
-// Horizontal rules (auto-converted from ___ by Google Docs) are emitted as \n___\n
-// so parseSheets can use them as sheet delimiters.
+// Section delimiters (\n___\n) are emitted for:
+//   1. Horizontal rules (auto-converted from ___ by Google Docs)
+//   2. Explicit page breaks (Ctrl+Enter)
+//   3. HEADING_1 / HEADING_2 paragraphs (delimiter placed BEFORE heading text)
 function readDocContent(content: docs_v1.Schema$StructuralElement[]): string {
-  return content.map(el => {
+  const parts: string[] = []
+  for (const el of content) {
     if (el.paragraph) {
-      // Horizontal rule element = sheet delimiter
-      const hasHR = (el.paragraph.elements ?? []).some(pe => pe.horizontalRule)
-      if (hasHR) return '\n___\n'
-      return (el.paragraph.elements ?? [])
-        .map(pe => pe.textRun?.content ?? '')
-        .join('')
+      const elements = el.paragraph.elements ?? []
+      // 1. Horizontal rule
+      if (elements.some(pe => pe.horizontalRule)) {
+        parts.push('\n___\n')
+        continue
+      }
+      // 2. Page break element
+      if (elements.some(pe => pe.pageBreak)) {
+        parts.push('\n___\n')
+        continue
+      }
+      const text = elements.map(pe => pe.textRun?.content ?? '').join('')
+      // 3. Heading style — delimiter BEFORE heading text so heading becomes first fragment
+      const style = el.paragraph.paragraphStyle?.namedStyleType ?? ''
+      if (style === 'HEADING_1' || style === 'HEADING_2') {
+        parts.push('\n___\n' + text)
+        continue
+      }
+      parts.push(text)
+      continue
     }
     if (el.table) {
-      return (el.table.tableRows ?? []).map(row =>
+      const tableText = (el.table.tableRows ?? []).map(row =>
         (row.tableCells ?? []).map(cell =>
           readDocContent(cell.content ?? [])
         ).join('\t')
       ).join('\n')
+      parts.push(tableText)
+      continue
     }
-    if (el.sectionBreak) return '\n'
-    return ''
-  }).join('')
+    if (el.sectionBreak) {
+      parts.push('\n')
+      continue
+    }
+  }
+  return parts.join('')
 }
 
 async function fetchGoogleDocText(
@@ -93,7 +115,8 @@ async function fetchGoogleDocText(
     const body = res.data.body?.content ?? []
     const text = readDocContent(body).trim()
     if (text) {
-      console.log(`[fetch-doc] docsApi ok  len=${text.length}  ___=${text.includes('___')}`)
+      const delimCount = (text.match(/___/g) ?? []).length
+      console.log(`[fetch-doc] docsApi ok  len=${text.length}  delimiters=${delimCount}`)
       return text
     }
   } catch (docsErr) {
