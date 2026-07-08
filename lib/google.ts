@@ -1380,9 +1380,10 @@ export async function buildPresentation(
     }
   }
 
-  // Step 2.65: Sanitise kpi_cards — remove non-numeric КАРТКА_N_ЗНАЧЕННЯ.
-  // Prevents a list/sentence from rendering inside a numeric metric card.
-  // Clearing the slot triggers deleteObject in buildKpiUpdateRequests.
+  // Step 2.65: Sanitise kpi_cards — ensure КАРТКА_N_ЗНАЧЕННЯ is a clean metric.
+  // If the value is a phrase like "35 категорій у магазині", extract the numeric
+  // prefix ("35") and promote the text remainder to ПІДПИС (if ПІДПИС not already set).
+  // Only delete the card when no usable numeric portion exists at all.
   const _KPI_NUMERIC_RE = /^[\d\s+\-±×x.,/%$€£<>≤≥~≈MKBmkb]+$/i
   for (const slide of plan.slides) {
     if (slide.composition !== 'kpi_cards') continue
@@ -1390,11 +1391,28 @@ export async function buildPresentation(
       const key = `КАРТКА_${n}_ЗНАЧЕННЯ`
       const val = (slide.slots[key] ?? '').trim()
       if (!val) continue
-      if (!_KPI_NUMERIC_RE.test(val)) {
-        console.warn(`[kpi_sanitise] ${slide.id}: ${key} non-numeric ("${val.slice(0, 20)}") — card ${n} removed`)
-        delete slide.slots[key]
-        delete slide.slots[`КАРТКА_${n}_ПІДПИС`]
+      if (_KPI_NUMERIC_RE.test(val)) continue  // already a clean metric
+
+      // Try numeric prefix extraction: "35 категорій" → head="35", tail="категорій"
+      const spaceIdx = val.indexOf(' ')
+      if (spaceIdx > 0) {
+        const head = val.slice(0, spaceIdx)
+        const tail = val.slice(spaceIdx).trim()
+        if (_KPI_NUMERIC_RE.test(head)) {
+          slide.slots[key] = head
+          const pKey = `КАРТКА_${n}_ПІДПИС`
+          if (!slide.slots[pKey] && tail) {
+            slide.slots[pKey] = tail.slice(0, 40)
+          }
+          console.log(`[kpi_sanitise] ${slide.id}: ${key} extracted "${head}" from "${val.slice(0, 30)}"`)
+          continue
+        }
       }
+
+      // No usable numeric portion — remove card entirely
+      console.warn(`[kpi_sanitise] ${slide.id}: ${key} non-numeric ("${val.slice(0, 20)}") — card ${n} removed`)
+      delete slide.slots[key]
+      delete slide.slots[`КАРТКА_${n}_ПІДПИС`]
     }
   }
 
@@ -1497,10 +1515,6 @@ export async function buildPresentation(
       let replaceText = processedSlots?.[slotName] ?? slotValue
       if (slotName === 'ЗАГОЛОВОК' || BENTO_TOKENS[compId]?.includes(slotName)) {
         replaceText = stripTrailingPeriod(replaceText)
-      }
-      // MARKER TEST — remove after confirming code changes reach the deck
-      if (compId === 'cover' && slotName === 'ПІДЗАГОЛОВОК' && replaceText.trim()) {
-        replaceText = replaceText + ' TEST-A1'
       }
       replaceText = addNbsp(replaceText)
       requests.push({

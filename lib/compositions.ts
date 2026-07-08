@@ -55,7 +55,7 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
   {
     id: 'kpi_cards',
     name: 'KPI-картки',
-    when_to_use: 'набір метрик (2–4 картки)',
+    when_to_use: 'набір метрик (2–4 картки). ЗНАЧЕННЯ = тільки число/одиниця ≤10 символів («35», «2M+», «42%»). ПІДПИС = що це число означає.',
     themes: ['dark', 'red'],
     card_min_h: 180,
     card_max_h: 680,  // H - PAD - kCY_min (kCY_min = PAD+TH+TG = 300)
