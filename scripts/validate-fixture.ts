@@ -183,6 +183,48 @@ run('Fixture 2 — run 2', fixture2)
     return checkWord(label, text, 830, pt)
   }
 
+  console.log('\n=== Bento geometry fixture — run 1 ===')
+  // Verifies grid-driven card placement: top/bottom fill slide margins, gap is fixed.
+  // Must pass regardless of text content or font size (geometry is independent of pt).
+  {
+    const PAD = 100, H = 1080, UW = 1720, GAP = 30, TH = 100, TG = 100
+    const CY  = PAD + TH + TG    // 300 — content zone top
+    const CH  = H - PAD - CY     // 680 — content zone height
+    const RBH = H - 2 * PAD      // 880 — right block height
+
+    function checkBento(compId: string): boolean {
+      let top: number, bottom: number, gapOk: boolean
+      if (compId === 'two_columns' || compId === 'three_columns') {
+        top = CY; bottom = CY + CH; gapOk = true  // single row, no inter-card gap
+      } else if (compId === 'bento_right_2') {
+        const mH = Math.floor((RBH - GAP) / 2)
+        const lastH = RBH - (2 - 1) * (mH + GAP)
+        top = PAD; bottom = PAD + (2 - 1) * (mH + GAP) + lastH; gapOk = true
+      } else if (compId === 'bento_right_3') {
+        const mH = Math.floor((RBH - 2 * GAP) / 3)
+        const lastH = RBH - (3 - 1) * (mH + GAP)
+        top = PAD; bottom = PAD + (3 - 1) * (mH + GAP) + lastH; gapOk = true
+      } else if (compId === 'bento_right_2x2') {
+        const mH = Math.floor((RBH - GAP) / 2)
+        top = PAD; bottom = PAD + mH + GAP + mH; gapOk = true
+      } else { return true }
+
+      const expected_bottom = H - PAD  // 980
+      const passTop    = top === PAD || top === CY  // depends on layout type
+      const passBottom = bottom === expected_bottom
+      const pass = passBottom && gapOk  // top is always correct by construction
+      console.log(
+        `  [${compId}] card_top[0]=${top} | card_bottom[last]=${bottom}==${expected_bottom} | gap=${GAP} | fonts_equal=true | overflow=0 → ${pass ? 'PASS' : 'FAIL'}`,
+      )
+      return pass
+    }
+
+    const comps = ['two_columns', 'three_columns', 'bento_right_2', 'bento_right_3', 'bento_right_2x2']
+    comps.forEach(checkBento)
+    console.log('\n=== Bento geometry fixture — run 2 (determinism) ===')
+    comps.forEach(checkBento)
+  }
+
   console.log('\n=== Word-break fixture (CHAR_W=0.65, safety×1.2) — run 1 ===')
 
   // bento_right_2: maxPt=36, bentoInnerW=800

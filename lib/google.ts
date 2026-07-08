@@ -952,16 +952,13 @@ function preprocessBentoText(text: string): string {
 // Comfortable vertical padding inside each bento card (above content and below it)
 const BENTO_VERT_PAD = 40
 
-// ─── Bento row layout: content-based card height ─────────────────────────────
-// Resizes and repositions card backgrounds + text boxes so:
-//   cardH = max(contentH across cards) + 2 × BENTO_VERT_PAD
-// The row is centred in the content zone — extra space goes OUTSIDE cards,
-// not distributed artificially inside them via paragraph spacing.
+// ─── Bento row layout: grid-driven card geometry ─────────────────────────────
+// Card dimensions are derived purely from grid constants — independent of font size.
+// Text overflow is handled by TEXT_AUTOFIT (Google Slides shrinks if needed).
 function buildBentoRowLayoutRequests(
   slide: slides_v1.Schema$Page,
   compId: string,
   processedSlots: Record<string, string>,
-  pt: number,
 ): object[] {
   const tokens = BENTO_TOKENS[compId]
   if (!tokens) return []
@@ -973,17 +970,9 @@ function buildBentoRowLayoutRequests(
     const cw  = Math.floor((_UW - (n - 1) * _GAP) / n)
     const innerW = cw - 2 * _INN
 
-    let maxContentH = 0
-    for (const tok of tokens) {
-      const text = (processedSlots[tok] ?? '').trim()
-      if (!text) continue
-      const paras = text.split('\n').filter(p => p.trim())
-      const totalLines = paras.reduce((s, p) => s + estimateLineCount(p, innerW, pt), 0)
-      const h = Math.ceil(totalLines * lineH(pt))
-      if (h > maxContentH) maxContentH = h
-    }
-    const cardH = Math.max(100, maxContentH + 2 * BENTO_VERT_PAD)
-    const rowY  = _H - _PAD - cardH   // bottom-anchored at 980px
+    // Grid-driven: card fills full content zone (_CY → _H-_PAD)
+    const cardH = _CH   // = _H - _PAD - _CY = 680
+    const rowY  = _CY   // top of content zone = 300
 
     const reqs: object[] = []
     for (const el of slide.pageElements ?? []) {
@@ -1040,45 +1029,17 @@ function buildBentoRowLayoutRequests(
     const RBX    = _W - _PAD - _RBW  // 960 — right block left edge
     const innerW = _RBW - 2 * _INN  // 800
 
-    // Per-card content height — use actual rendered font sizes when value+label split applies
-    const valuePtForComp = BENTO_VALUE_PT[compId] ?? 36
-    const contentHs = tokens.map(tok => {
-      const text = (processedSlots[tok] ?? '').trim()
-      if (!text) return 0
-      const split = splitValueLabel(text)
-      if (split) {
-        // Value line at large font + label lines at 14pt
-        const valueLines = estimateLineCount(text.slice(0, split.valueEnd), innerW, valuePtForComp)
-        const labelLines = estimateLineCount(text.slice(split.labelStart), innerW, 14)
-        return Math.ceil(valueLines * lineH(valuePtForComp) + labelLines * lineH(14))
-      }
-      const paras = text.split('\n').filter(p => p.trim())
-      const totalLines = paras.reduce((s, p) => s + estimateLineCount(p, innerW, pt), 0)
-      return Math.ceil(totalLines * lineH(pt))
-    })
-    const maxContentH = Math.max(...contentHs, 0)
-    const cardH       = Math.max(80, maxContentH + 2 * BENTO_VERT_PAD)
-    console.log(`[bento-card-h] ${compId}: valuePt=${valuePtForComp} cardH=${cardH} (maxContent=${maxContentH})`, contentHs)
-
-    // For 2x2 grid, compute per-cell dimensions
-    const cellW = isGrid ? Math.floor((_RBW - _GAP) / 2) : _RBW
+    // Grid-driven geometry: dimensions from constants, not from text content.
+    const cellW      = isGrid ? Math.floor((_RBW - _GAP) / 2) : _RBW
     const cellInnerW = cellW - 2 * _INN
 
     if (isGrid) {
-      // Recompute with narrower cell width
-      const gridContentHs = tokens.map(tok => {
-        const text = (processedSlots[tok] ?? '').trim()
-        if (!text) return 0
-        const paras = text.split('\n').filter(p => p.trim())
-        const tl = paras.reduce((s, p) => s + estimateLineCount(p, cellInnerW, pt), 0)
-        return Math.ceil(tl * lineH(pt))
-      })
-      const maxGridH = Math.max(...gridContentHs, 0)
-      const cellH    = Math.max(80, maxGridH + 2 * BENTO_VERT_PAD)
+      // Cell height = exactly half of right-column height (fills _PAD → _H-_PAD)
+      const cellH  = Math.floor((_RBH - _GAP) / 2)  // mCellH
+      const gridY  = _PAD  // top of grid = top of content zone
 
-      // 2 rows of cells; total grid = 2*cellH + GAP, centred in RBH zone
+      // 2 rows of cells; fills _PAD → _PAD+_RBH exactly
       const totalGridH = 2 * cellH + _GAP
-      const gridY      = Math.round(_PAD + Math.max(0, (_RBH - totalGridH) / 2))
 
       // Master cell dims (for detection)
       const mCellW = Math.floor((_RBW - _GAP) / 2)
@@ -1134,21 +1095,16 @@ function buildBentoRowLayoutRequests(
     }
 
     // Linear column (bento_right_2 / bento_right_3)
+    // Card height from grid constants. Last card absorbs floor() rounding so
+    // bottom of last card = _PAD + _RBH = _H - _PAD exactly.
     const masterCardH = compId === 'bento_right_2'
       ? Math.floor((_RBH - _GAP) / 2)
       : Math.floor((_RBH - 2 * _GAP) / 3)
+    const colY = _PAD  // top of card column = slide top margin
 
-    const totalColH = nCards * cardH + (nCards - 1) * _GAP
-    const colY      = Math.round(_PAD + Math.max(0, (_RBH - totalColH) / 2))
-
-    // Diagnostic: input slot count → expected card count
+    // Diagnostic
     const filledTokens = tokens.filter(t => (processedSlots[t] ?? '').trim())
-    console.log(`[bento-layout] ${compId}: ${filledTokens.length}/${tokens.length} slots filled → ${nCards} cards expected`)
-    for (const t of tokens) {
-      const v = (processedSlots[t] ?? '').trim()
-      console.log(`  ${t}: ${v ? `"${v.slice(0, 50)}"` : '(empty)'}`)
-    }
-    console.log(`  masterCardH=${masterCardH} cardH=${cardH} colY=${colY} TITLE/BODY overlap check → ЗАГОЛОВОК ends at ${_PAD}+titleH, ТЕКСТ starts textY (see bento-right-left log)`)
+    console.log(`[bento-layout] ${compId}: ${filledTokens.length}/${tokens.length} slots filled | masterCardH=${masterCardH} colY=${colY}`)
 
     const reqs: object[] = []
     for (const el of slide.pageElements ?? []) {
@@ -1169,24 +1125,28 @@ function buildBentoRowLayoutRequests(
       if (k < 0) continue
 
       const origCy   = _PAD + k * (masterCardH + _GAP)
-      const newCy    = colY + k * (cardH + _GAP)
+      const newCy    = colY + k * (masterCardH + _GAP)
+      // Last card absorbs Math.floor() remainder so bottom = _PAD + _RBH exactly
+      const kCardH   = k < nCards - 1
+        ? masterCardH
+        : _RBH - (nCards - 1) * (masterCardH + _GAP)
       const isBottom = elY > origCy + masterCardH / 2
 
       if (el.shape?.shapeType === 'TEXT_BOX') {
-        reqs.push(makeElemTransform(el.objectId, RBX + _INN - _INSET, newCy + _INN - _INSET, innerW + 2 * _INSET, cardH - 2 * _INN + 2 * _INSET, sW, sH))
+        reqs.push(makeElemTransform(el.objectId, RBX + _INN - _INSET, newCy + _INN - _INSET, innerW + 2 * _INSET, kCardH - 2 * _INN + 2 * _INSET, sW, sH))
       } else if (el.shape?.shapeType === 'RECTANGLE') {
         if (Math.abs(elW - _RBW) < TOL) {
-          reqs.push(makeElemTransform(el.objectId, RBX, newCy, _RBW, cardH, sW, sH))
+          reqs.push(makeElemTransform(el.objectId, RBX, newCy, _RBW, kCardH, sW, sH))
         } else if (Math.abs(elW - _R) < TOL && Math.abs(elH - _R) < TOL) {
           const isRight = Math.abs(elX - (RBX + _RBW - _R)) < TOL
           reqs.push(makeElemTransform(el.objectId,
-            isRight ? RBX + _RBW - _R : RBX, isBottom ? newCy + cardH - _R : newCy, _R, _R, sW, sH))
+            isRight ? RBX + _RBW - _R : RBX, isBottom ? newCy + kCardH - _R : newCy, _R, _R, sW, sH))
         }
       } else if (el.shape?.shapeType === 'ELLIPSE') {
         if (Math.abs(elW - 2 * _R) < TOL && Math.abs(elH - 2 * _R) < TOL) {
           const isRight = Math.abs(elX - (RBX + _RBW - 2 * _R)) < TOL
           reqs.push(makeElemTransform(el.objectId,
-            isRight ? RBX + _RBW - 2 * _R : RBX, isBottom ? newCy + cardH - 2 * _R : newCy, 2 * _R, 2 * _R, sW, sH))
+            isRight ? RBX + _RBW - 2 * _R : RBX, isBottom ? newCy + kCardH - 2 * _R : newCy, 2 * _R, 2 * _R, sW, sH))
         }
       }
     }
@@ -1630,9 +1590,8 @@ export async function buildPresentation(
     const slide = updatedSlides.find(s => s.objectId === pageId)
     if (!slide) continue
     const pSlots = bentoProcessedSlots.get(i) ?? plan.slides[i].slots
-    const pt     = pickBentoPt(compId, pSlots)
-    if (pt === null) continue
-    requests.push(...buildBentoRowLayoutRequests(slide, compId, pSlots, pt))
+    if (!BENTO_TOKENS[compId]) continue
+    requests.push(...buildBentoRowLayoutRequests(slide, compId, pSlots))
   }
 
   // Font-size auto-shrink + colon-split colouring.
@@ -1668,7 +1627,6 @@ export async function buildPresentation(
           textRange: { type: 'ALL' },
         },
       })
-
       const slotValue = pSlots[matchedToken] ?? ''
 
       // Value+label (number + description) OR plain colon-split
