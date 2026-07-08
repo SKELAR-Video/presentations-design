@@ -251,7 +251,10 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
     }
 
     case 'closing': {
-      push(tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, TITLE_W, 320, 44))
+      push(
+        tb(mk(), slideId, 'ЗАГОЛОВОК',    PAD, PAD,             TITLE_W, 260, 44),
+        tb(mk(), slideId, 'ПІДЗАГОЛОВОК', PAD, PAD + 260 + GAP, UW,      160, 28, MUTED),
+      )
       break
     }
 

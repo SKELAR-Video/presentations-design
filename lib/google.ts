@@ -96,14 +96,23 @@ function textFitsParagraphs(text: string, wPx: number, hPx: number, pt: number):
 
 // ─── bento_right ТЕКСТ font-shrink ───────────────────────────────────────────
 const _LTW  = _UW - _RBW - _GAP  // 830 — left text zone width in bento_right
-// ТЕКСТ box h = 480 after logo reserve (RBH-260-GAP-90-20 = 480); no INN padding
-const _BENTO_RIGHT_TEXT_H = 480
 
-function pickTextPt(compId: string, text: string): number | null {
+// Compute actual available height for ТЕКСТ given a (possibly long) title.
+// The dynamic title may push textY down, shrinking the available body zone.
+function bentoRightTextAvailH(titleText: string): number {
+  const tLines  = estimateLineCount(titleText.trim(), _LTW, 44)
+  const dynH    = Math.max(_H1_FIXED_44, Math.ceil(tLines * lineH(44)))
+  const textY   = _PAD + dynH + TITLE_GAP
+  const logoY   = _H_SLIDE - _PAD - _LOGO_H
+  return Math.max(50, logoY - 20 - textY)
+}
+
+function pickTextPt(compId: string, text: string, availH?: number): number | null {
   if (!compId.startsWith('bento_right_') || !text.trim()) return null
+  const h     = availH ?? (_H_SLIDE - _PAD - _LOGO_H - 20 - (_PAD + _H1_FIXED_44 + TITLE_GAP))
   const steps = FONT_STEPS.filter(s => s <= 22)  // 22pt default for ТЕКСТ
   for (const pt of steps) {
-    if (textFits(text, _LTW, _BENTO_RIGHT_TEXT_H, pt)) return pt
+    if (textFits(text, _LTW, h, pt)) return pt
   }
   return steps[steps.length - 1]
 }
@@ -553,10 +562,12 @@ function buildBadgesRequests(
       },
     })
 
-    // Text box centered inside badge
-    const txtX = x + _BADGE_H_PAD
+    // Text box spans full badge width so text never wraps regardless of font metrics.
+    // bw = textW + 60px → effective render zone ≥ actual text width even if per-char
+    // estimate undershoots (e.g. wide Cyrillic glyphs like Ф, Ж at Inter 500 18pt).
+    const txtX = x
     const txtY = y + _BADGE_V_PAD
-    const txtW = bw - 2 * _BADGE_H_PAD
+    const txtW = bw
     const txtH = _BADGE_H - 2 * _BADGE_V_PAD
     reqs.push({
       createShape: {
@@ -964,16 +975,25 @@ function buildBentoRowLayoutRequests(
     const RBX    = _W - _PAD - _RBW  // 960 — right block left edge
     const innerW = _RBW - 2 * _INN  // 800
 
-    // Per-card content height
+    // Per-card content height — use actual rendered font sizes when value+label split applies
+    const valuePtForComp = BENTO_VALUE_PT[compId] ?? 36
     const contentHs = tokens.map(tok => {
       const text = (processedSlots[tok] ?? '').trim()
       if (!text) return 0
+      const split = splitValueLabel(text)
+      if (split) {
+        // Value line at large font + label lines at 14pt
+        const valueLines = estimateLineCount(text.slice(0, split.valueEnd), innerW, valuePtForComp)
+        const labelLines = estimateLineCount(text.slice(split.labelStart), innerW, 14)
+        return Math.ceil(valueLines * lineH(valuePtForComp) + labelLines * lineH(14))
+      }
       const paras = text.split('\n').filter(p => p.trim())
       const totalLines = paras.reduce((s, p) => s + estimateLineCount(p, innerW, pt), 0)
       return Math.ceil(totalLines * lineH(pt))
     })
     const maxContentH = Math.max(...contentHs, 0)
     const cardH       = Math.max(80, maxContentH + 2 * BENTO_VERT_PAD)
+    console.log(`[bento-card-h] ${compId}: valuePt=${valuePtForComp} cardH=${cardH} (maxContent=${maxContentH})`, contentHs)
 
     // For 2x2 grid, compute per-cell dimensions
     const cellW = isGrid ? Math.floor((_RBW - _GAP) / 2) : _RBW
@@ -1480,7 +1500,7 @@ export async function buildPresentation(
   // ── section/section_red: float ПІДЗАГОЛОВОК below ЗАГОЛОВОК (gap = TITLE_GAP) ────
   for (let i = 0; i < plan.slides.length; i++) {
     const compId = plan.slides[i].composition
-    if (compId !== 'section' && compId !== 'section_red') continue
+    if (compId !== 'section' && compId !== 'section_red' && compId !== 'closing') continue
     const pageId = planPageIds[i]
     if (!pageId) continue
     const slide = updatedSlides.find(s => s.objectId === pageId)
@@ -1632,8 +1652,11 @@ export async function buildPresentation(
   for (let i = 0; i < plan.slides.length; i++) {
     const pageId = planPageIds[i]
     if (!pageId) continue
-    const compId = plan.slides[i].composition
-    const textPt = pickTextPt(compId, plan.slides[i].slots['ТЕКСТ'] ?? '')
+    const compId   = plan.slides[i].composition
+    const titleTxt = plan.slides[i].slots['ЗАГОЛОВОК'] ?? ''
+    const availH   = bentoRightTextAvailH(titleTxt)
+    const textPt   = pickTextPt(compId, plan.slides[i].slots['ТЕКСТ'] ?? '', availH)
+    console.log(`[bento-right-text] slide ${i}: titleLines=${estimateLineCount(titleTxt.trim(),_LTW,44)}, availH=${availH}, textPt=${textPt}`)
     if (textPt === null) continue
 
     const slide = updatedSlides.find(s => s.objectId === pageId)
@@ -1806,6 +1829,7 @@ export async function buildPresentation(
       }
     }
   }
+
 
   if (requests.length > 0) {
     await slidesApi.presentations.batchUpdate({
