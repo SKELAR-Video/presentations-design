@@ -453,8 +453,9 @@ const _BADGE_V_PAD  = 30  // vertical inner padding (px)
 // Single-line height with lineSpacing=90: pt × 2.667 × 0.9
 const _BADGE_LINE_H = Math.round(_BADGE_PT * 2.667 * 0.9)  // ≈ 43px
 const _BADGE_H      = _BADGE_V_PAD * 2 + _BADGE_LINE_H     // ≈ 103px
-// 0.65 multiplier accounts for Cyrillic Inter widths; prevents text wrapping inside badges
-const _BADGE_CHAR_W = Math.round(_BADGE_PT * 2.667 * 0.65) // ≈ 31px/char
+// Per-char width: space ≈13 px (narrow), regular Cyrillic ≈27 px (Inter 500 18pt = 48 display-px)
+const _BADGE_LETTER_W = 27
+const _BADGE_SPACE_W  = 13
 const _BADGE_GAP_H  = 16  // horizontal gap between badges
 const _BADGE_GAP_V  = 16  // vertical gap between rows
 const _BADGE_BG  = { red: 26  / 255, green: 31  / 255, blue: 46  / 255 }  // #1A1F2E = CARD color
@@ -510,7 +511,9 @@ function buildBadgesRequests(
 
   for (let bi = 0; bi < items.length; bi++) {
     const label = items[bi]
-    const bw    = Math.max(80, Math.round(label.length * _BADGE_CHAR_W + 2 * _BADGE_H_PAD))
+    let textW = 0
+    for (const ch of label) textW += ch === ' ' ? _BADGE_SPACE_W : _BADGE_LETTER_W
+    const bw    = Math.round(textW + 2 * _BADGE_H_PAD)
 
     // Wrap row when badge doesn't fit
     if (bi > 0 && x + bw > _PAD + _UW) {
@@ -683,9 +686,13 @@ function buildBentoRightLeftColumnRequests(
     return reqs
   }
 
-  const titleH   = _H1_FIXED_44
-  const textY    = _PAD + titleH + TITLE_GAP  // 420 (fixed)
-  const logoY    = _H_SLIDE - _PAD - _LOGO_H  // 890
+  // Dynamic title height: expands beyond 2-line default when title wraps to 3+ lines.
+  // Prevents ЗАГОЛОВОК box from overflowing into ТЕКСТ (which starts TITLE_GAP below).
+  const titleLines = estimateLineCount(titleText, _LTW, 44)
+  const titleH     = Math.max(_H1_FIXED_44, Math.ceil(titleLines * lineH(44)))
+  const textY      = _PAD + titleH + TITLE_GAP
+  const logoY      = _H_SLIDE - _PAD - _LOGO_H  // 890
+  console.log(`[bento-right-left] ЗАГОЛОВОК: ${titleLines} lines → titleH=${titleH}px, ТЕКСТ y=${textY}px`)
   const textMaxH = Math.max(1, logoY - 20 - textY)  // 450 (fixed)
 
   const reqs: object[] = []
@@ -1049,6 +1056,15 @@ function buildBentoRowLayoutRequests(
     const totalColH = nCards * cardH + (nCards - 1) * _GAP
     const colY      = Math.round(_PAD + Math.max(0, (_RBH - totalColH) / 2))
 
+    // Diagnostic: input slot count → expected card count
+    const filledTokens = tokens.filter(t => (processedSlots[t] ?? '').trim())
+    console.log(`[bento-layout] ${compId}: ${filledTokens.length}/${tokens.length} slots filled → ${nCards} cards expected`)
+    for (const t of tokens) {
+      const v = (processedSlots[t] ?? '').trim()
+      console.log(`  ${t}: ${v ? `"${v.slice(0, 50)}"` : '(empty)'}`)
+    }
+    console.log(`  masterCardH=${masterCardH} cardH=${cardH} colY=${colY} TITLE/BODY overlap check → ЗАГОЛОВОК ends at ${_PAD}+titleH, ТЕКСТ starts textY (see bento-right-left log)`)
+
     const reqs: object[] = []
     for (const el of slide.pageElements ?? []) {
       if (!el.objectId || !el.transform || !el.size) continue
@@ -1063,7 +1079,7 @@ function buildBentoRowLayoutRequests(
       let k = -1
       for (let ci = 0; ci < nCards; ci++) {
         const origCy = _PAD + ci * (masterCardH + _GAP)
-        if (elY >= origCy - TOL && elY <= origCy + masterCardH + TOL + _GAP) { k = ci; break }
+        if (elY >= origCy - TOL && elY <= origCy + masterCardH + TOL) { k = ci; break }
       }
       if (k < 0) continue
 
