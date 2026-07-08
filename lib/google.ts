@@ -71,9 +71,8 @@ const BENTO_SCALE = [48, 36, 28, 22, 18, 14, 10] as const
 function textFits(text: string, wPx: number, hPx: number, pt: number): boolean {
   if (!text.trim()) return true
   if (longestWordPx(text, pt) * 1.2 > wPx) return false  // 1.2× safety margin
-  const px = pt * 2.667
-  const cpl = Math.max(1, Math.floor(wPx / (px * 0.48)))   // conservative: Cyrillic chars wider
-  const maxLines = Math.max(1, Math.floor(hPx / (px * 1.4))) // conservative; ≥1 so tiny boxes are never 0
+  // cpl uses same 0.65 factor as longestWordPx — consistent width estimate
+  const cpl   = Math.max(1, Math.floor(wPx / (pt * 2.667 * 0.65)))
   const words = text.split(/\s+/).filter(Boolean)
   let lines = 1, cur = 0
   for (const w of words) {
@@ -81,7 +80,7 @@ function textFits(text: string, wPx: number, hPx: number, pt: number): boolean {
     else if (cur + 1 + w.length <= cpl) { cur += 1 + w.length }
     else { lines++; cur = w.length }
   }
-  return lines <= maxLines
+  return lines * lineH(pt) <= hPx  // exact height: lines × lineH ≤ inner_height
 }
 
 // Paragraph-aware variant: splits on \n first so each paragraph starts on a new line.
@@ -91,9 +90,19 @@ function textFitsParagraphs(text: string, wPx: number, hPx: number, pt: number):
   if (longestWordPx(text, pt) * 1.2 > wPx) return false  // 1.2× safety margin
   const paras = text.split('\n').filter(p => p.trim())
   if (paras.length <= 1) return textFits(text, wPx, hPx, pt)
-  const totalLines = paras.reduce((s, p) => s + estimateLineCount(p, wPx, pt), 0)
-  const maxLines   = Math.max(1, Math.floor(hPx / (pt * 2.667 * 1.4)))
-  return totalLines <= maxLines
+  // Multi-paragraph: same 0.65 factor for consistent line-count estimation
+  const cpl = Math.max(1, Math.floor(wPx / (pt * 2.667 * 0.65)))
+  const totalLines = paras.reduce((s, p) => {
+    const words = p.split(/\s+/).filter(Boolean)
+    let lines = 1, cur = 0
+    for (const w of words) {
+      if (!cur) cur = w.length
+      else if (cur + 1 + w.length <= cpl) cur += 1 + w.length
+      else { lines++; cur = w.length }
+    }
+    return s + lines
+  }, 0)
+  return totalLines * lineH(pt) <= hPx  // exact height check
 }
 
 // ─── bento_right ТЕКСТ font-shrink ───────────────────────────────────────────
@@ -863,7 +872,26 @@ function pickBentoPt(compId: string, slots: Record<string, string>): number | nu
   }
   for (const [idx, t] of tokens.entries()) {
     const text = slots[t] ?? ''
-    if (text.trim()) logWordFit(`${compId}/card${idx + 1}`, text, dims.w, chosenPt)
+    if (!text.trim()) continue
+    logWordFit(`${compId}/card${idx + 1}`, text, dims.w, chosenPt)
+    // Height log
+    const cpl = Math.max(1, Math.floor(dims.w / (chosenPt * 2.667 * 0.65)))
+    const paras = text.split('\n').filter(p => p.trim())
+    const totalLines = paras.reduce((s, p) => {
+      const words = p.split(/\s+/).filter(Boolean)
+      let lines = 1, cur = 0
+      for (const w of words) {
+        if (!cur) cur = w.length
+        else if (cur + 1 + w.length <= cpl) cur += 1 + w.length
+        else { lines++; cur = w.length }
+      }
+      return s + lines
+    }, 0)
+    const textH = Math.round(totalLines * lineH(chosenPt))
+    const hPass = totalLines * lineH(chosenPt) <= dims.h
+    console.log(
+      `[bento-height] ${compId}/card${idx + 1}: lines=${totalLines} | text_height=${textH} | inner_height=${dims.h} | font=${chosenPt} → ${hPass ? 'PASS' : 'FAIL'}`,
+    )
   }
   return chosenPt
 }

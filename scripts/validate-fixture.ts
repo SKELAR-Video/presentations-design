@@ -183,6 +183,78 @@ run('Fixture 2 — run 2', fixture2)
     return checkWord(label, text, 830, pt)
   }
 
+  // ─── Bento height+width fixture ─────────────────────────────────────────────
+  // Pure math: verifies that pickBentoPt selects font where BOTH width (word-fit)
+  // AND height (lines × lineH ≤ inner_height) are satisfied.
+  {
+    const CHAR_W = 0.65, SAFETY = 1.2, BENTO_VP = 40
+    const RBH = 880, GAP = 30, INN = 30
+
+    function lH(pt: number) { return pt * 2.667 * 1.4 }
+
+    function lwPx2(text: string, pt: number): number {
+      const pxC = pt * 2.667 * CHAR_W
+      const ws = text.trim().split(/\s+/).filter(Boolean)
+      return ws.length === 0 ? 0 : Math.round(Math.max(...ws.map(w => w.length * pxC)))
+    }
+
+    function countLines(text: string, innerW: number, pt: number): number {
+      const cpl = Math.max(1, Math.floor(innerW / (pt * 2.667 * CHAR_W)))
+      const paras = text.split('\n').filter(p => p.trim())
+      return paras.reduce((s, p) => {
+        const words = p.split(/\s+/).filter(Boolean)
+        let lines = 1, cur = 0
+        for (const w of words) {
+          if (!cur) cur = w.length
+          else if (cur + 1 + w.length <= cpl) cur += 1 + w.length
+          else { lines++; cur = w.length }
+        }
+        return s + lines
+      }, 0)
+    }
+
+    function fits(text: string, iW: number, iH: number, pt: number): boolean {
+      if (!text.trim()) return true
+      if (lwPx2(text, pt) * SAFETY > iW) return false
+      return countLines(text, iW, pt) * lH(pt) <= iH
+    }
+
+    function pickPt(text: string, iW: number, iH: number, maxPt: number): number {
+      const scale = [48, 36, 28, 22, 18, 14, 10].filter(p => p <= maxPt)
+      for (const pt of scale) { if (fits(text, iW, iH, pt)) return pt }
+      return scale[scale.length - 1]
+    }
+
+    function check(label: string, text: string, iW: number, iH: number, maxPt: number): boolean {
+      const pt    = pickPt(text, iW, iH, maxPt)
+      const lines = countLines(text, iW, pt)
+      const textH = Math.round(lines * lH(pt))
+      const lw    = lwPx2(text, pt)
+      const wPass = Math.round(lw * SAFETY) <= iW
+      const hPass = textH <= iH
+      const pass  = wPass && hPass
+      console.log(
+        `  [${label}] lines=${lines} | text_height=${textH} | inner_height=${iH} | font=${pt} → ${pass ? 'PASS' : 'FAIL'}`,
+      )
+      return pass
+    }
+
+    const b2W = 860 - 2 * INN, b2H = Math.floor((RBH - GAP) / 2) - 2 * BENTO_VP          // 800, 345
+    const b3W = 800,            b3H = Math.floor((RBH - 2 * GAP) / 3) - 2 * BENTO_VP      // 800, 193
+
+    console.log('\n=== Bento height+width fixture — run 1 ===')
+    check('bento_right_2 / short',          '80% лікарів рекомендують',                            b2W, b2H, 36)
+    check('bento_right_2 / four-word long', 'Продуктивність визначається важливістю результату',    b2W, b2H, 36)
+    check('bento_right_3 / multiline',      'Зростання виручки на 23% порівняно з минулим роком',  b3W, b3H, 22)
+    check('bento_right_3 / single long',    'Продуктивність',                                       b3W, b3H, 22)
+
+    console.log('\n=== Bento height+width fixture — run 2 (determinism) ===')
+    check('bento_right_2 / short',          '80% лікарів рекомендують',                            b2W, b2H, 36)
+    check('bento_right_2 / four-word long', 'Продуктивність визначається важливістю результату',    b2W, b2H, 36)
+    check('bento_right_3 / multiline',      'Зростання виручки на 23% порівняно з минулим роком',  b3W, b3H, 22)
+    check('bento_right_3 / single long',    'Продуктивність',                                       b3W, b3H, 22)
+  }
+
   console.log('\n=== Bento geometry fixture — run 1 ===')
   // Verifies grid-driven card placement: top/bottom fill slide margins, gap is fixed.
   // Must pass regardless of text content or font size (geometry is independent of pt).
