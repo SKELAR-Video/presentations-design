@@ -70,6 +70,7 @@ const BENTO_SCALE = [48, 36, 28, 22, 18, 14, 10] as const
 
 function textFits(text: string, wPx: number, hPx: number, pt: number): boolean {
   if (!text.trim()) return true
+  if (longestWordPx(text, pt) > wPx) return false  // word-break guard: single word wider than box
   const px = pt * 2.667
   const cpl = Math.max(1, Math.floor(wPx / (px * 0.48)))   // conservative: Cyrillic chars wider
   const maxLines = Math.max(1, Math.floor(hPx / (px * 1.4))) // conservative; ≥1 so tiny boxes are never 0
@@ -87,6 +88,7 @@ function textFits(text: string, wPx: number, hPx: number, pt: number): boolean {
 // textFits() treats \n as a space (wrong for bullet lists). This correctly sums lines per paragraph.
 function textFitsParagraphs(text: string, wPx: number, hPx: number, pt: number): boolean {
   if (!text.trim()) return true
+  if (longestWordPx(text, pt) > wPx) return false  // word-break guard
   const paras = text.split('\n').filter(p => p.trim())
   if (paras.length <= 1) return textFits(text, wPx, hPx, pt)
   const totalLines = paras.reduce((s, p) => s + estimateLineCount(p, wPx, pt), 0)
@@ -838,10 +840,27 @@ function pickBentoPt(compId: string, slots: Record<string, string>): number | nu
   const maxPt  = BENTO_MAX_PT[compId]
   if (!dims || !tokens || !maxPt) return null
   const scale = (BENTO_SCALE as readonly number[]).filter(s => s <= maxPt)
+  let chosenPt = scale[scale.length - 1]
   for (const pt of scale) {
-    if (tokens.every(t => textFitsParagraphs(slots[t] ?? '', dims.w, dims.h, pt))) return pt
+    if (tokens.every(t => textFitsParagraphs(slots[t] ?? '', dims.w, dims.h, pt))) {
+      chosenPt = pt
+      break
+    }
   }
-  return scale[scale.length - 1]
+  const parts = tokens
+    .map((t, idx) => {
+      const text = slots[t] ?? ''
+      if (!text.trim()) return null
+      const lw = longestWordPx(text, chosenPt)
+      return `card${idx + 1}: ${lw}≤${dims.w} f${chosenPt}`
+    })
+    .filter((s): s is string => s !== null)
+  const allFit = tokens.every(t => {
+    const text = slots[t] ?? ''
+    return !text.trim() || longestWordPx(text, chosenPt) <= dims.w
+  })
+  console.log(`[bento-cards] ${compId} ${parts.join(' | ')} → ${allFit ? 'PASS' : 'FAIL'}`)
+  return chosenPt
 }
 
 // ─── Compact number formatting for KPI values ────────────────────────────────

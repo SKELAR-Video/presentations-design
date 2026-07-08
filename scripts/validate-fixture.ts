@@ -67,6 +67,47 @@ const fixture2: SlidePlan = {
   ],
 }
 
+// ─── Fixture 3 — fragment_coverage: PASS slide (all blocks mapped) ───────────
+const fixture3pass: SlidePlan = {
+  theme: 'dark',
+  slides: [
+    {
+      id: 'slide_1',
+      composition: 'bento_right_2',
+      slots: {
+        ЗАГОЛОВОК: 'Чому бігати важливо',
+        КАРТКА_1: '80% лікарів рекомендують',
+        КАРТКА_2: '32% зниження ризику',
+      },
+      flags: {},
+    },
+  ],
+  fragmentGroups: [
+    ['Чому бігати важливо', '80% лікарів рекомендують', '32% зниження ризику'],
+  ],
+}
+
+// ─── Fixture 4 — fragment_coverage: FAIL (third fragment dropped) ─────────
+const fixture4fail: SlidePlan = {
+  theme: 'dark',
+  slides: [
+    {
+      id: 'slide_1',
+      composition: 'bento_right_2',
+      slots: {
+        ЗАГОЛОВОК: 'Чому бігати важливо',
+        КАРТКА_1: '80% лікарів рекомендують',
+        КАРТКА_2: '32% зниження ризику',
+        // 'Дихальний об'єм +40%' — not assigned anywhere → FAIL
+      },
+      flags: {},
+    },
+  ],
+  fragmentGroups: [
+    ['Чому бігати важливо', '80% лікарів рекомендують', '32% зниження ризику', "Дихальний об'єм +40%"],
+  ],
+}
+
 function run(label: string, plan: SlidePlan) {
   console.log(`\n=== ${label} ===`)
   const results = validatePlan(plan)
@@ -81,6 +122,8 @@ function run(label: string, plan: SlidePlan) {
 
 run('Fixture 1 — valid badges (expect all PASS)', fixture1)
 run('Fixture 2 — bug cases (expect FAILs on asterisk, duplicate title, long badge)', fixture2)
+run('Fixture 3 — fragment_coverage PASS (all 3 blocks mapped)', fixture3pass)
+run('Fixture 4 — fragment_coverage FAIL (1 block dropped)', fixture4fail)
 
 // Run each fixture twice to confirm determinism
 console.log('\n--- second run (determinism check) ---')

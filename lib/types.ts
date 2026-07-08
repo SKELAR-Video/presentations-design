@@ -26,6 +26,9 @@ export type SlidePlan = {
   // Number of sheets (аркушів) detected by ___-delimiter parsing.
   // When set, slide count must equal this value (1 sheet = 1 slide invariant).
   sheetCount?: number
+  // Per-slide source fragments (lines from the original brief that belong to that slide).
+  // Set when hasSheets=true. Used by validatePlan to detect silent content loss.
+  fragmentGroups?: string[][]
 }
 
 export type CompositionSlot = {

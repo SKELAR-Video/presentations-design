@@ -318,22 +318,95 @@ ${sheetSummary}
     )
   }
 
-  // Build SlidePlan — verbatim text from fragments, LLM never touched it.
-  const slides = mapping.slides.map((m, i) => {
-    const slots: Record<string, string> = {}
-    for (const [slotName, ref] of Object.entries(m.assignment ?? {})) {
-      if (ref === null || ref === undefined) continue
-      const indices = Array.isArray(ref) ? ref : [ref]
-      const slotText = indices
-        .map(idx => (typeof idx === 'number' ? (fragments[idx] ?? '') : ''))
-        .filter(Boolean)
-        .join('\n')
-      if (slotText) slots[slotName] = slotText
-    }
-    return { id: `slide_${i + 1}`, composition: m.composition || 'title_body', slots, flags: {} }
-  })
+  // ── helpers ──────────────────────────────────────────────────────────────────
+  function buildSlides(m: { slides: SlideAssignment[] }) {
+    return m.slides.map((s, i) => {
+      const slots: Record<string, string> = {}
+      for (const [slotName, ref] of Object.entries(s.assignment ?? {})) {
+        if (ref === null || ref === undefined) continue
+        const indices = Array.isArray(ref) ? ref : [ref]
+        const slotText = indices
+          .map(idx => (typeof idx === 'number' ? (fragments[idx] ?? '') : ''))
+          .filter(Boolean)
+          .join('\n')
+        if (slotText) slots[slotName] = slotText
+      }
+      return { id: `slide_${i + 1}`, composition: s.composition || 'title_body', slots, flags: {} }
+    })
+  }
 
-  // Per-sheet mapping log
+  // Returns per-slide list of fragments that did NOT make it into any slot.
+  function findMissing(builtSlides: ReturnType<typeof buildSlides>): string[][] {
+    if (!hasSheets) return builtSlides.map(() => [])
+    return builtSlides.map((slide, i) => {
+      const [start, end] = sheetRanges[i] ?? [0, -1]
+      const sheetFrags = fragments.slice(start, end + 1).filter(Boolean)
+      const allSlotText = Object.values(slide.slots).join('\n')
+      return sheetFrags.filter(frag => !allSlotText.includes(frag))
+    })
+  }
+
+  let slides = buildSlides(mapping)
+  let missing = findMissing(slides)
+  const hasMissing = missing.some(m => m.length > 0)
+
+  // ── Content-integrity retry ───────────────────────────────────────────────
+  if (hasMissing && hasSheets) {
+    const missingReport = missing
+      .map((m, i) => m.length > 0 ? `Аркуш ${i + 1}: не призначено ${m.length} фрагм.: ${m.map(f => `"${f.slice(0, 60)}"`).join(', ')}` : null)
+      .filter(Boolean)
+      .join('\n')
+    console.warn(`[content-integrity] FAIL before retry:\n${missingReport}`)
+
+    const retryPrompt = `ПОМИЛКА: частина фрагментів не потрапила в жоден слот — контент буде ВТРАЧЕНО.
+${missingReport}
+Обов'язково призначити ВСІ фрагменти. Якщо поточна композиція не має достатньо слотів — обери іншу (bento_right_3, bento_right_2x2, title_body тощо). Поверни виправлений JSON з РІВНО ${mapping.slides.length} слайдами.`
+
+    const ciRetry = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4096,
+      system: SYSTEM_VERBATIM,
+      messages: [
+        { role: 'user', content: userMessage },
+        { role: 'assistant', content: raw },
+        { role: 'user', content: retryPrompt },
+      ],
+    })
+    const ciContent = ciRetry.content[0]
+    if (ciContent.type === 'text') {
+      try {
+        const ciMapping = parseJSON(ciContent.text.trim())
+        if (ciMapping.slides.length === mapping.slides.length) {
+          slides  = buildSlides(ciMapping)
+          missing = findMissing(slides)
+        }
+      } catch { /* keep original if JSON parse fails */ }
+    }
+  }
+
+  // ── Per-sheet content-integrity log ──────────────────────────────────────
+  if (hasSheets) {
+    let anyFail = false
+    slides.forEach((slide, i) => {
+      const [start, end] = sheetRanges[i] ?? [0, -1]
+      const sheetFrags = fragments.slice(start, end + 1).filter(Boolean)
+      const m = missing[i] ?? []
+      const mappedCount = sheetFrags.length - m.length
+      const pass = m.length === 0
+      if (!pass) anyFail = true
+      console.log(
+        `[content-integrity] sheet ${i + 1} "${(sheets[i]?.[0] ?? '').slice(0, 40)}": ` +
+        `input_blocks=${sheetFrags.length} | mapped_blocks=${mappedCount} | ` +
+        `missing_texts=${JSON.stringify(m.map(t => t.slice(0, 50)))} → ${pass ? 'PASS' : 'FAIL'}`,
+      )
+    })
+    if (anyFail) {
+      const lost = missing.flatMap((m, i) => m.map(t => `sheet ${i + 1}: "${t.slice(0, 80)}"`))
+      throw new Error(`[content-integrity] Контент втрачено після retry. Фрагменти без слота:\n${lost.join('\n')}`)
+    }
+  }
+
+  // Per-sheet composition log
   if (hasSheets) {
     slides.forEach((slide, i) => {
       const firstWords = (sheets[i]?.[0] ?? '').slice(0, 50)
@@ -342,5 +415,9 @@ ${sheetSummary}
     console.log(`[mapToPlan] total: ${sheets.length} sheets → ${slides.length} slides`)
   }
 
-  return { theme, slides, sourceText: text, sheetCount: targetCount >= 2 ? targetCount : undefined }
+  const fragmentGroups: string[][] | undefined = hasSheets
+    ? sheetRanges.map(([start, end]) => fragments.slice(start, end + 1).filter(Boolean))
+    : undefined
+
+  return { theme, slides, sourceText: text, sheetCount: targetCount >= 2 ? targetCount : undefined, fragmentGroups }
 }

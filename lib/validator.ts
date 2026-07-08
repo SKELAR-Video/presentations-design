@@ -597,6 +597,27 @@ function checkBadgesItems(slots: Record<string, string>): CheckResult {
 
 export type PlanCheckResult = CheckResult & { slideIndex: number }
 
+// Checks that every source fragment for a slide appears in at least one slot value.
+// Requires plan.fragmentGroups (set when hasSheets=true in mapToPlan).
+function checkFragmentCoverage(
+  slots: Record<string, string>,
+  slideFragments: string[] | undefined,
+  slideIndex: number,
+): CheckResult {
+  if (!slideFragments || slideFragments.length === 0) {
+    return { check: 'fragment_coverage', pass: true, detail: 'no fragments (non-sheet mode)' }
+  }
+  const allSlotText = Object.values(slots).join('\n')
+  const missing = slideFragments.filter(frag => frag && !allSlotText.includes(frag))
+  const mapped  = slideFragments.length - missing.length
+  const pass    = missing.length === 0
+  const detail  = `input_blocks=${slideFragments.length} | mapped_blocks=${mapped} | missing_texts=${JSON.stringify(missing.map(t => t.slice(0, 50)))} → ${pass ? 'PASS' : 'FAIL'}`
+  if (!pass) {
+    console.warn(`[validatePlan] slide ${slideIndex + 1} fragment_coverage FAIL: ${detail}`)
+  }
+  return { check: 'fragment_coverage', pass, detail }
+}
+
 export function validatePlan(plan: SlidePlan): PlanCheckResult[] {
   const results: PlanCheckResult[] = []
 
@@ -619,6 +640,7 @@ export function validatePlan(plan: SlidePlan): PlanCheckResult[] {
     const slots  = slide.slots
     results.push({ slideIndex: i, ...checkNoLiteralAsterisk(slots) })
     results.push({ slideIndex: i, ...checkNoDuplicateTitle(plan, i) })
+    results.push({ slideIndex: i, ...checkFragmentCoverage(slots, plan.fragmentGroups?.[i], i) })
     if (compId === 'badges') {
       results.push({ slideIndex: i, ...checkBadgesItems(slots) })
     }
