@@ -118,6 +118,21 @@ async function fetchGoogleDocText(
     const docsApi = google.docs({ version: 'v1', auth: auth2 })
     const res = await docsApi.documents.get({ documentId: fileId })
     const body = res.data.body?.content ?? []
+
+    // Diagnostic: count structural markers BEFORE text extraction
+    let diagPB = 0, diagHR = 0, diagH1 = 0, diagH2 = 0, diagPBbefore = 0
+    for (const el of body) {
+      if (!el.paragraph) continue
+      const els = el.paragraph.elements ?? []
+      if (els.some(pe => pe.pageBreak))  diagPB++
+      if (els.some(pe => pe.horizontalRule)) diagHR++
+      const style = el.paragraph.paragraphStyle?.namedStyleType ?? ''
+      if (style === 'HEADING_1') diagH1++
+      if (style === 'HEADING_2') diagH2++
+      if (el.paragraph.paragraphStyle?.pageBreakBefore) diagPBbefore++
+    }
+    console.log(`[fetch-doc] doc structure: pageBreak=${diagPB} pageBreakBefore=${diagPBbefore} HR=${diagHR} H1=${diagH1} H2=${diagH2} totalParagraphs=${body.filter(e => e.paragraph).length}`)
+
     const text = readDocContent(body).trim()
     if (text) {
       const delimCount = (text.match(/___/g) ?? []).length
