@@ -165,7 +165,7 @@ run('Fixture 2 — run 2', fixture2)
   }
   function pickTitlePt(text: string): number {
     for (const pt of [44, 40, 36, 32, 28]) {
-      if (lwPx(text, pt) * SAFETY <= 830) return pt  // _LTW = 830
+      if (lwPx(text, pt) * SAFETY <= 830 - 19) return pt  // _LTW - _INSET = 811
     }
     return 28
   }
@@ -180,7 +180,7 @@ run('Fixture 2 — run 2', fixture2)
   }
   function runTitle(label: string, text: string) {
     const pt = pickTitlePt(text)
-    return checkWord(label, text, 830, pt)
+    return checkWord(label, text, 830 - 19, pt)  // effective width = _LTW - _INSET = 811
   }
 
   // ─── Bento height+width fixture ─────────────────────────────────────────────
@@ -297,6 +297,89 @@ run('Fixture 2 — run 2', fixture2)
     comps.forEach(checkBento)
   }
 
+  // ─── Font selection: max-first + floor (2/3/4-card groups) ──────────────────
+  // Pure math: verifies chosen_font = largest fitting pt ≥ floor.
+  // Determinism: run twice — output must be identical.
+  {
+    const CHAR_W = 0.65, SAFETY = 1.2, VP = 40, GAP = 30, INN = 30
+    const RBH = 880, RBW = 860
+    const b2W  = RBW - 2*INN,                        b2H  = Math.floor((RBH - GAP) / 2) - 2*VP      // 800, 345
+    const b3W  = RBW - 2*INN,                        b3H  = Math.floor((RBH - 2*GAP) / 3) - 2*VP    // 800, 193
+    const b4CW = Math.floor((RBW - GAP) / 2) - 2*INN, b4H = Math.floor((RBH - GAP) / 2) - 2*VP     // 355, 345
+
+    function lH2(pt: number) { return pt * 2.667 * 1.4 }
+    function lw(text: string, pt: number): number {
+      const pxC = pt * 2.667 * CHAR_W
+      const ws = text.trim().split(/\s+/).filter(Boolean)
+      return ws.length === 0 ? 0 : Math.round(Math.max(...ws.map(w => w.length * pxC)))
+    }
+    function cLines(text: string, iW: number, pt: number): number {
+      const cpl = Math.max(1, Math.floor(iW / (pt * 2.667 * CHAR_W)))
+      const paras = text.split('\n').filter(p => p.trim())
+      return paras.reduce((s, p) => {
+        const words = p.split(/\s+/).filter(Boolean)
+        let lines = 1, cur = 0
+        for (const w of words) {
+          if (!cur) cur = w.length
+          else if (cur + 1 + w.length <= cpl) cur += 1 + w.length
+          else { lines++; cur = w.length }
+        }
+        return s + lines
+      }, 0)
+    }
+    function fits2(text: string, iW: number, iH: number, pt: number): boolean {
+      if (!text.trim()) return true
+      if (lw(text, pt) * SAFETY > iW) return false
+      return cLines(text, iW, pt) * lH2(pt) <= iH
+    }
+    function pickGroup(cards: string[], iW: number, iH: number, maxPt: number, minPt: number): number {
+      const scale = [48, 36, 28, 22, 18, 14, 10].filter(p => p <= maxPt)
+      let chosen = scale[scale.length - 1]
+      for (const pt of scale) {
+        if (cards.every(c => fits2(c, iW, iH, pt))) { chosen = pt; break }
+      }
+      return Math.max(chosen, minPt)
+    }
+    function checkGroupFit(label: string, cards: string[], iW: number, iH: number, maxPt: number, minPt: number): boolean {
+      const chosen = pickGroup(cards, iW, iH, maxPt, minPt)
+      let allPass = true
+      for (const [i, text] of cards.entries()) {
+        if (!text.trim()) continue
+        const wPass = lw(text, chosen) * SAFETY <= iW
+        const hPass = cLines(text, iW, chosen) * lH2(chosen) <= iH
+        const pass = wPass && hPass
+        if (!pass) allPass = false
+        console.log(`  [${label}/card${i+1}] max_font=${maxPt} | chosen_font=${chosen} | floor=${minPt} | fits_width=${wPass ? '✓' : '✗'} | fits_height=${hPass ? '✓' : '✗'} → ${pass || chosen === minPt ? 'PASS' : 'FAIL'}`)
+      }
+      const group_ok = chosen >= minPt
+      console.log(`  → group chosen=${chosen} ≥ floor=${minPt}: ${group_ok ? 'PASS' : 'FAIL'}`)
+      return allPass && group_ok
+    }
+
+    function runGroups() {
+      console.log('\n=== Font selection fixture — 2/3/4-card groups ===')
+
+      // 2-card: short text → maxPt expected
+      checkGroupFit('bento_right_2 / all-short', ['80% лікарів', '32% зниження'], b2W, b2H, 36, 18)
+      // 2-card: one long word → group forced below max but ≥ floor
+      checkGroupFit('bento_right_2 / one-long-word', ['80% лікарів рекомендують', '32% зниження'], b2W, b2H, 36, 18)
+
+      // 3-card: all short → maxPt
+      checkGroupFit('bento_right_3 / all-short', ['Зростання', 'Зниження', 'Стабільність'], b3W, b3H, 22, 14)
+      // 3-card: one long → group drops, ≥ floor
+      checkGroupFit('bento_right_3 / one-long-word', ['Продуктивність', 'Зростання', 'Ефект'], b3W, b3H, 22, 14)
+
+      // 4-card (bento_right_2x2): short words in narrow cell → maxPt=22
+      checkGroupFit('bento_right_2x2 / all-short', ['80%', '32%', '+23%', '×2.5'], b4CW, b4H, 22, 14)
+      // 4-card: long word forces floor
+      checkGroupFit('bento_right_2x2 / with-long-word', ['лікарів', 'зростання', 'ефективність', '100%'], b4CW, b4H, 22, 14)
+    }
+
+    runGroups()
+    console.log('\n--- Font selection fixture — run 2 (determinism) ---')
+    runGroups()
+  }
+
   console.log('\n=== Word-break fixture (CHAR_W=0.65, safety×1.2) — run 1 ===')
 
   // bento_right_2: maxPt=36, bentoInnerW=800
@@ -307,9 +390,11 @@ run('Fixture 2 — run 2', fixture2)
   // bento_right_3: maxPt=22, bentoInnerW=800
   runBento('bento_right_3 / Продуктивність', 'Продуктивність', 22)
 
-  // bento titles (_LTW=830), steps [44,40,36,32,28]
-  runTitle('title / short',        'Чому бігати важливо')
-  runTitle('title / one long word', 'Продуктивність підприємства')
+  // bento titles (effective_width = _LTW - _INSET = 811), steps [44,40,36,32,28]
+  // "щоденного" (9 chars): old formula (×830) → 44pt; new (×811) → 40pt — prevents word break
+  runTitle('title / short',               'Чому бігати важливо')
+  runTitle('title / щоденного borderline', 'Категорії для щоденного життя')
+  runTitle('title / one long word',        'Продуктивність підприємства')
 
   console.log('\n=== Word-break fixture — run 2 (determinism) ===')
 
@@ -317,6 +402,7 @@ run('Fixture 2 — run 2', fixture2)
   runBento('bento_right_2 / long word',      'рекомендують',                36)
   runBento('bento_right_2 / Продуктивність', 'Продуктивність визначається', 36)
   runBento('bento_right_3 / Продуктивність', 'Продуктивність', 22)
-  runTitle('title / short',        'Чому бігати важливо')
-  runTitle('title / one long word', 'Продуктивність підприємства')
+  runTitle('title / short',               'Чому бігати важливо')
+  runTitle('title / щоденного borderline', 'Категорії для щоденного життя')
+  runTitle('title / one long word',        'Продуктивність підприємства')
 }

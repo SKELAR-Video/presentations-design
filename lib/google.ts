@@ -64,6 +64,16 @@ const BENTO_MAX_PT: Record<string, number> = {
   bento_right_2x2: 22,
 }
 
+// Floor: chosen pt is never smaller than this value.
+// If even floor pt overflows → log ⚠ TEXT_TOO_LONG (content is too long for this card type).
+const BENTO_MIN_PT: Record<string, number> = {
+  two_columns:     18,
+  three_columns:   14,
+  bento_right_2:   18,
+  bento_right_3:   14,
+  bento_right_2x2: 14,
+}
+
 const FONT_STEPS = [22, 18, 14, 10] as const
 // Full scale including large sizes for upward scaling
 const BENTO_SCALE = [48, 36, 28, 22, 18, 14, 10] as const
@@ -137,9 +147,11 @@ function logWordFit(label: string, text: string, innerW: number, pt: number): vo
 }
 
 // Choose largest title pt where the longest word (×1.2 safety margin) fits in wPx.
+// Effective limit = wPx - 19 (same INSET offset used everywhere for rendering imprecision).
+// Prevents borderline 9-char Cyrillic words (e.g. "щоденного") from visually breaking.
 function pickTitlePt(text: string, wPx: number): TitlePt {
   for (const pt of TITLE_PT_STEPS) {
-    if (longestWordPx(text, pt) * 1.2 <= wPx) return pt
+    if (longestWordPx(text, pt) * 1.2 <= wPx - 19) return pt  // 19 = _INSET buffer
   }
   return TITLE_PT_STEPS[TITLE_PT_STEPS.length - 1]
 }
@@ -754,9 +766,12 @@ function buildBentoRightLeftColumnRequests(
   const textMaxH   = Math.max(1, logoY - 20 - textY)
 
   // ── Audit log ────────────────────────────────────────────────────────────────
-  logWordFit('bento-right/ЗАГОЛОВОК', titleText, _LTW, titlePt)
+  const titleWPass = longestWordPx(titleText, titlePt) * 1.2 <= _LTW - _INSET
   const computedGap = textY - _PAD - titleH          // must equal TITLE_GAP = 60
   const emptySpace  = titleH - Math.ceil(titleLines * lineH(titlePt))  // must be 0
+  console.log(
+    `[bento-fit] bento-right/ЗАГОЛОВОК: max_font=${TITLE_PT_STEPS[0]} | chosen_font=${titlePt} | floor=${TITLE_PT_STEPS[TITLE_PT_STEPS.length - 1]} | fits_width=${titleWPass ? '✓' : '✗'} | fits_height=N/A`,
+  )
   console.log(
     `[bento-right-title] font=${titlePt} | lines=${titleLines} | gap=${computedGap} | empty_space=${emptySpace}`,
   )
@@ -853,28 +868,33 @@ function buildTitleBodyFloatRequests(
   return reqs
 }
 
-// Returns the LARGEST pt (≤ BENTO_MAX_PT) at which every non-empty bento card fits.
-// Scales UP to role max when text is short; shrinks only when needed.
-// All cards in the row share ONE pt so the layout looks uniform.
-// Uses paragraph-aware line counting: "\n" forces a new line (important for bullet lists).
+// Returns the LARGEST pt (≤ BENTO_MAX_PT, ≥ BENTO_MIN_PT) at which every non-empty card fits.
+// Algorithm: try from maxPt downward; stop at first pt where ALL cards pass word-fit + height.
+// Floor (minPt): chosen pt is never below BENTO_MIN_PT; if even minPt overflows → log ⚠ TEXT_TOO_LONG.
+// All cards in the group share ONE pt for visual uniformity.
 function pickBentoPt(compId: string, slots: Record<string, string>): number | null {
   const dims   = bentoDims(compId)
   const tokens = BENTO_TOKENS[compId]
   const maxPt  = BENTO_MAX_PT[compId]
+  const minPt  = BENTO_MIN_PT[compId] ?? 10
   if (!dims || !tokens || !maxPt) return null
+  // scale[0] = maxPt (largest); iterating forward → stop at first fit = largest fitting pt
   const scale = (BENTO_SCALE as readonly number[]).filter(s => s <= maxPt)
-  let chosenPt = scale[scale.length - 1]
+  let chosenPt = scale[scale.length - 1]  // fallback = smallest (in case loop finds nothing)
   for (const pt of scale) {
     if (tokens.every(t => textFitsParagraphs(slots[t] ?? '', dims.w, dims.h, pt))) {
-      chosenPt = pt
+      chosenPt = pt  // largest pt where ALL cards fit
       break
     }
   }
+  // Enforce floor
+  const clampedToFloor = chosenPt < minPt
+  if (clampedToFloor) chosenPt = minPt
+  // Per-card diagnostic
   for (const [idx, t] of tokens.entries()) {
     const text = slots[t] ?? ''
     if (!text.trim()) continue
-    logWordFit(`${compId}/card${idx + 1}`, text, dims.w, chosenPt)
-    // Height log
+    const wPass = longestWordPx(text, chosenPt) * 1.2 <= dims.w
     const cpl = Math.max(1, Math.floor(dims.w / (chosenPt * 2.667 * 0.65)))
     const paras = text.split('\n').filter(p => p.trim())
     const totalLines = paras.reduce((s, p) => {
@@ -887,10 +907,10 @@ function pickBentoPt(compId: string, slots: Record<string, string>): number | nu
       }
       return s + lines
     }, 0)
-    const textH = Math.round(totalLines * lineH(chosenPt))
     const hPass = totalLines * lineH(chosenPt) <= dims.h
+    const flag  = clampedToFloor ? ' ⚠ TEXT_TOO_LONG' : ''
     console.log(
-      `[bento-height] ${compId}/card${idx + 1}: lines=${totalLines} | text_height=${textH} | inner_height=${dims.h} | font=${chosenPt} → ${hPass ? 'PASS' : 'FAIL'}`,
+      `[bento-fit] ${compId}/card${idx + 1}: max_font=${maxPt} | chosen_font=${chosenPt} | floor=${minPt} | fits_width=${wPass ? '✓' : '✗'} | fits_height=${hPass ? '✓' : '✗'}${flag}`,
     )
   }
   return chosenPt
