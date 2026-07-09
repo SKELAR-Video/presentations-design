@@ -38,8 +38,21 @@ export default function HomePage() {
       const mapData = await mapRes.json()
       if (!mapRes.ok) throw new Error(mapData.error ?? 'Помилка аналізу')
 
+      // Step 3: generate draft deck immediately
+      const genRes = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan: mapData.plan, title: 'SKELAR Presentation' }),
+      })
+      const genData = await genRes.json()
+      if (!genRes.ok) throw new Error(genData.error ?? 'Помилка генерації деку')
+
+      sessionStorage.setItem('draft_deck_id', genData.presentationId)
+      sessionStorage.setItem('deck_url', genData.url)
       sessionStorage.setItem('deck_plan', JSON.stringify(mapData.plan))
-      router.push('/plan')
+      if (genData.validation) sessionStorage.setItem('deck_validation', JSON.stringify(genData.validation))
+      if (genData.deckFacts) sessionStorage.setItem('deck_facts', JSON.stringify(genData.deckFacts))
+      router.push('/preview')
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Невідома помилка')
     } finally {
@@ -83,7 +96,7 @@ export default function HomePage() {
           disabled={loading || !docUrl.trim()}
           className="w-full py-4 rounded-xl bg-[#FD3433] text-white font-medium hover:bg-[#e02e2d] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {loading ? 'Завантажую та аналізую…' : 'Скласти план презентації →'}
+          {loading ? 'Аналізую та генерую дек…' : 'Скласти план презентації →'}
         </button>
 
       </div>

@@ -1416,7 +1416,7 @@ export async function buildPresentation(
   accessToken: string,
   plan: SlidePlan,
   title: string,
-): Promise<{ url: string; validation: ValidationReport; deckFacts: DeckFactReport }> {
+): Promise<{ url: string; presentationId: string; validation: ValidationReport; deckFacts: DeckFactReport }> {
   const auth = getOAuth2Client(accessToken)
   const drive = google.drive({ version: 'v3', auth })
   const slidesApi = google.slides({ version: 'v1', auth })
@@ -2246,5 +2246,5 @@ export async function buildPresentation(
     }
   }
 
-  return { url, validation, deckFacts }
+  return { url, presentationId, validation, deckFacts }
 }
