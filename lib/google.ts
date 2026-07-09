@@ -1700,6 +1700,16 @@ export async function buildPresentation(
       if (compacted !== val) {
         slide.slots[key] = compacted
         console.log(`[kpi_compact] ${slide.id}: ${key} "${val}" → "${compacted}"`)
+        // Strip the original (long) number from ПІДПИС if it appears at the start — it's now shown in ЗНАЧЕННЯ as the compact form.
+        const subKey = `КАРТКА_${n}_ПІДПИС`
+        const sub = (slide.slots[subKey] ?? '').trim()
+        for (const prefix of [val, compacted]) {
+          if (sub.startsWith(prefix)) {
+            const stripped = sub.slice(prefix.length).replace(/^[\s,.:;—–-]+/, '').trim()
+            if (stripped) slide.slots[subKey] = stripped
+            break
+          }
+        }
       }
     }
   }
