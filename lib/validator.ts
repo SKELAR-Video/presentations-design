@@ -201,7 +201,7 @@ function checkBadge(slide: slides_v1.Schema$Page, compId: string, slots: Record<
   // default: symbol logo top-right (1730, 100)
   const isBentoRight = compId.startsWith('bento_right_')
   const isCoverTitleStyle = compId === 'cover_title_only' ||
-    (compId === 'closing' && !(slots['ПІДЗАГОЛОВОК'] ?? '').trim() && !(slots['ЗОБРАЖЕННЯ_1'] ?? '').trim())
+    (compId === 'closing' && !(slots['ПІДЗАГОЛОВОК'] ?? '').trim())
   const BADGE_X   = isBentoRight ? 100 : isCoverTitleStyle ? 1463 : 1730
   const BADGE_Y   = isBentoRight ? 890 : isCoverTitleStyle ? 99   : 100
   const BADGE_TOL = 25
@@ -311,8 +311,7 @@ function checkKpiCardRowGeometry(slide: slides_v1.Schema$Page): CheckResult {
 // A correctly-built title box (right=1710) leaves 20px gap before logo starts at 1730.
 function checkLogoOverlap(slide: slides_v1.Schema$Page, compId: string, slots: Record<string, string>): CheckResult {
   // cover_title_only and title-only closing: full-slide title intentionally fills the slide — no overlap check
-  const isTitleOnlyClosing = compId === 'closing' &&
-    !(slots['ПІДЗАГОЛОВОК'] ?? '').trim() && !(slots['ЗОБРАЖЕННЯ_1'] ?? '').trim()
+  const isTitleOnlyClosing = compId === 'closing' && !(slots['ПІДЗАГОЛОВОК'] ?? '').trim()
   if (compId === 'cover_title_only' || isTitleOnlyClosing) return { check: 'logo_overlap', pass: true }
   const isBR   = compId.startsWith('bento_right_')
   const LOGO_W = 90, LOGO_H = 90
