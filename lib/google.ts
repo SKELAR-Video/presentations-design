@@ -798,8 +798,8 @@ function pickCoverTitleOnlyPt(text: string): number {
   return COVER_TITLE_ONLY_PT[COVER_TITLE_ONLY_PT.length - 1]
 }
 
-// #292D39 — date pill background (darker than CARD)
-const _DATE_PILL_BG = { red: 0x29 / 255, green: 0x2d / 255, blue: 0x39 / 255 }
+// Date pill: width = 10 chars × 18pt × 2.667px/pt × 0.65 + 2×padding ≈ 350px
+const _DATE_PILL_W = 350  // fits "дд.мм.рррр" (10 chars) on 1 line at 18pt
 
 function buildCoverTitleOnlyRequests(
   slide: slides_v1.Schema$Page,
@@ -848,7 +848,7 @@ function buildCoverTitleOnlyRequests(
     })
   }
 
-  // 2. Date pill: ROUND_RECTANGLE at (100, 99), size (195, 115), fill #292D39
+  // 2. Date pill: ROUND_RECTANGLE at (100, 99), white 60% opacity background, white text
   const pillId = `date_pill_${slideIdx}`
   const dateStr = formatCurrentDate()
   reqs.push({
@@ -858,7 +858,7 @@ function buildCoverTitleOnlyRequests(
       elementProperties: {
         pageObjectId: pageId,
         size: {
-          width:  { magnitude: _eL(195), unit: 'EMU' },
+          width:  { magnitude: _eL(_DATE_PILL_W), unit: 'EMU' },
           height: { magnitude: _eL(115), unit: 'EMU' },
         },
         transform: {
@@ -873,7 +873,7 @@ function buildCoverTitleOnlyRequests(
     updateShapeProperties: {
       objectId: pillId,
       shapeProperties: {
-        shapeBackgroundFill: { solidFill: { color: { rgbColor: _DATE_PILL_BG } } },
+        shapeBackgroundFill: { solidFill: { color: { rgbColor: { red: 1, green: 1, blue: 1 } }, alpha: 0.6 } },
         outline: { propertyState: 'NOT_RENDERED' },
         contentAlignment: 'MIDDLE',
         autofit: { autofitType: 'NONE' },
@@ -887,7 +887,7 @@ function buildCoverTitleOnlyRequests(
       objectId: pillId,
       style: {
         weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
-        foregroundColor: { opaqueColor: { rgbColor: { red: 162/255, green: 166/255, blue: 177/255 } } },
+        foregroundColor: { opaqueColor: { rgbColor: { red: 1, green: 1, blue: 1 } } },
         fontSize: { magnitude: 18, unit: 'PT' },
         bold: false,
       },
