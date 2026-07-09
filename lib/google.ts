@@ -209,6 +209,10 @@ function _logoPos(compId: string): { x: number; y: number } {
 // Logo URL priority: LOGO_URL env → Vercel static → GitHub public repo
 const _GITHUB_LOGO = 'https://raw.githubusercontent.com/SKELAR-Video/presentations-design/main/public/assets/SKELAR%20Symbol.png'
 
+// Background images (raw GitHub). Index 0–5 → Mountain 0–5.
+const _BG_BASE = 'https://raw.githubusercontent.com/SKELAR-Video/presentations-design/main/public/assets/backgrounds/'
+const _COVER_BG = `${_BG_BASE}Mountain%200.png`
+
 let _logoUrlCache: string | undefined
 
 function getLogoUrl(): string {
@@ -1694,6 +1698,18 @@ export async function buildPresentation(
     const slide = updatedSlides.find(s => s.objectId === pageId)
     if (!slide) continue
     requests.push(...buildCoverFloatRequests(slide, plan.slides[i].slots))
+    // Background image
+    requests.push({
+      updatePageProperties: {
+        objectId: pageId,
+        pageProperties: {
+          pageBackgroundFill: {
+            stretchedPictureFill: { contentUrl: _COVER_BG },
+          },
+        },
+        fields: 'pageBackgroundFill',
+      },
+    })
   }
 
   // ── bento_right left column: float ТЕКСТ strictly below ЗАГОЛОВОК ───────────────
