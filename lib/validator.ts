@@ -176,7 +176,11 @@ function checkContentIntegrity(
       const normalized = line.replace(/ /g, ' ')
       const verbatimOk = sourceText.includes(normalized)
       const compactOk  = isKpiValue && isCompactNumberMatch(normalized, sourceText)
-      if (!verbatimOk && !compactOk) {
+      // Allow first-letter capitalization when a leading stat was stripped into ЗНАЧЕННЯ
+      const isKpiLabel    = /^КАРТКА_\d+_ПІДПИС$/.test(name)
+      const capitalizedOk = isKpiLabel && normalized.length > 0 &&
+        sourceText.includes(normalized.charAt(0).toLowerCase() + normalized.slice(1))
+      if (!verbatimOk && !compactOk && !capitalizedOk) {
         const preview = line.length > 60 ? line.slice(0, 60) + '…' : line
         fails.push(`${name}: non-verbatim line — "${preview}"`)
         break  // one report per slot is enough

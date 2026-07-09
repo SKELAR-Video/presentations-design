@@ -1706,11 +1706,25 @@ export async function buildPresentation(
         for (const prefix of [val, compacted]) {
           if (sub.startsWith(prefix)) {
             const stripped = sub.slice(prefix.length).replace(/^[\s,.:;—–-]+/, '').trim()
-            if (stripped) slide.slots[subKey] = stripped
+            if (stripped) slide.slots[subKey] = stripped.charAt(0).toUpperCase() + stripped.slice(1)
             break
           }
         }
       }
+    }
+  }
+
+  // Step 2.61: Strip compact ЗНАЧЕННЯ from ПІДПИС when no compaction occurred
+  // e.g. ЗНАЧЕННЯ "20+", ПІДПИС "20+ офіційних категорій" → "Офіційних категорій"
+  for (const slide of plan.slides) {
+    if (slide.composition !== 'kpi_cards') continue
+    for (let n = 1; n <= 4; n++) {
+      const val = (slide.slots[`КАРТКА_${n}_ЗНАЧЕННЯ`] ?? '').trim()
+      const subKey = `КАРТКА_${n}_ПІДПИС`
+      const sub = (slide.slots[subKey] ?? '').trim()
+      if (!val || !sub || !sub.startsWith(val)) continue
+      const stripped = sub.slice(val.length).replace(/^[\s,.:;—–-]+/, '').trim()
+      if (stripped) slide.slots[subKey] = stripped.charAt(0).toUpperCase() + stripped.slice(1)
     }
   }
 
