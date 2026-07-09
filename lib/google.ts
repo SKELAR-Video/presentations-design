@@ -80,7 +80,7 @@ const BENTO_SCALE = [48, 36, 28, 22, 18, 14, 10] as const
 
 function textFits(text: string, wPx: number, hPx: number, pt: number): boolean {
   if (!text.trim()) return true
-  if (longestWordPx(text, pt) * 1.2 > wPx) return false  // 1.2× safety margin
+  if (longestWordPx(text, pt) * 1.1 > wPx) return false  // 1.1× safety margin
   // cpl uses same 0.65 factor as longestWordPx — consistent width estimate
   const cpl   = Math.max(1, Math.floor(wPx / (pt * 2.667 * 0.65)))
   const words = text.split(/\s+/).filter(Boolean)
@@ -97,7 +97,7 @@ function textFits(text: string, wPx: number, hPx: number, pt: number): boolean {
 // textFits() treats \n as a space (wrong for bullet lists). This correctly sums lines per paragraph.
 function textFitsParagraphs(text: string, wPx: number, hPx: number, pt: number): boolean {
   if (!text.trim()) return true
-  if (longestWordPx(text, pt) * 1.2 > wPx) return false  // 1.2× safety margin
+  if (longestWordPx(text, pt) * 1.1 > wPx) return false  // 1.1× safety margin
   const paras = text.split('\n').filter(p => p.trim())
   if (paras.length <= 1) return textFits(text, wPx, hPx, pt)
   // Multi-paragraph: same 0.65 factor for consistent line-count estimation
@@ -133,16 +133,16 @@ function longestWordPx(text: string, pt: number): number {
 }
 
 // Logs word-fit check in the standard format for every text box.
-// PASS iff longestWordPx(text, pt) × 1.2 ≤ innerW.
+// PASS iff longestWordPx(text, pt) × 1.1 ≤ innerW.
 function logWordFit(label: string, text: string, innerW: number, pt: number): void {
   if (!text.trim()) return
   const words = text.trim().split(/\s+/).filter(Boolean)
   const longestWord = words.reduce((a, b) => a.length >= b.length ? a : b, '')
   const est  = longestWordPx(text, pt)
-  const est12 = Math.round(est * 1.2)
-  const pass  = est12 <= innerW
+  const est11 = Math.round(est * 1.1)
+  const pass  = est11 <= innerW
   console.log(
-    `[word-fit] ${label}: longest_word_len=${longestWord.length} | est_width=${est} | est×1.2=${est12} | inner_width=${innerW} | chosen_font=${pt} → ${pass ? 'PASS' : 'FAIL'}`,
+    `[word-fit] ${label}: longest_word_len=${longestWord.length} | est_width=${est} | est×1.1=${est11} | inner_width=${innerW} | chosen_font=${pt} → ${pass ? 'PASS' : 'FAIL'}`,
   )
 }
 
@@ -151,7 +151,7 @@ function logWordFit(label: string, text: string, innerW: number, pt: number): vo
 // Prevents borderline 9-char Cyrillic words (e.g. "щоденного") from visually breaking.
 function pickTitlePt(text: string, wPx: number): TitlePt {
   for (const pt of TITLE_PT_STEPS) {
-    if (longestWordPx(text, pt) * 1.2 <= wPx - 19) return pt  // 19 = _INSET buffer
+    if (longestWordPx(text, pt) * 1.1 <= wPx - 19) return pt  // 19 = _INSET buffer
   }
   return TITLE_PT_STEPS[TITLE_PT_STEPS.length - 1]
 }
@@ -766,7 +766,7 @@ function buildBentoRightLeftColumnRequests(
   const textMaxH   = Math.max(1, logoY - 20 - textY)
 
   // ── Audit log ────────────────────────────────────────────────────────────────
-  const titleWPass = longestWordPx(titleText, titlePt) * 1.2 <= _LTW - _INSET
+  const titleWPass = longestWordPx(titleText, titlePt) * 1.1 <= _LTW - _INSET
   const computedGap = textY - _PAD - titleH          // must equal TITLE_GAP = 60
   const emptySpace  = titleH - Math.ceil(titleLines * lineH(titlePt))  // must be 0
   console.log(
@@ -903,7 +903,7 @@ function pickBentoCardPts(compId: string, slots: Record<string, string>): Record
     const text = slots[t] ?? ''
     if (!text.trim()) continue
     result[t] = groupPt
-    const wPass = longestWordPx(text, groupPt) * 1.2 <= dims.w
+    const wPass = longestWordPx(text, groupPt) * 1.1 <= dims.w
     const cpl   = Math.max(1, Math.floor(dims.w / (groupPt * 2.667 * 0.65)))
     const paras = text.split('\n').filter(p => p.trim())
     const totalLines = paras.reduce((s, p) => {
