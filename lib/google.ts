@@ -2022,6 +2022,14 @@ export async function buildPresentation(
     const slide = updatedSlides.find(s => s.objectId === pageId)
     if (!slide) continue
     requests.push(...buildCoverTitleOnlyRequests(slide, slots, pageId, i))
+    // Master always has {{ПІДЗАГОЛОВОК}} box — replace with '' so the token doesn't show
+    requests.push({
+      replaceAllText: {
+        containsText: { text: '{{ПІДЗАГОЛОВОК}}', matchCase: true },
+        replaceText: '',
+        pageObjectIds: [pageId],
+      },
+    })
   }
 
   // ── title_body: float ТЕКСТ below ЗАГОЛОВОК (gap = TITLE_GAP) ────────────────────
