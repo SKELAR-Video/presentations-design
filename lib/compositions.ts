@@ -19,6 +19,16 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     ],
   },
   {
+    id: 'cover_title_only',
+    name: 'Обкладинка — тільки заголовок',
+    when_to_use: 'перший слайд коли є лише заголовок, без підзаголовка і дати — дата підставляється автоматично',
+    themes: ['dark'],
+    slots: [
+      { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 200, style: 'h1' },
+      { name: 'ЗОБРАЖЕННЯ_1', type: 'image', ratio: '16:9', role: 'background' },
+    ],
+  },
+  {
     id: 'title_body',
     name: 'Заголовок + текст',
     when_to_use: 'одна теза з поясненням',

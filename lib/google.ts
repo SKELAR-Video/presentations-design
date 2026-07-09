@@ -207,8 +207,13 @@ function _logoPos(compId: string): { x: number; y: number } {
 }
 
 // Logo URL priority: LOGO_URL env → Vercel static → GitHub public repo
-const _GITHUB_LOGO     = 'https://raw.githubusercontent.com/SKELAR-Video/presentations-design/main/public/assets/SKELAR%20Symbol.png'
-const _GITHUB_LOGO_RED = 'https://raw.githubusercontent.com/SKELAR-Video/presentations-design/main/public/assets/SKELAR%20Symbol%20for%20red.png'
+const _GITHUB_LOGO          = 'https://raw.githubusercontent.com/SKELAR-Video/presentations-design/main/public/assets/SKELAR%20Symbol.png'
+const _GITHUB_LOGO_RED      = 'https://raw.githubusercontent.com/SKELAR-Video/presentations-design/main/public/assets/SKELAR%20Symbol%20for%20red.png'
+const _GITHUB_LOGO_WORDMARK = 'https://raw.githubusercontent.com/SKELAR-Video/presentations-design/main/public/assets/SKELAR%20Logo.png'
+// SKELAR Logo.png (full wordmark) dimensions — from Figma design
+const _LOGO_WORDMARK_W = 357  // 357.49px → round to 357
+const _LOGO_WORDMARK_X = _W - _PAD - _LOGO_WORDMARK_W  // 1463
+const _LOGO_WORDMARK_Y = 99   // from Figma (= PAD - 1)
 
 // Background images. Index 0–5 → Mountain 0–5.
 // Priority: BG_BASE_URL env → Vercel static → GitHub public repo (private repo = won't work).
@@ -249,6 +254,23 @@ function getLogoRedUrl(): string {
     _logoRedUrlCache = _GITHUB_LOGO_RED
   }
   return _logoRedUrlCache
+}
+
+let _logoWordmarkUrlCache: string | undefined
+function getLogoWordmarkUrl(): string {
+  if (_logoWordmarkUrlCache) return _logoWordmarkUrlCache
+  if (process.env.LOGO_WORDMARK_URL) {
+    _logoWordmarkUrlCache = process.env.LOGO_WORDMARK_URL
+  } else if (process.env.LOGO_URL) {
+    // Derive from LOGO_URL — strip filename after last '/', append wordmark filename
+    const base = process.env.LOGO_URL.replace(/[^/]+$/, '')
+    _logoWordmarkUrlCache = `${base}SKELAR%20Logo.png`
+  } else if (process.env.VERCEL_URL) {
+    _logoWordmarkUrlCache = `https://${process.env.VERCEL_URL}/assets/SKELAR%20Logo.png`
+  } else {
+    _logoWordmarkUrlCache = _GITHUB_LOGO_WORDMARK
+  }
+  return _logoWordmarkUrlCache
 }
 
 // Value+label split: if card text is "ЧИСЛО\nПідпис" or "ЧИСЛО: Підпис",
@@ -755,6 +777,138 @@ function buildCoverFloatRequests(
       reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, dateY - _INSET, _COVER_H1_W + 2 * _INSET, dateH + 2 * _INSET, sW, sH))
     }
   }
+  return reqs
+}
+
+// ─── cover_title_only: full-slide centered title + auto date pill ────────────
+function formatCurrentDate(): string {
+  const d  = new Date()
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  return `${dd}.${mm}.${d.getFullYear()}`
+}
+
+const COVER_TITLE_ONLY_PT = [66, 54, 44, 36, 28, 22] as const
+function pickCoverTitleOnlyPt(text: string): number {
+  const boxW = _UW                    // 1720
+  const boxH = _H_SLIDE - 2 * _PAD   // 880
+  for (const pt of COVER_TITLE_ONLY_PT) {
+    if (textFits(text, boxW, boxH, pt)) return pt
+  }
+  return COVER_TITLE_ONLY_PT[COVER_TITLE_ONLY_PT.length - 1]
+}
+
+// #292D39 — date pill background (darker than CARD)
+const _DATE_PILL_BG = { red: 0x29 / 255, green: 0x2d / 255, blue: 0x39 / 255 }
+
+function buildCoverTitleOnlyRequests(
+  slide: slides_v1.Schema$Page,
+  slots: Record<string, string>,
+  pageId: string,
+  slideIdx: number,
+): object[] {
+  const titleText = (slots['ЗАГОЛОВОК'] ?? '').trim()
+  const reqs: object[] = []
+  const boxW = _UW
+  const boxH = _H_SLIDE - 2 * _PAD
+  const pt   = pickCoverTitleOnlyPt(titleText)
+
+  // 1. Resize ЗАГОЛОВОК + apply CENTER/MIDDLE alignment + dynamic font
+  for (const el of slide.pageElements ?? []) {
+    if (el.shape?.shapeType !== 'TEXT_BOX' || !el.objectId || !el.transform || !el.size) continue
+    const raw = (el.shape?.text?.textElements ?? []).map(te => te.textRun?.content ?? '').join('')
+    if (!raw.includes('{{ЗАГОЛОВОК}}')) continue
+    const sW = el.size.width?.magnitude  ?? 0
+    const sH = el.size.height?.magnitude ?? 0
+    reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, _PAD - _INSET, boxW + 2 * _INSET, boxH + 2 * _INSET, sW, sH))
+    if (pt !== 66) {
+      reqs.push({
+        updateTextStyle: {
+          objectId: el.objectId,
+          style: { fontSize: { magnitude: pt, unit: 'PT' }, bold: false },
+          fields: 'fontSize,bold',
+          textRange: { type: 'ALL' },
+        },
+      })
+    }
+    reqs.push({
+      updateParagraphStyle: {
+        objectId: el.objectId,
+        style: { alignment: 'CENTER', lineSpacing: 90 },
+        fields: 'alignment,lineSpacing',
+        textRange: { type: 'ALL' },
+      },
+    })
+    reqs.push({
+      updateShapeProperties: {
+        objectId: el.objectId,
+        shapeProperties: { contentAlignment: 'MIDDLE', autofit: { autofitType: 'NONE' } },
+        fields: 'contentAlignment,autofit.autofitType',
+      },
+    })
+  }
+
+  // 2. Date pill: ROUND_RECTANGLE at (100, 99), size (195, 115), fill #292D39
+  const pillId = `date_pill_${slideIdx}`
+  const dateStr = formatCurrentDate()
+  reqs.push({
+    createShape: {
+      objectId: pillId,
+      shapeType: 'ROUND_RECTANGLE',
+      elementProperties: {
+        pageObjectId: pageId,
+        size: {
+          width:  { magnitude: _eL(195), unit: 'EMU' },
+          height: { magnitude: _eL(115), unit: 'EMU' },
+        },
+        transform: {
+          scaleX: 1, shearX: 0, translateX: _eL(100),
+          shearY: 0, scaleY: 1, translateY: _eL(99),
+          unit: 'EMU',
+        },
+      },
+    },
+  })
+  reqs.push({
+    updateShapeProperties: {
+      objectId: pillId,
+      shapeProperties: {
+        shapeBackgroundFill: { solidFill: { color: { rgbColor: _DATE_PILL_BG } } },
+        outline: { propertyState: 'NOT_RENDERED' },
+        contentAlignment: 'MIDDLE',
+        autofit: { autofitType: 'NONE' },
+      },
+      fields: 'shapeBackgroundFill,outline,contentAlignment,autofit.autofitType',
+    },
+  })
+  reqs.push({ insertText: { objectId: pillId, insertionIndex: 0, text: dateStr } })
+  reqs.push({
+    updateTextStyle: {
+      objectId: pillId,
+      style: {
+        weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
+        foregroundColor: { opaqueColor: { rgbColor: { red: 162/255, green: 166/255, blue: 177/255 } } },
+        fontSize: { magnitude: 18, unit: 'PT' },
+        bold: false,
+      },
+      fields: 'weightedFontFamily,foregroundColor,fontSize,bold',
+      textRange: { type: 'ALL' },
+    },
+  })
+  reqs.push({
+    updateParagraphStyle: {
+      objectId: pillId,
+      style: {
+        alignment: 'CENTER',
+        lineSpacing: 90,
+        spaceAbove: { magnitude: 0, unit: 'PT' },
+        spaceBelow: { magnitude: 0, unit: 'PT' },
+      },
+      fields: 'alignment,lineSpacing,spaceAbove,spaceBelow',
+      textRange: { type: 'ALL' },
+    },
+  })
+
   return reqs
 }
 
@@ -1736,6 +1890,27 @@ export async function buildPresentation(
     })
   }
 
+  // ── Cover title only: centered title + date pill + background ───────────────
+  for (let i = 0; i < plan.slides.length; i++) {
+    if (plan.slides[i].composition !== 'cover_title_only') continue
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    const slide = updatedSlides.find(s => s.objectId === pageId)
+    if (!slide) continue
+    requests.push(...buildCoverTitleOnlyRequests(slide, plan.slides[i].slots, pageId, i))
+    requests.push({
+      updatePageProperties: {
+        objectId: pageId,
+        pageProperties: {
+          pageBackgroundFill: {
+            stretchedPictureFill: { contentUrl: randomCoverBg() },
+          },
+        },
+        fields: 'pageBackgroundFill',
+      },
+    })
+  }
+
   // ── bento_right left column: float ТЕКСТ strictly below ЗАГОЛОВОК ───────────────
   for (let i = 0; i < plan.slides.length; i++) {
     const compId = plan.slides[i].composition
@@ -1799,7 +1974,7 @@ export async function buildPresentation(
   // Cover / bento_right / section / title_body: handled above by their float functions.
   for (let i = 0; i < plan.slides.length; i++) {
     const compId = plan.slides[i].composition
-    if (compId === 'cover' || compId.startsWith('bento_right_') ||
+    if (compId === 'cover' || compId === 'cover_title_only' || compId.startsWith('bento_right_') ||
         compId === 'section' || compId === 'section_red' || compId === 'title_body' ||
         compId === 'badges') continue
     const titleObjId = slotObjectIds[i]?.['ЗАГОЛОВОК']
@@ -2113,44 +2288,83 @@ export async function buildPresentation(
     })
   }
 
-  // Logo — separate batch so a bad URL never breaks text replacement
+  // Logo — separate batch so a bad URL never breaks text replacement.
+  // Symbol logos and wordmark logos are in independent batches so one failure doesn't kill the other.
   if (logoUrl) {
-    const logoRequests: object[] = []
+    const symbolRequests: object[] = []
+    const wordmarkRequests: object[] = []
     for (let i = 0; i < planPageIds.length; i++) {
       const pageId = planPageIds[i]
       if (!pageId) continue
-      const lp = _logoPos(plan.slides[i].composition)
-      const isSection = plan.slides[i].composition === 'section'
-      logoRequests.push({
-        createImage: {
-          objectId: `logo_pl_${i}`,
-          url: isSection ? getLogoRedUrl() : logoUrl,
-          elementProperties: {
-            pageObjectId: pageId,
-            size: {
-              width:  { magnitude: _eL(_LOGO_W), unit: 'EMU' },
-              height: { magnitude: _eL(_LOGO_H), unit: 'EMU' },
-            },
-            transform: {
-              scaleX: 1, shearX: 0, translateX: _eL(lp.x),
-              shearY: 0, scaleY: 1, translateY: _eL(lp.y),
-              unit: 'EMU',
+      const compId = plan.slides[i].composition
+
+      if (compId === 'cover_title_only') {
+        // SKELAR Logo.png wordmark — wider, placed at top-right touching the grid
+        wordmarkRequests.push({
+          createImage: {
+            objectId: `logo_pl_${i}`,
+            url: getLogoWordmarkUrl(),
+            elementProperties: {
+              pageObjectId: pageId,
+              size: {
+                width:  { magnitude: _eL(_LOGO_WORDMARK_W), unit: 'EMU' },
+                height: { magnitude: _eL(_LOGO_H), unit: 'EMU' },
+              },
+              transform: {
+                scaleX: 1, shearX: 0, translateX: _eL(_LOGO_WORDMARK_X),
+                shearY: 0, scaleY: 1, translateY: _eL(_LOGO_WORDMARK_Y),
+                unit: 'EMU',
+              },
             },
           },
-        },
-      })
+        })
+      } else {
+        const lp = _logoPos(compId)
+        const isSection = compId === 'section'
+        symbolRequests.push({
+          createImage: {
+            objectId: `logo_pl_${i}`,
+            url: isSection ? getLogoRedUrl() : logoUrl,
+            elementProperties: {
+              pageObjectId: pageId,
+              size: {
+                width:  { magnitude: _eL(_LOGO_W), unit: 'EMU' },
+                height: { magnitude: _eL(_LOGO_H), unit: 'EMU' },
+              },
+              transform: {
+                scaleX: 1, shearX: 0, translateX: _eL(lp.x),
+                shearY: 0, scaleY: 1, translateY: _eL(lp.y),
+                unit: 'EMU',
+              },
+            },
+          },
+        })
+      }
     }
-    if (logoRequests.length > 0) {
+    if (symbolRequests.length > 0) {
       try {
         await slidesApi.presentations.batchUpdate({
           presentationId,
-          requestBody: { requests: logoRequests },
+          requestBody: { requests: symbolRequests },
         })
-        console.log(`[logo] inserted ${logoRequests.length} logo(s) ok`)
+        console.log(`[logo] symbol: inserted ${symbolRequests.length} logo(s) ok`)
       } catch (logoErr: unknown) {
         const msg = logoErr instanceof Error ? logoErr.message : String(logoErr)
-        console.warn('[logo] logo insertion failed (URL not accessible to Slides API):', msg)
+        console.warn('[logo] symbol insertion failed:', msg)
         console.warn('[logo] Set LOGO_URL in .env.local to fix.')
+      }
+    }
+    if (wordmarkRequests.length > 0) {
+      try {
+        await slidesApi.presentations.batchUpdate({
+          presentationId,
+          requestBody: { requests: wordmarkRequests },
+        })
+        console.log(`[logo] wordmark: inserted ${wordmarkRequests.length} logo(s) ok`)
+      } catch (logoErr: unknown) {
+        const msg = logoErr instanceof Error ? logoErr.message : String(logoErr)
+        console.warn('[logo] wordmark insertion failed:', msg)
+        console.warn('[logo] Set LOGO_WORDMARK_URL in .env.local to fix.')
       }
     }
   }

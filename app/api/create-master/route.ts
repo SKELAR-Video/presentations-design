@@ -180,6 +180,15 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
       break
     }
 
+    case 'cover_title_only': {
+      // Single full-grid title, vertically + horizontally centered.
+      // Date pill and SKELAR Logo wordmark are added dynamically in lib/google.ts.
+      push(
+        tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, UW, H - 2 * PAD, 66, WHITE),
+      )
+      break
+    }
+
     case 'title_body': {
       push(
         tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, TITLE_W, TH, 36),
