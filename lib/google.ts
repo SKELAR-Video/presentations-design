@@ -125,11 +125,12 @@ type TitlePt = typeof TITLE_PT_STEPS[number]
 
 // Returns estimated render width (px) of the longest whitespace-delimited word at given pt.
 // Factor 0.65: conservative for Inter Medium with Cyrillic wide glyphs (Ф, Ш, Щ, Ж etc.).
-// Prefer overestimate over underestimate — safer for word-break guard.
+// Strips leading/trailing punctuation before measuring — "активність," counts as 10 chars, not 11.
 function longestWordPx(text: string, pt: number): number {
   const pxPerChar = pt * 2.667 * 0.65
   const words = text.trim().split(/\s+/).filter(Boolean)
-  return words.length === 0 ? 0 : Math.round(Math.max(...words.map(w => w.length * pxPerChar)))
+  const coreLen = (w: string) => w.replace(/^[.,;:!?«»"'()\[\]{}\-–—]+|[.,;:!?«»"'()\[\]{}\-–—]+$/g, '').length || w.length
+  return words.length === 0 ? 0 : Math.round(Math.max(...words.map(w => coreLen(w) * pxPerChar)))
 }
 
 // Logs word-fit check in the standard format for every text box.
