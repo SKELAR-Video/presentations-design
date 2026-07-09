@@ -51,6 +51,30 @@ export type CompositionSlot = {
   role?: string
 }
 
+// ─── Deck fact report: verified numbers from the actual generated file ────────
+
+export type DeckFact = {
+  slotName: string
+  text: string            // actual text truncated to 30 chars
+  fontSize?: number       // actual fontSize from file (null = shape missing)
+  expectedFontSize?: number
+  pass: boolean
+  reason?: string
+}
+
+export type SlideDeckFacts = {
+  slideIndex: number
+  composition: string
+  pass: boolean
+  facts: DeckFact[]
+}
+
+export type DeckFactReport = {
+  pass: boolean
+  slides: SlideDeckFacts[]
+  summary: string
+}
+
 export type Composition = {
   id: string
   name: string

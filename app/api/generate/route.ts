@@ -17,8 +17,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { url, validation } = await buildPresentation(accessToken, plan, title || 'SKELAR Presentation')
-    return NextResponse.json({ url, validation })
+    const { url, validation, deckFacts } = await buildPresentation(accessToken, plan, title || 'SKELAR Presentation')
+    return NextResponse.json({ url, validation, deckFacts })
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e)
     console.error('[generate] error:', message)

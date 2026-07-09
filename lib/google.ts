@@ -1,6 +1,6 @@
 import { google } from 'googleapis'
 import type { slides_v1 } from 'googleapis'
-import type { SlidePlan } from './types'
+import type { SlidePlan, DeckFact, SlideDeckFacts, DeckFactReport } from './types'
 import { PHASE0_COMPOSITIONS, getComposition } from './compositions'
 import { validateDeck, type ValidationReport } from './validator'
 import { fixOverflowSlots } from './anthropic'
@@ -1260,11 +1260,124 @@ function getSlideNotes(slide: slides_v1.Schema$Page): string {
   )
 }
 
+// ─── Post-generation fact verification: reads actual deck, checks real numbers ─
+async function readDeckFacts(
+  slidesApi: slides_v1.Slides,
+  presentationId: string,
+  plan: SlidePlan,
+  planPageIds: string[],
+  slotObjectIds: Array<Record<string, string>>,
+  expectedCardPts: Map<number, Record<string, number>>,
+): Promise<DeckFactReport> {
+  const pres = await slidesApi.presentations.get({ presentationId })
+  const allSlides = pres.data.slides ?? []
+
+  const slideResults: SlideDeckFacts[] = []
+
+  for (let i = 0; i < plan.slides.length; i++) {
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    const compId = plan.slides[i].composition
+    const pSlide = plan.slides[i]
+    const actualSlide = allSlides.find(s => s.objectId === pageId)
+    const facts: DeckFact[] = []
+
+    if (!actualSlide) {
+      facts.push({ slotName: 'slide', text: '', pass: false, reason: `pageId ${pageId} missing from deck` })
+      slideResults.push({ slideIndex: i, composition: compId, pass: false, facts })
+      continue
+    }
+
+    // Build objectId → shape lookup
+    const shapeById = new Map<string, slides_v1.Schema$PageElement>()
+    for (const el of actualSlide.pageElements ?? []) {
+      if (el.objectId) shapeById.set(el.objectId, el)
+    }
+
+    const objIds = slotObjectIds[i] ?? {}
+    const cardPts = expectedCardPts.get(i)
+    const bentoTokens: string[] = BENTO_TOKENS[compId] ?? []
+    const isKpi = compId === 'kpi_cards'
+
+    // Only check slots we care about: bento cards + kpi ЗНАЧЕННЯ
+    const slotsToCheck = [
+      ...bentoTokens,
+      ...(isKpi ? ['КАРТКА_1_ЗНАЧЕННЯ', 'КАРТКА_2_ЗНАЧЕННЯ', 'КАРТКА_3_ЗНАЧЕННЯ', 'КАРТКА_4_ЗНАЧЕННЯ'] : []),
+    ]
+
+    for (const slotName of slotsToCheck) {
+      const expectedText = (pSlide.slots[slotName] ?? '').trim()
+      if (!expectedText) continue  // slot absent from plan — skip
+
+      const objId = objIds[slotName]
+      if (!objId) {
+        facts.push({ slotName, text: '', pass: false, reason: 'objectId not tracked (slot missing from master?)' })
+        continue
+      }
+
+      const shape = shapeById.get(objId)
+      if (!shape) {
+        facts.push({ slotName, text: '', pass: false, reason: 'shape deleted from deck (empty card)' })
+        continue
+      }
+
+      const actualText = (shape.shape?.text?.textElements ?? [])
+        .map(te => te.textRun?.content ?? '').join('').replace(/\n$/, '').trim()
+
+      if (!actualText) {
+        facts.push({ slotName, text: '', pass: false, reason: 'shape exists but text is empty' })
+        continue
+      }
+
+      const displayText = actualText.slice(0, 40)
+
+      // bento card: check fontSize
+      if (bentoTokens.includes(slotName) && cardPts) {
+        const expectedPt = cardPts[slotName]
+        const fontSizes = (shape.shape?.text?.textElements ?? [])
+          .map(te => te.textRun?.style?.fontSize?.magnitude ?? null)
+          .filter((n): n is number => n !== null)
+        const actualPt = fontSizes[0] ?? null
+
+        const ptPass = expectedPt !== undefined && actualPt === expectedPt
+        facts.push({
+          slotName,
+          text: displayText,
+          fontSize: actualPt ?? undefined,
+          expectedFontSize: expectedPt,
+          pass: ptPass,
+          reason: ptPass ? undefined : actualPt === null
+            ? 'fontSize not found in shape'
+            : `fontSize ${actualPt}pt ≠ expected ${expectedPt}pt`,
+        })
+        continue
+      }
+
+      // kpi ЗНАЧЕННЯ: just confirm content is present
+      if (isKpi && slotName.endsWith('_ЗНАЧЕННЯ')) {
+        facts.push({ slotName, text: displayText, pass: true })
+        continue
+      }
+    }
+
+    const slidePass = facts.length === 0 || facts.every(f => f.pass)
+    slideResults.push({ slideIndex: i, composition: compId, pass: slidePass, facts })
+  }
+
+  const failCount = slideResults.filter(s => !s.pass).length
+  const pass = failCount === 0
+  const summary = pass
+    ? `PASS — ${slideResults.length} slides | content + fontSize verified from file`
+    : `FAIL — ${failCount}/${slideResults.length} slides have discrepancies`
+
+  return { pass, slides: slideResults, summary }
+}
+
 export async function buildPresentation(
   accessToken: string,
   plan: SlidePlan,
   title: string,
-): Promise<{ url: string; validation: ValidationReport }> {
+): Promise<{ url: string; validation: ValidationReport; deckFacts: DeckFactReport }> {
   const auth = getOAuth2Client(accessToken)
   const drive = google.drive({ version: 'v3', auth })
   const slidesApi = google.slides({ version: 'v1', auth })
@@ -1658,6 +1771,8 @@ export async function buildPresentation(
   // Font-size auto-shrink + colon-split colouring.
   // Runs AFTER replaceAllText — object IDs stay valid, text is already real content.
   const _WHITE = { red: 1, green: 1, blue: 1 }
+  // Save per-slide expected card pts for readDeckFacts verification.
+  const expectedCardPts = new Map<number, Record<string, number>>()
   for (let i = 0; i < plan.slides.length; i++) {
     const pageId = planPageIds[i]
     if (!pageId) continue
@@ -1665,6 +1780,7 @@ export async function buildPresentation(
     const pSlots  = bentoProcessedSlots.get(i) ?? plan.slides[i].slots
     const cardPts = pickBentoCardPts(compId, pSlots)
     if (cardPts === null) continue
+    expectedCardPts.set(i, cardPts)
 
     const slide = updatedSlides.find(s => s.objectId === pageId)
     if (!slide) continue
@@ -2051,5 +2167,16 @@ export async function buildPresentation(
   const compositions = [...new Set(plan.slides.map(s => s.composition))].join(', ')
   autoPushIfPass(validation, `feat(deck): ${plan.slides.length} slides [${compositions}] — validation PASS`)
 
-  return { url, validation }
+  const deckFacts = await readDeckFacts(
+    slidesApi, presentationId, plan, planPageIds, slotObjectIds, expectedCardPts,
+  )
+  console.log('[deck-facts]', deckFacts.summary)
+  for (const sf of deckFacts.slides) {
+    if (!sf.pass) {
+      const fails = sf.facts.filter(f => !f.pass).map(f => `${f.slotName}: ${f.reason}`).join(' | ')
+      console.warn(`[deck-facts] slide ${sf.slideIndex} (${sf.composition}): ${fails}`)
+    }
+  }
+
+  return { url, validation, deckFacts }
 }

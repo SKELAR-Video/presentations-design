@@ -71,6 +71,7 @@ export default function PlanPage() {
       if (!res.ok) throw new Error(data.error ?? 'Помилка сервера')
       sessionStorage.setItem('deck_url', data.url)
       if (data.validation) sessionStorage.setItem('deck_validation', JSON.stringify(data.validation))
+      if (data.deckFacts) sessionStorage.setItem('deck_facts', JSON.stringify(data.deckFacts))
       router.push('/result')
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Невідома помилка')
