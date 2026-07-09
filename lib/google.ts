@@ -17,6 +17,13 @@ const _BOTTOM_BENTO_H_DEFAULT = _H - _PAD - Math.floor(_H / 2)  // 440
 const _RBW = 860
 const _RBH = _H - 2 * _PAD  // 880
 
+// Bento card numbering layout (Figma: 98px number, 40px padding, 30px gap)
+const _NUM_PAD      = 40   // px from card edge to number box
+const _NUM_H        = 100  // px height of number text box (fits 37pt single line)
+const _NUM_GAP      = 30   // px gap between number and card text
+const _NUM_TEXT_TOP = _NUM_PAD + _NUM_H + _NUM_GAP  // 170 — where card text starts
+const _NUM_FONT_PT  = 37   // 98 Figma px / 2.667 ≈ 37pt
+
 // kpi_cards card width (mirrors create-master kw formula)
 const _KW = Math.floor((_UW - 3 * _GAP) / 4)  // 407
 
@@ -1244,10 +1251,11 @@ function findCardinalInTitle(title: string): number | null {
 
 // Creates a small ordinal number label in the top-left corner of a bento card.
 // numId must be unique across the deck. cardX/cardY are the card body top-left (Figma px).
-function makeBentoNumRequests(numId: string, pageId: string, cardIdx: number, cardX: number, cardY: number): object[] {
-  const SIZE = 30   // px — fits 1–2 digit number at 14pt within the INN=30 padding zone
-  const X = cardX + 8
-  const Y = cardY + 8
+function makeBentoNumRequests(numId: string, pageId: string, cardIdx: number, cardX: number, cardY: number, cardW: number): object[] {
+  const numText = String(cardIdx + 1).padStart(2, '0')  // "01", "02", ...
+  const X = cardX + _NUM_PAD
+  const Y = cardY + _NUM_PAD
+  const W = cardW - 2 * _NUM_PAD
   return [
     {
       createShape: {
@@ -1256,19 +1264,19 @@ function makeBentoNumRequests(numId: string, pageId: string, cardIdx: number, ca
         elementProperties: {
           pageObjectId: pageId,
           size: {
-            width:  { magnitude: _eL(SIZE), unit: 'EMU' },
-            height: { magnitude: _eL(SIZE), unit: 'EMU' },
+            width:  { magnitude: _eL(W),      unit: 'EMU' },
+            height: { magnitude: _eL(_NUM_H), unit: 'EMU' },
           },
           transform: { scaleX: 1, shearX: 0, translateX: _eL(X), shearY: 0, scaleY: 1, translateY: _eL(Y), unit: 'EMU' },
         },
       },
     },
-    { insertText: { objectId: numId, insertionIndex: 0, text: String(cardIdx + 1) } },
+    { insertText: { objectId: numId, insertionIndex: 0, text: numText } },
     {
       updateTextStyle: {
         objectId: numId,
         style: {
-          fontSize: { magnitude: 14, unit: 'PT' },
+          fontSize: { magnitude: _NUM_FONT_PT, unit: 'PT' },
           bold: false,
           foregroundColor: { opaqueColor: { rgbColor: { red: 1, green: 1, blue: 1 } } },
           weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
@@ -1339,15 +1347,17 @@ function buildBentoRowLayoutRequests(
     const rowY = Math.max(desiredRowY, _CY)   // _CY = 300 is the hard floor
     const cardH = _H - _PAD - rowY
 
+    const isNumbered = !!(pageId && slideIdx !== undefined && titleText && findCardinalInTitle(titleText) === n)
+    // Text Y offset depends on whether numbering is active
+    const textTopOff = isNumbered ? _NUM_TEXT_TOP : (_INN - _INSET)
+    const textH      = isNumbered ? (cardH - _NUM_TEXT_TOP - _NUM_PAD) : (cardH - 2 * _INN + 2 * _INSET)
+
     const reqs: object[] = []
-    // Auto-numbering: title must contain a cardinal == n
-    if (pageId && slideIdx !== undefined && titleText) {
-      const titleNum = findCardinalInTitle(titleText)
-      if (titleNum === n) {
-        for (let ci = 0; ci < n; ci++) {
-          const cx = _PAD + ci * (cw + _GAP)
-          reqs.push(...makeBentoNumRequests(`bnum_${slideIdx}_${ci}`, pageId, ci, cx, rowY))
-        }
+    // Auto-numbering: large "01"/"02"/... at top of each card
+    if (isNumbered) {
+      for (let ci = 0; ci < n; ci++) {
+        const cx = _PAD + ci * (cw + _GAP)
+        reqs.push(...makeBentoNumRequests(`bnum_${slideIdx}_${ci}`, pageId!, ci, cx, rowY, cw))
       }
     }
     for (const el of slide.pageElements ?? []) {
@@ -1372,7 +1382,7 @@ function buildBentoRowLayoutRequests(
       const isBottom = elY > _CY + _CH / 2
 
       if (el.shape?.shapeType === 'TEXT_BOX') {
-        reqs.push(makeElemTransform(el.objectId, cx + _INN - _INSET, rowY + _INN - _INSET, innerW + 2 * _INSET, cardH - 2 * _INN + 2 * _INSET, sW, sH))
+        reqs.push(makeElemTransform(el.objectId, cx + _INN - _INSET, rowY + textTopOff, innerW + 2 * _INSET, textH, sW, sH))
       } else if (el.shape?.shapeType === 'RECTANGLE') {
         if (Math.abs(elW - cw) < TOL) {
           // Card body
@@ -1420,17 +1430,21 @@ function buildBentoRowLayoutRequests(
       const mCellW = Math.floor((_RBW - _GAP) / 2)
       const mCellH = Math.floor((_RBH - _GAP) / 2)
 
+      const isNumbered2x2 = !!(pageId && slideIdx !== undefined && titleText && findCardinalInTitle(titleText) === 4)
+      const gridTextTopOff = isNumbered2x2 ? _NUM_TEXT_TOP : (_INN - _INSET)
+      const gridTextH      = isNumbered2x2 ? (cellH - _NUM_TEXT_TOP - _NUM_PAD) : (cellH - 2 * _INN + 2 * _INSET)
+
       const reqs: object[] = []
       // Auto-numbering for bento_right_2x2 (4 cards)
-      if (pageId && slideIdx !== undefined && titleText && findCardinalInTitle(titleText) === 4) {
+      if (isNumbered2x2) {
         const positions = [
-          { x: RBX,              y: gridY },
+          { x: RBX,               y: gridY },
           { x: RBX + cellW + _GAP, y: gridY },
-          { x: RBX,              y: gridY + cellH + _GAP },
+          { x: RBX,               y: gridY + cellH + _GAP },
           { x: RBX + cellW + _GAP, y: gridY + cellH + _GAP },
         ]
         for (let ci = 0; ci < 4; ci++) {
-          reqs.push(...makeBentoNumRequests(`bnum_${slideIdx}_${ci}`, pageId, ci, positions[ci].x, positions[ci].y))
+          reqs.push(...makeBentoNumRequests(`bnum_${slideIdx}_${ci}`, pageId!, ci, positions[ci].x, positions[ci].y, cellW))
         }
       }
       for (const el of slide.pageElements ?? []) {
@@ -1461,7 +1475,7 @@ function buildBentoRowLayoutRequests(
         const isBottom = elY > origCy + mCellH / 2
 
         if (el.shape?.shapeType === 'TEXT_BOX') {
-          reqs.push(makeElemTransform(el.objectId, cx + _INN - _INSET, cy + _INN - _INSET, cellInnerW + 2 * _INSET, cellH - 2 * _INN + 2 * _INSET, sW, sH))
+          reqs.push(makeElemTransform(el.objectId, cx + _INN - _INSET, cy + gridTextTopOff, cellInnerW + 2 * _INSET, gridTextH, sW, sH))
         } else if (el.shape?.shapeType === 'RECTANGLE') {
           if (Math.abs(elW - mCellW) < TOL) {
             reqs.push(makeElemTransform(el.objectId, cx, cy, cellW, cellH, sW, sH))
@@ -1493,15 +1507,15 @@ function buildBentoRowLayoutRequests(
     const filledTokens = tokens.filter(t => (processedSlots[t] ?? '').trim())
     console.log(`[bento-layout] ${compId}: ${filledTokens.length}/${tokens.length} slots filled | masterCardH=${masterCardH} colY=${colY}`)
 
+    const isNumberedLin = !!(pageId && slideIdx !== undefined && titleText && findCardinalInTitle(titleText) === nCards)
+    const linTextTopOff = isNumberedLin ? _NUM_TEXT_TOP : (_INN - _INSET)
+
     const reqs: object[] = []
     // Auto-numbering for bento_right_2 / bento_right_3
-    if (pageId && slideIdx !== undefined && titleText) {
-      const titleNum = findCardinalInTitle(titleText)
-      if (titleNum === nCards) {
-        for (let k = 0; k < nCards; k++) {
-          const newCy = colY + k * (masterCardH + _GAP)
-          reqs.push(...makeBentoNumRequests(`bnum_${slideIdx}_${k}`, pageId, k, RBX, newCy))
-        }
+    if (isNumberedLin) {
+      for (let k = 0; k < nCards; k++) {
+        const newCy = colY + k * (masterCardH + _GAP)
+        reqs.push(...makeBentoNumRequests(`bnum_${slideIdx}_${k}`, pageId!, k, RBX, newCy, _RBW))
       }
     }
     for (const el of slide.pageElements ?? []) {
@@ -1529,8 +1543,9 @@ function buildBentoRowLayoutRequests(
         : _RBH - (nCards - 1) * (masterCardH + _GAP)
       const isBottom = elY > origCy + masterCardH / 2
 
+      const linTH = isNumberedLin ? (kCardH - _NUM_TEXT_TOP - _NUM_PAD) : (kCardH - 2 * _INN + 2 * _INSET)
       if (el.shape?.shapeType === 'TEXT_BOX') {
-        reqs.push(makeElemTransform(el.objectId, RBX + _INN - _INSET, newCy + _INN - _INSET, innerW + 2 * _INSET, kCardH - 2 * _INN + 2 * _INSET, sW, sH))
+        reqs.push(makeElemTransform(el.objectId, RBX + _INN - _INSET, newCy + linTextTopOff, innerW + 2 * _INSET, linTH, sW, sH))
       } else if (el.shape?.shapeType === 'RECTANGLE') {
         if (Math.abs(elW - _RBW) < TOL) {
           reqs.push(makeElemTransform(el.objectId, RBX, newCy, _RBW, kCardH, sW, sH))
