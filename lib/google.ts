@@ -1876,21 +1876,9 @@ export async function buildPresentation(
     const slide = updatedSlides.find(s => s.objectId === pageId)
     if (!slide) continue
     requests.push(...buildCoverFloatRequests(slide, plan.slides[i].slots))
-    // Background image
-    requests.push({
-      updatePageProperties: {
-        objectId: pageId,
-        pageProperties: {
-          pageBackgroundFill: {
-            stretchedPictureFill: { contentUrl: randomCoverBg() },
-          },
-        },
-        fields: 'pageBackgroundFill',
-      },
-    })
   }
 
-  // ── Cover title only: centered title + date pill + background ───────────────
+  // ── Cover title only: centered title + date pill ──────────────────────────
   for (let i = 0; i < plan.slides.length; i++) {
     if (plan.slides[i].composition !== 'cover_title_only') continue
     const pageId = planPageIds[i]
@@ -1898,17 +1886,6 @@ export async function buildPresentation(
     const slide = updatedSlides.find(s => s.objectId === pageId)
     if (!slide) continue
     requests.push(...buildCoverTitleOnlyRequests(slide, plan.slides[i].slots, pageId, i))
-    requests.push({
-      updatePageProperties: {
-        objectId: pageId,
-        pageProperties: {
-          pageBackgroundFill: {
-            stretchedPictureFill: { contentUrl: randomCoverBg() },
-          },
-        },
-        fields: 'pageBackgroundFill',
-      },
-    })
   }
 
   // ── bento_right left column: float ТЕКСТ strictly below ЗАГОЛОВОК ───────────────
@@ -2286,6 +2263,41 @@ export async function buildPresentation(
       presentationId,
       requestBody: { requests },
     })
+  }
+
+  // Background images — separate batch so a bad URL never breaks text replacement
+  {
+    const bgRequests: object[] = []
+    for (let i = 0; i < planPageIds.length; i++) {
+      const pageId = planPageIds[i]
+      if (!pageId) continue
+      const compId = plan.slides[i].composition
+      if (compId !== 'cover' && compId !== 'cover_title_only') continue
+      bgRequests.push({
+        updatePageProperties: {
+          objectId: pageId,
+          pageProperties: {
+            pageBackgroundFill: {
+              stretchedPictureFill: { contentUrl: randomCoverBg() },
+            },
+          },
+          fields: 'pageBackgroundFill',
+        },
+      })
+    }
+    if (bgRequests.length > 0) {
+      try {
+        await slidesApi.presentations.batchUpdate({
+          presentationId,
+          requestBody: { requests: bgRequests },
+        })
+        console.log(`[bg] inserted ${bgRequests.length} background(s) ok`)
+      } catch (bgErr: unknown) {
+        const msg = bgErr instanceof Error ? bgErr.message : String(bgErr)
+        console.warn('[bg] background insertion failed (URL not accessible):', msg)
+        console.warn('[bg] Set BG_BASE_URL in .env.local to fix.')
+      }
+    }
   }
 
   // Logo — separate batch so a bad URL never breaks text replacement.
