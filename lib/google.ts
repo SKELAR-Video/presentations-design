@@ -872,8 +872,10 @@ function buildTitleBodyFloatRequests(
 // Algorithm: try from maxPt downward; stop at first pt where ALL cards pass word-fit + height.
 // Floor (minPt): chosen pt is never below BENTO_MIN_PT; if even minPt overflows → log ⚠ TEXT_TOO_LONG.
 // All cards in the group share ONE pt for visual uniformity.
-// Returns per-card font sizes: each card independently picks the largest pt that fits.
-// This prevents one long-word card from dragging down the font of all other cards.
+// Returns uniform group font size for all bento cards:
+// 1. Find the max fitting pt for each individual card.
+// 2. Group pt = min of those per-card maxes (tightest card dictates the group).
+// 3. Clamp to floor (minPt). Apply same pt to every filled card.
 function pickBentoCardPts(compId: string, slots: Record<string, string>): Record<string, number> | null {
   const dims   = bentoDims(compId)
   const tokens = BENTO_TOKENS[compId]
@@ -881,20 +883,28 @@ function pickBentoCardPts(compId: string, slots: Record<string, string>): Record
   const minPt  = BENTO_MIN_PT[compId] ?? 10
   if (!dims || !tokens || !maxPt) return null
   const scale = (BENTO_SCALE as readonly number[]).filter(s => s <= maxPt)
+
+  // Step 1: per-card max fitting pt
+  let groupPt = maxPt  // shrink toward the tightest card
+  for (const t of tokens) {
+    const text = slots[t] ?? ''
+    if (!text.trim()) continue
+    let cardPt = minPt
+    for (const pt of scale) {
+      if (textFitsParagraphs(text, dims.w, dims.h, pt)) { cardPt = pt; break }
+    }
+    groupPt = Math.min(groupPt, cardPt)  // group = tightest of per-card maxes
+  }
+  groupPt = Math.max(groupPt, minPt)    // floor
+
+  // Step 2: apply uniform groupPt to all filled cards + diagnostic
   const result: Record<string, number> = {}
   for (const [idx, t] of tokens.entries()) {
     const text = slots[t] ?? ''
     if (!text.trim()) continue
-    let cardPt = minPt  // fallback floor
-    for (const pt of scale) {
-      if (textFitsParagraphs(text, dims.w, dims.h, pt)) {
-        cardPt = pt  // largest pt where this card fits
-        break
-      }
-    }
-    result[t] = cardPt
-    const wPass = longestWordPx(text, cardPt) * 1.2 <= dims.w
-    const cpl = Math.max(1, Math.floor(dims.w / (cardPt * 2.667 * 0.65)))
+    result[t] = groupPt
+    const wPass = longestWordPx(text, groupPt) * 1.2 <= dims.w
+    const cpl   = Math.max(1, Math.floor(dims.w / (groupPt * 2.667 * 0.65)))
     const paras = text.split('\n').filter(p => p.trim())
     const totalLines = paras.reduce((s, p) => {
       const words = p.split(/\s+/).filter(Boolean)
@@ -906,9 +916,9 @@ function pickBentoCardPts(compId: string, slots: Record<string, string>): Record
       }
       return s + lines
     }, 0)
-    const hPass = totalLines * lineH(cardPt) <= dims.h
+    const hPass = totalLines * lineH(groupPt) <= dims.h
     console.log(
-      `[bento-fit] ${compId}/card${idx + 1}: max_font=${maxPt} | chosen_font=${cardPt} | floor=${minPt} | fits_width=${wPass ? '✓' : '✗'} | fits_height=${hPass ? '✓' : '✗'}`,
+      `[bento-fit] ${compId}/card${idx + 1}: max_font=${maxPt} | group_font=${groupPt} | floor=${minPt} | fits_width=${wPass ? '✓' : '✗'} | fits_height=${hPass ? '✓' : '✗'}`,
     )
   }
   return result
