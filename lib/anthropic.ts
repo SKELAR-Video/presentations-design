@@ -119,7 +119,7 @@ JSON з рівно ${slides.length} елементами в "slides".`
 
   const message = await client.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 4096,
+    max_tokens: 8192,
     system: SYSTEM_1TO1,
     messages: [{ role: 'user', content: userMessage }],
   })
@@ -271,7 +271,7 @@ ${fragmentsList}
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 4096,
+    max_tokens: 8192,
     system: SYSTEM_VERBATIM,
     messages: [{ role: 'user', content: userMessage }],
   })
@@ -299,7 +299,7 @@ ${sheetSummary}
 Поверни JSON з РІВНО ${targetCount} слайдами. Аркуш з одним рядком → "section". Не зливай аркуші.`
     const retry = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
+      max_tokens: 8192,
       system: SYSTEM_VERBATIM,
       messages: [
         { role: 'user', content: userMessage },
@@ -366,7 +366,7 @@ ${missingReport}
 
     const ciRetry = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
+      max_tokens: 8192,
       system: SYSTEM_VERBATIM,
       messages: [
         { role: 'user', content: userMessage },
