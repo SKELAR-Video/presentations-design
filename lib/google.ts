@@ -211,7 +211,11 @@ const _GITHUB_LOGO = 'https://raw.githubusercontent.com/SKELAR-Video/presentatio
 
 // Background images (raw GitHub). Index 0–5 → Mountain 0–5.
 const _BG_BASE = 'https://raw.githubusercontent.com/SKELAR-Video/presentations-design/main/public/assets/backgrounds/'
-const _COVER_BG = `${_BG_BASE}Mountain%200.png`
+const _BG_COUNT = 6
+function randomCoverBg(): string {
+  const idx = Math.floor(Math.random() * _BG_COUNT)
+  return `${_BG_BASE}Mountain%20${idx}.png`
+}
 
 let _logoUrlCache: string | undefined
 
@@ -1704,7 +1708,7 @@ export async function buildPresentation(
         objectId: pageId,
         pageProperties: {
           pageBackgroundFill: {
-            stretchedPictureFill: { contentUrl: _COVER_BG },
+            stretchedPictureFill: { contentUrl: randomCoverBg() },
           },
         },
         fields: 'pageBackgroundFill',
