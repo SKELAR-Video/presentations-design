@@ -1648,6 +1648,13 @@ export async function buildPresentation(
     }
   }
 
+  // Step 2.0: Strip slots not in the closing composition (closing = only ЗАГОЛОВОК).
+  for (const slide of plan.slides) {
+    if (slide.composition !== 'closing') continue
+    delete slide.slots['ПІДЗАГОЛОВОК']
+    delete slide.slots['ЗОБРАЖЕННЯ_1']
+  }
+
   // Step 2.1: Normalize plan slots.
   // (a) Strip leading "* " bullet markers — verbatim source texts may use markdown bullets.
   // (b) Dedup consecutive identical ЗАГОЛОВОК — section→content slides often share the same heading.
