@@ -1728,6 +1728,18 @@ export async function buildPresentation(
     }
   }
 
+  // Step 2.62: Always capitalize first letter of КАРТКА_N_ПІДПИС.
+  // Covers cases where LLM already produced a stripped label (lowercase) without a leading number.
+  for (const slide of plan.slides) {
+    if (slide.composition !== 'kpi_cards') continue
+    for (let n = 1; n <= 4; n++) {
+      const subKey = `КАРТКА_${n}_ПІДПИС`
+      const sub = (slide.slots[subKey] ?? '').trim()
+      if (!sub) continue
+      slide.slots[subKey] = sub.charAt(0).toUpperCase() + sub.slice(1)
+    }
+  }
+
   // Step 2.65: Sanitise kpi_cards — ensure КАРТКА_N_ЗНАЧЕННЯ is a clean metric.
   // If the value is a phrase like "35 категорій у магазині", extract the numeric
   // prefix ("35") and promote the text remainder to ПІДПИС (if ПІДПИС not already set).
