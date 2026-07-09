@@ -1253,9 +1253,10 @@ function findCardinalInTitle(title: string): number | null {
 // numId must be unique across the deck. cardX/cardY are the card body top-left (Figma px).
 function makeBentoNumRequests(numId: string, pageId: string, cardIdx: number, cardX: number, cardY: number, cardW: number): object[] {
   const numText = String(cardIdx + 1).padStart(2, '0')  // "01", "02", ...
-  const X = cardX + _NUM_PAD
+  // X/W match card text boxes (_INN-_INSET trick) so number and text share the same left axis
+  const X = cardX + _INN - _INSET
   const Y = cardY + _NUM_PAD
-  const W = cardW - 2 * _NUM_PAD
+  const W = cardW - 2 * _INN + 2 * _INSET
   return [
     {
       createShape: {
