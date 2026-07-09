@@ -156,14 +156,32 @@ public/assets/              — бренд-зображення (логотип 
 public/assets/backgrounds/  — фонові зображення для слайдів
 ```
 
+## Флоу застосунку
+
+```
+/ (page.tsx)
+  ↓ POST /api/fetch-doc      — завантажує контент Google Doc або Slides
+  ↓ POST /api/map            — LLM будує план слайдів
+  ↓ POST /api/generate       — копіює майстер, заповнює токени, валідує
+  ↓ /result                  — посилання на готовий дек + факти з файлу
+```
+
+Проміжного кроку редагування плану **немає** — генерація відбувається одразу після маппінгу.
+
+Сторінки `/plan` і `/preview` залишаються в коді, але не задіяні в основному флоу.
+
 ## Файли проєкту
 | Файл | Призначення |
 |------|-------------|
+| `app/page.tsx` | Головна: input → fetch-doc → map → generate → `/result` |
+| `app/result/page.tsx` | Результат: посилання на дек + панель фактів |
 | `app/api/create-master/route.ts` | Створення майстер-шаблону Google Slides |
 | `lib/google.ts` | Генерація презентації (копія шаблону + заміна токенів) |
 | `lib/compositions.ts` | Список і опис всіх композицій/слайдів |
 | `lib/anthropic.ts` | Маппінг брифу → план слайдів через LLM |
 | `app/setup/page.tsx` | Сторінка створення нового шаблону |
+| `app/api/thumbnails/route.ts` | GET `?deckId=` → масив thumbnail URL (не в активному флоу) |
+| `app/preview/page.tsx` | Карусель мініатюр (не в активному флоу) |
 
 ## Workflow при змінах макету
 1. Змінити `create-master/route.ts`
