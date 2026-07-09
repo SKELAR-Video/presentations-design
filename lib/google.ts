@@ -225,6 +225,7 @@ function randomCoverBg(): string {
 }
 
 let _logoUrlCache: string | undefined
+let _logoRedUrlCache: string | undefined
 
 function getLogoUrl(): string {
   if (_logoUrlCache) return _logoUrlCache
@@ -236,6 +237,18 @@ function getLogoUrl(): string {
     _logoUrlCache = _GITHUB_LOGO
   }
   return _logoUrlCache
+}
+
+function getLogoRedUrl(): string {
+  if (_logoRedUrlCache) return _logoRedUrlCache
+  if (process.env.LOGO_RED_URL) {
+    _logoRedUrlCache = process.env.LOGO_RED_URL
+  } else if (process.env.VERCEL_URL) {
+    _logoRedUrlCache = `https://${process.env.VERCEL_URL}/assets/SKELAR%20Symbol%20for%20red.png`
+  } else {
+    _logoRedUrlCache = _GITHUB_LOGO_RED
+  }
+  return _logoRedUrlCache
 }
 
 // Value+label split: if card text is "ЧИСЛО\nПідпис" or "ЧИСЛО: Підпис",
@@ -2111,7 +2124,7 @@ export async function buildPresentation(
       logoRequests.push({
         createImage: {
           objectId: `logo_pl_${i}`,
-          url: isSection ? _GITHUB_LOGO_RED : logoUrl,
+          url: isSection ? getLogoRedUrl() : logoUrl,
           elementProperties: {
             pageObjectId: pageId,
             size: {
