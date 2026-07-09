@@ -11,6 +11,8 @@ import { autoPushIfPass } from './auto-push'
 const _PAD = 100, _UW = 1720, _GAP = 30, _INN = 30, _TH = 100, _TG = 100, _H = 1080
 const _CY = _PAD + _TH + _TG
 const _CH = _H - _PAD - _CY
+// Bottom-bento default: cards top at center (H/2=540), bottom at H-PAD=980 → h=440
+const _BOTTOM_BENTO_H_DEFAULT = _H - _PAD - Math.floor(_H / 2)  // 440
 
 const _RBW = 860
 const _RBH = _H - 2 * _PAD  // 880
@@ -382,7 +384,8 @@ function computeKpiAdaptive(
     let found = false
     for (const pt of [18, 14, 10] as const) {
       const h = Math.ceil(estimateLineCount(bodyText, _UW, pt) * lineH(pt)) + 4
-      if (_H - _PAD - (_PAD + _TH + h + _TG) >= cardMinH) {
+      // Body must leave room for at least the default card height (center→bottom = 440px)
+      if (_H - _PAD - (_PAD + _TH + h + _TG) >= _BOTTOM_BENTO_H_DEFAULT) {
         bodyFontPt = pt; bodyH = h; found = true; break
       }
     }
@@ -390,7 +393,7 @@ function computeKpiAdaptive(
       bodyFontPt = 10
       bodyH = Math.min(
         Math.ceil(estimateLineCount(bodyText, _UW, 10) * lineH(10)) + 4,
-        Math.max(0, _H - _PAD - _PAD - _TH - _TG - cardMinH),
+        Math.max(0, _H - _PAD - _PAD - _TH - _TG - _BOTTOM_BENTO_H_DEFAULT),
       )
     }
   }
@@ -408,8 +411,6 @@ function computeKpiAdaptive(
   }
 
   // ── Card height: content-based, tight group (value + gap + label) ─────────
-  // cardH = max(valH + lblH per card) + 2×INN + 2×KPI_VERT_PAD
-  // Row is centred in available zone below title+body.
   let maxValH = 0, maxLblH = 0
   for (const idx of activeIdxs) {
     const valText = (slots[`КАРТКА_${idx + 1}_ЗНАЧЕННЯ`] ?? '').trim()
@@ -419,12 +420,16 @@ function computeKpiAdaptive(
     if (vH > maxValH) maxValH = vH
     if (lH > maxLblH) maxLblH = lH
   }
-  const valH  = Math.max(Math.ceil(lineH(valPt)), maxValH)  // at least 1 line
-  const lblH  = Math.max(Math.ceil(lineH(14)),    maxLblH)
-  const cardH = Math.min(cardMaxH, Math.max(cardMinH, valH + lblH + 2 * _INN + 2 * KPI_VERT_PAD))
+  const valH        = Math.max(Math.ceil(lineH(valPt)), maxValH)  // at least 1 line
+  const lblH        = Math.max(Math.ceil(lineH(14)),    maxLblH)
+  const contentCardH = valH + lblH + 2 * _INN + 2 * KPI_VERT_PAD
 
-  // ── Card Y: bottom-anchored at H-PAD=980 (top floats up from there) ─────────
-  const kCY = _H - _PAD - cardH   // bottom edge fixed at 980px
+  // ── Card Y: bottom = 980 (fixed), top defaults to center (540), expands up as needed ──
+  // minTopY = header area bottom = PAD+TH+bodyH+TG (hard ceiling; cards can't go above title)
+  const minTopY  = _PAD + _TH + bodyH + _TG
+  const desiredKCY = _H - _PAD - Math.max(contentCardH, _BOTTOM_BENTO_H_DEFAULT)
+  const kCY = Math.max(desiredKCY, minTopY)
+  const cardH = _H - _PAD - kCY
 
   return { n, cw, activeIdxs, bodyH, bodyFontPt, cardH, valH, lblH, kCY, valPt }
 }
@@ -1225,13 +1230,27 @@ function buildBentoRowLayoutRequests(
 
   // ── Horizontal row: two_columns / three_columns ──────────────────────────
   if (compId === 'two_columns' || compId === 'three_columns') {
-    const n   = compId === 'two_columns' ? 2 : 3
-    const cw  = Math.floor((_UW - (n - 1) * _GAP) / n)
+    const n      = compId === 'two_columns' ? 2 : 3
+    const cw     = Math.floor((_UW - (n - 1) * _GAP) / n)
     const innerW = cw - 2 * _INN
 
-    // Grid-driven: card fills full content zone (_CY → _H-_PAD)
-    const cardH = _CH   // = _H - _PAD - _CY = 680
-    const rowY  = _CY   // top of content zone = 300
+    // Content-driven: bottom pins to 980, top defaults to center (540), expands up if needed.
+    // minTopY = _CY = 300 (title-to-bento gap; cards never overlap title).
+    const VERT_PAD_ROW = 40
+    const cardPts = pickBentoCardPts(compId, processedSlots)
+    let maxTextH = 0
+    for (const token of tokens) {
+      const text = (processedSlots[token] ?? '').trim()
+      if (!text) continue
+      const pt = cardPts?.[token] ?? (BENTO_MIN_PT[compId] ?? 10)
+      const lines = estimateLineCount(text, innerW, pt)
+      const h = Math.ceil(lines * lineH(pt))
+      if (h > maxTextH) maxTextH = h
+    }
+    const contentCardH  = maxTextH + 2 * _INN + 2 * VERT_PAD_ROW
+    const desiredRowY   = _H - _PAD - Math.max(contentCardH, _BOTTOM_BENTO_H_DEFAULT)
+    const rowY = Math.max(desiredRowY, _CY)   // _CY = 300 is the hard floor
+    const cardH = _H - _PAD - rowY
 
     const reqs: object[] = []
     for (const el of slide.pageElements ?? []) {
