@@ -989,8 +989,18 @@ function buildBentoRightLeftColumnRequests(
 }
 
 // ─── section/section_red: float ПІДЗАГОЛОВОК below ЗАГОЛОВОК ─────────────────
-// ЗАГОЛОВОК fixed height = _H1_FIXED_44 (260px). ПІДЗАГОЛОВОК always at fixed y=420 (PAD+260+60).
+// With subtitle: ЗАГОЛОВОК fixed 44pt, height = _H1_FIXED_44 (260px). ПІДЗАГОЛОВОК at fixed y=420.
+// Without subtitle: ЗАГОЛОВОК dynamic up to 66pt, height computed from line count.
 const _SECTION_SUB_MAX = 160  // from create-master/route.ts
+const _SECTION_TITLE_PT = [66, 54, 44, 36, 28, 22] as const
+
+function pickSectionTitlePt(text: string): number {
+  const availH = _H_SLIDE - 2 * _PAD  // 880
+  for (const pt of _SECTION_TITLE_PT) {
+    if (textFits(text, _TITLE_W, availH, pt)) return pt
+  }
+  return _SECTION_TITLE_PT[_SECTION_TITLE_PT.length - 1]
+}
 
 function buildSectionFloatRequests(
   slide: slides_v1.Schema$Page,
@@ -1000,8 +1010,11 @@ function buildSectionFloatRequests(
   const subText   = (slots['ПІДЗАГОЛОВОК'] ?? '').trim()
   if (!titleText) return []
 
-  const titleH = _H1_FIXED_44
-  const subY   = _PAD + titleH + TITLE_GAP  // 420 (fixed)
+  const dynPt  = !subText ? pickSectionTitlePt(titleText) : 44
+  const dynH   = !subText
+    ? Math.max(1, Math.ceil(estimateLineCount(titleText, _TITLE_W, dynPt) * lineH(dynPt)))
+    : _H1_FIXED_44
+  const subY   = _PAD + _H1_FIXED_44 + TITLE_GAP  // 420 (fixed, unchanged)
 
   const reqs: object[] = []
   for (const el of slide.pageElements ?? []) {
@@ -1010,7 +1023,17 @@ function buildSectionFloatRequests(
     const sW  = el.size.width?.magnitude  ?? 0
     const sH  = el.size.height?.magnitude ?? 0
     if (raw.includes('{{ЗАГОЛОВОК}}')) {
-      reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, _PAD - _INSET, _TITLE_W + 2 * _INSET, titleH + 2 * _INSET, sW, sH))
+      reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, _PAD - _INSET, _TITLE_W + 2 * _INSET, dynH + 2 * _INSET, sW, sH))
+      if (!subText && dynPt !== 44) {
+        reqs.push({
+          updateTextStyle: {
+            objectId: el.objectId,
+            style: { fontSize: { magnitude: dynPt, unit: 'PT' }, bold: false },
+            fields: 'fontSize,bold',
+            textRange: { type: 'ALL' },
+          },
+        })
+      }
     }
     if (raw.includes('{{ПІДЗАГОЛОВОК}}')) {
       reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, subY - _INSET, _UW + 2 * _INSET, (subText ? _SECTION_SUB_MAX : 1) + 2 * _INSET, sW, sH))
