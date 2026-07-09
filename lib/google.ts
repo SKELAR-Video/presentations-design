@@ -2010,7 +2010,6 @@ export async function buildPresentation(
   for (let i = 0; i < plan.slides.length; i++) {
     if (plan.slides[i].composition !== 'closing') continue
     const slots = plan.slides[i].slots
-    if ((slots['ПІДЗАГОЛОВОК'] ?? '').trim()) continue
     const pageId = planPageIds[i]
     if (!pageId) continue
     const slide = updatedSlides.find(s => s.objectId === pageId)
@@ -2365,8 +2364,7 @@ export async function buildPresentation(
       if (!pageId) continue
       const compId = plan.slides[i].composition
       const _bgSlots = plan.slides[i].slots
-      const _isTitleOnlyClosing = compId === 'closing' &&
-        !(_bgSlots['ПІДЗАГОЛОВОК'] ?? '').trim()
+      const _isTitleOnlyClosing = compId === 'closing'
       if (compId !== 'cover' && compId !== 'cover_title_only' && !_isTitleOnlyClosing) continue
       bgRequests.push({
         updatePageProperties: {
@@ -2406,8 +2404,7 @@ export async function buildPresentation(
       const compId = plan.slides[i].composition
 
       const _logoSlots = plan.slides[i].slots
-      const _isWordmarkSlide = compId === 'cover_title_only' ||
-        (compId === 'closing' && !(_logoSlots['ПІДЗАГОЛОВОК'] ?? '').trim())
+      const _isWordmarkSlide = compId === 'cover_title_only' || compId === 'closing'
       if (_isWordmarkSlide) {
         // SKELAR Logo.png wordmark — wider, placed at top-right touching the grid
         wordmarkRequests.push({

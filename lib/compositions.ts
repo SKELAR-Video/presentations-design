@@ -110,8 +110,6 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark', 'red', 'light'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 60, style: 'h1' },
-      { name: 'ПІДЗАГОЛОВОК', type: 'text', max_chars: 120, style: 'h2', optional: true },
-      { name: 'ЗОБРАЖЕННЯ_1', type: 'image', ratio: '16:9', role: 'background', optional: true },
     ],
   },
   {
