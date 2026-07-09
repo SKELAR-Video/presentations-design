@@ -859,7 +859,7 @@ function buildCoverTitleOnlyRequests(
         pageObjectId: pageId,
         size: {
           width:  { magnitude: _eL(_DATE_PILL_W), unit: 'EMU' },
-          height: { magnitude: _eL(115), unit: 'EMU' },
+          height: { magnitude: _eL(_LOGO_H), unit: 'EMU' },
         },
         transform: {
           scaleX: 1, shearX: 0, translateX: _eL(100),
@@ -873,7 +873,7 @@ function buildCoverTitleOnlyRequests(
     updateShapeProperties: {
       objectId: pillId,
       shapeProperties: {
-        shapeBackgroundFill: { solidFill: { color: { rgbColor: { red: 1, green: 1, blue: 1 } }, alpha: 0.6 } },
+        shapeBackgroundFill: { solidFill: { color: { rgbColor: { red: 1, green: 1, blue: 1 } }, alpha: 0.4 } },
         outline: { propertyState: 'NOT_RENDERED' },
         contentAlignment: 'MIDDLE',
         autofit: { autofitType: 'NONE' },
