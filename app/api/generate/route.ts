@@ -3,6 +3,8 @@ import { auth } from '@/auth'
 import { buildPresentation } from '@/lib/google'
 import type { SlidePlan } from '@/lib/types'
 
+export const maxDuration = 300
+
 export async function POST(req: NextRequest) {
   const session = await auth()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

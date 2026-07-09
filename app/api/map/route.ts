@@ -4,6 +4,8 @@ import { mapToPlan, mapSlides1to1 } from '@/lib/anthropic'
 import type { Theme } from '@/lib/types'
 import type { SourceSlide } from '@/app/api/fetch-doc/route'
 
+export const maxDuration = 300
+
 export async function POST(req: NextRequest) {
   const session = await auth()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -26,6 +28,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Текст ТЗ не може бути порожнім' }, { status: 400 })
   }
 
-  const plan = await mapToPlan(body.text.trim(), theme)
-  return NextResponse.json({ plan })
+  try {
+    const plan = await mapToPlan(body.text.trim(), theme)
+    return NextResponse.json({ plan })
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e)
+    console.error('[map] error:', message)
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
 }
