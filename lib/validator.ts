@@ -195,14 +195,15 @@ function checkContentIntegrity(
   }
 }
 
-function checkBadge(slide: slides_v1.Schema$Page, compId: string): CheckResult {
+function checkBadge(slide: slides_v1.Schema$Page, compId: string, slots: Record<string, string>): CheckResult {
   // bento_right_*: logo bottom-left (100, 890)
-  // cover_title_only: wordmark logo top-right at (1463, 99)
+  // cover_title_only + title-only closing: wordmark logo top-right at (1463, 99)
   // default: symbol logo top-right (1730, 100)
   const isBentoRight = compId.startsWith('bento_right_')
-  const isCoverTitleOnly = compId === 'cover_title_only'
-  const BADGE_X   = isBentoRight ? 100 : isCoverTitleOnly ? 1463 : 1730
-  const BADGE_Y   = isBentoRight ? 890 : isCoverTitleOnly ? 99   : 100
+  const isCoverTitleStyle = compId === 'cover_title_only' ||
+    (compId === 'closing' && !(slots['ПІДЗАГОЛОВОК'] ?? '').trim() && !(slots['ЗОБРАЖЕННЯ_1'] ?? '').trim())
+  const BADGE_X   = isBentoRight ? 100 : isCoverTitleStyle ? 1463 : 1730
+  const BADGE_Y   = isBentoRight ? 890 : isCoverTitleStyle ? 99   : 100
   const BADGE_TOL = 25
   for (const el of slide.pageElements ?? []) {
     if (!el.transform) continue
@@ -308,9 +309,11 @@ function checkKpiCardRowGeometry(slide: slides_v1.Schema$Page): CheckResult {
 // Non-bento_right: zone = x∈[1730,1820], y∈[100,190].
 // bento_right_*:   zone = x∈[100,190],  y∈[890,980].
 // A correctly-built title box (right=1710) leaves 20px gap before logo starts at 1730.
-function checkLogoOverlap(slide: slides_v1.Schema$Page, compId: string): CheckResult {
-  // cover_title_only: full-slide title intentionally fills the slide — no overlap check
-  if (compId === 'cover_title_only') return { check: 'logo_overlap', pass: true }
+function checkLogoOverlap(slide: slides_v1.Schema$Page, compId: string, slots: Record<string, string>): CheckResult {
+  // cover_title_only and title-only closing: full-slide title intentionally fills the slide — no overlap check
+  const isTitleOnlyClosing = compId === 'closing' &&
+    !(slots['ПІДЗАГОЛОВОК'] ?? '').trim() && !(slots['ЗОБРАЖЕННЯ_1'] ?? '').trim()
+  if (compId === 'cover_title_only' || isTitleOnlyClosing) return { check: 'logo_overlap', pass: true }
   const isBR   = compId.startsWith('bento_right_')
   const LOGO_W = 90, LOGO_H = 90
   const lX = isBR ? 100  : 1730
@@ -688,8 +691,8 @@ export async function validateDeck(
     checks.push(checkFont(slide))
     checks.push(checkMaxChars(planSlide.slots, compId))
     checks.push(checkContentIntegrity(planSlide.slots, compId, plan.sourceText))
-    checks.push(checkBadge(slide, compId))
-    checks.push(checkLogoOverlap(slide, compId))
+    checks.push(checkBadge(slide, compId, planSlide.slots))
+    checks.push(checkLogoOverlap(slide, compId, planSlide.slots))
     // Flat-list rules (plan-level, always run)
     checks.push(checkNoLiteralAsterisk(planSlide.slots))
     checks.push(checkNoDuplicateTitle(plan, i))

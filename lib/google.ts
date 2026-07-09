@@ -2004,6 +2004,20 @@ export async function buildPresentation(
     }
   }
 
+  // ── Closing title-only: override section-float ЗАГОЛОВОК with cover_title_only style ──
+  // Must run AFTER section/closing loop so these requests come last (override subtitle-collapsed
+  // geometry set by buildSectionFloatRequests above).
+  for (let i = 0; i < plan.slides.length; i++) {
+    if (plan.slides[i].composition !== 'closing') continue
+    const slots = plan.slides[i].slots
+    if ((slots['ПІДЗАГОЛОВОК'] ?? '').trim() || (slots['ЗОБРАЖЕННЯ_1'] ?? '').trim()) continue
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    const slide = updatedSlides.find(s => s.objectId === pageId)
+    if (!slide) continue
+    requests.push(...buildCoverTitleOnlyRequests(slide, slots, pageId, i))
+  }
+
   // ── title_body: float ТЕКСТ below ЗАГОЛОВОК (gap = TITLE_GAP) ────────────────────
   for (let i = 0; i < plan.slides.length; i++) {
     if (plan.slides[i].composition !== 'title_body') continue
@@ -2026,12 +2040,12 @@ export async function buildPresentation(
 
   // ── Title logo-safe resize: clamp ЗАГОЛОВОК to _TITLE_W=1610 ────────────────────
   // Fixes old-master slides (title right=1820) without requiring master regeneration.
-  // Cover / bento_right / section / title_body: handled above by their float functions.
+  // Cover / bento_right / section / closing / title_body: handled above by their float functions.
   for (let i = 0; i < plan.slides.length; i++) {
     const compId = plan.slides[i].composition
     if (compId === 'cover' || compId === 'cover_title_only' || compId.startsWith('bento_right_') ||
-        compId === 'section' || compId === 'section_red' || compId === 'title_body' ||
-        compId === 'badges') continue
+        compId === 'section' || compId === 'section_red' || compId === 'closing' ||
+        compId === 'title_body' || compId === 'badges') continue
     const titleObjId = slotObjectIds[i]?.['ЗАГОЛОВОК']
     if (!titleObjId) continue
     const pageId = planPageIds[i]
@@ -2350,7 +2364,10 @@ export async function buildPresentation(
       const pageId = planPageIds[i]
       if (!pageId) continue
       const compId = plan.slides[i].composition
-      if (compId !== 'cover' && compId !== 'cover_title_only') continue
+      const _bgSlots = plan.slides[i].slots
+      const _isTitleOnlyClosing = compId === 'closing' &&
+        !(_bgSlots['ПІДЗАГОЛОВОК'] ?? '').trim() && !(_bgSlots['ЗОБРАЖЕННЯ_1'] ?? '').trim()
+      if (compId !== 'cover' && compId !== 'cover_title_only' && !_isTitleOnlyClosing) continue
       bgRequests.push({
         updatePageProperties: {
           objectId: pageId,
@@ -2388,7 +2405,11 @@ export async function buildPresentation(
       if (!pageId) continue
       const compId = plan.slides[i].composition
 
-      if (compId === 'cover_title_only') {
+      const _logoSlots = plan.slides[i].slots
+      const _isWordmarkSlide = compId === 'cover_title_only' ||
+        (compId === 'closing' &&
+          !(_logoSlots['ПІДЗАГОЛОВОК'] ?? '').trim() && !(_logoSlots['ЗОБРАЖЕННЯ_1'] ?? '').trim())
+      if (_isWordmarkSlide) {
         // SKELAR Logo.png wordmark — wider, placed at top-right touching the grid
         wordmarkRequests.push({
           createImage: {
