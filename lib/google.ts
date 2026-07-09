@@ -207,14 +207,21 @@ function _logoPos(compId: string): { x: number; y: number } {
 }
 
 // Logo URL priority: LOGO_URL env → Vercel static → GitHub public repo
-const _GITHUB_LOGO = 'https://raw.githubusercontent.com/SKELAR-Video/presentations-design/main/public/assets/SKELAR%20Symbol.png'
+const _GITHUB_LOGO     = 'https://raw.githubusercontent.com/SKELAR-Video/presentations-design/main/public/assets/SKELAR%20Symbol.png'
+const _GITHUB_LOGO_RED = 'https://raw.githubusercontent.com/SKELAR-Video/presentations-design/main/public/assets/SKELAR%20Symbol%20for%20red.png'
 
-// Background images (raw GitHub). Index 0–5 → Mountain 0–5.
-const _BG_BASE = 'https://raw.githubusercontent.com/SKELAR-Video/presentations-design/main/public/assets/backgrounds/'
+// Background images. Index 0–5 → Mountain 0–5.
+// Priority: BG_BASE_URL env → Vercel static → GitHub public repo (private repo = won't work).
+const _GITHUB_BG_BASE = 'https://raw.githubusercontent.com/SKELAR-Video/presentations-design/main/public/assets/backgrounds/'
 const _BG_COUNT = 6
+function getBgBaseUrl(): string {
+  if (process.env.BG_BASE_URL) return process.env.BG_BASE_URL.replace(/\/?$/, '/')
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}/assets/backgrounds/`
+  return _GITHUB_BG_BASE
+}
 function randomCoverBg(): string {
   const idx = Math.floor(Math.random() * _BG_COUNT)
-  return `${_BG_BASE}Mountain%20${idx}.png`
+  return `${getBgBaseUrl()}Mountain%20${idx}.png`
 }
 
 let _logoUrlCache: string | undefined
@@ -1736,6 +1743,22 @@ export async function buildPresentation(
     const slide = updatedSlides.find(s => s.objectId === pageId)
     if (!slide) continue
     requests.push(...buildSectionFloatRequests(slide, plan.slides[i].slots))
+    // section slides always get red background (#FD3433)
+    if (compId === 'section') {
+      requests.push({
+        updatePageProperties: {
+          objectId: pageId,
+          pageProperties: {
+            pageBackgroundFill: {
+              solidFill: {
+                color: { rgbColor: { red: 0xFD / 255, green: 0x34 / 255, blue: 0x33 / 255 } },
+              },
+            },
+          },
+          fields: 'pageBackgroundFill',
+        },
+      })
+    }
   }
 
   // ── title_body: float ТЕКСТ below ЗАГОЛОВОК (gap = TITLE_GAP) ────────────────────
@@ -2084,10 +2107,11 @@ export async function buildPresentation(
       const pageId = planPageIds[i]
       if (!pageId) continue
       const lp = _logoPos(plan.slides[i].composition)
+      const isSection = plan.slides[i].composition === 'section'
       logoRequests.push({
         createImage: {
           objectId: `logo_pl_${i}`,
-          url: logoUrl,
+          url: isSection ? _GITHUB_LOGO_RED : logoUrl,
           elementProperties: {
             pageObjectId: pageId,
             size: {
