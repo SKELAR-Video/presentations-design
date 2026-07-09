@@ -1216,6 +1216,90 @@ function preprocessBentoText(text: string): string {
   return text
 }
 
+// ─── Auto-numbering helpers ───────────────────────────────────────────────────
+// Returns the cardinal number found in a slide title (1–10), or null.
+// Matches digits ("3", "топ-3") and Ukrainian word numerals (case-insensitive).
+function findCardinalInTitle(title: string): number | null {
+  const lower = title.toLowerCase()
+  const digitMatches = lower.match(/\b(\d+)\b/g)
+  if (digitMatches) {
+    for (const m of digitMatches) {
+      const n = parseInt(m, 10)
+      if (n >= 1 && n <= 10) return n
+    }
+  }
+  const WORD_NUMS: Record<string, number> = {
+    'один': 1, 'одна': 1, 'одне': 1,
+    'два': 2, 'дві': 2,
+    'три': 3, 'чотири': 4,
+    "п'ять": 5, 'пять': 5,
+    'шість': 6, 'сім': 7, 'вісім': 8,
+    "дев'ять": 9, 'девять': 9, 'десять': 10,
+  }
+  for (const [word, n] of Object.entries(WORD_NUMS)) {
+    if (lower.includes(word)) return n
+  }
+  return null
+}
+
+// Creates a small ordinal number label in the top-left corner of a bento card.
+// numId must be unique across the deck. cardX/cardY are the card body top-left (Figma px).
+function makeBentoNumRequests(numId: string, pageId: string, cardIdx: number, cardX: number, cardY: number): object[] {
+  const SIZE = 30   // px — fits 1–2 digit number at 14pt within the INN=30 padding zone
+  const X = cardX + 8
+  const Y = cardY + 8
+  return [
+    {
+      createShape: {
+        objectId: numId,
+        shapeType: 'TEXT_BOX',
+        elementProperties: {
+          pageObjectId: pageId,
+          size: {
+            width:  { magnitude: _eL(SIZE), unit: 'EMU' },
+            height: { magnitude: _eL(SIZE), unit: 'EMU' },
+          },
+          transform: { scaleX: 1, shearX: 0, translateX: _eL(X), shearY: 0, scaleY: 1, translateY: _eL(Y), unit: 'EMU' },
+        },
+      },
+    },
+    { insertText: { objectId: numId, insertionIndex: 0, text: String(cardIdx + 1) } },
+    {
+      updateTextStyle: {
+        objectId: numId,
+        style: {
+          fontSize: { magnitude: 14, unit: 'PT' },
+          bold: false,
+          foregroundColor: { opaqueColor: { rgbColor: { red: 1, green: 1, blue: 1 } } },
+          weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
+        },
+        fields: 'fontSize,bold,foregroundColor,weightedFontFamily',
+        textRange: { type: 'ALL' },
+      },
+    },
+    {
+      updateShapeProperties: {
+        objectId: numId,
+        shapeProperties: {
+          shapeBackgroundFill: { propertyState: 'NOT_RENDERED' },
+          outline:             { propertyState: 'NOT_RENDERED' },
+          autofit: { autofitType: 'NONE' },
+          contentAlignment: 'TOP',
+        },
+        fields: 'shapeBackgroundFill,outline,autofit.autofitType,contentAlignment',
+      },
+    },
+    {
+      updateParagraphStyle: {
+        objectId: numId,
+        style: { alignment: 'START' },
+        fields: 'alignment',
+        textRange: { type: 'ALL' },
+      },
+    },
+  ]
+}
+
 // ─── Bento row layout: grid-driven card geometry ─────────────────────────────
 // Card dimensions are derived purely from grid constants — independent of font size.
 // Text overflow is handled by TEXT_AUTOFIT (Google Slides shrinks if needed).
@@ -1223,6 +1307,9 @@ function buildBentoRowLayoutRequests(
   slide: slides_v1.Schema$Page,
   compId: string,
   processedSlots: Record<string, string>,
+  pageId?: string,
+  slideIdx?: number,
+  titleText?: string,
 ): object[] {
   const tokens = BENTO_TOKENS[compId]
   if (!tokens) return []
@@ -1253,6 +1340,16 @@ function buildBentoRowLayoutRequests(
     const cardH = _H - _PAD - rowY
 
     const reqs: object[] = []
+    // Auto-numbering: title must contain a cardinal == n
+    if (pageId && slideIdx !== undefined && titleText) {
+      const titleNum = findCardinalInTitle(titleText)
+      if (titleNum === n) {
+        for (let ci = 0; ci < n; ci++) {
+          const cx = _PAD + ci * (cw + _GAP)
+          reqs.push(...makeBentoNumRequests(`bnum_${slideIdx}_${ci}`, pageId, ci, cx, rowY))
+        }
+      }
+    }
     for (const el of slide.pageElements ?? []) {
       if (!el.objectId || !el.transform || !el.size) continue
       const sW  = el.size.width?.magnitude  ?? 0
@@ -1324,6 +1421,18 @@ function buildBentoRowLayoutRequests(
       const mCellH = Math.floor((_RBH - _GAP) / 2)
 
       const reqs: object[] = []
+      // Auto-numbering for bento_right_2x2 (4 cards)
+      if (pageId && slideIdx !== undefined && titleText && findCardinalInTitle(titleText) === 4) {
+        const positions = [
+          { x: RBX,              y: gridY },
+          { x: RBX + cellW + _GAP, y: gridY },
+          { x: RBX,              y: gridY + cellH + _GAP },
+          { x: RBX + cellW + _GAP, y: gridY + cellH + _GAP },
+        ]
+        for (let ci = 0; ci < 4; ci++) {
+          reqs.push(...makeBentoNumRequests(`bnum_${slideIdx}_${ci}`, pageId, ci, positions[ci].x, positions[ci].y))
+        }
+      }
       for (const el of slide.pageElements ?? []) {
         if (!el.objectId || !el.transform || !el.size) continue
         const sW  = el.size.width?.magnitude  ?? 0
@@ -1385,6 +1494,16 @@ function buildBentoRowLayoutRequests(
     console.log(`[bento-layout] ${compId}: ${filledTokens.length}/${tokens.length} slots filled | masterCardH=${masterCardH} colY=${colY}`)
 
     const reqs: object[] = []
+    // Auto-numbering for bento_right_2 / bento_right_3
+    if (pageId && slideIdx !== undefined && titleText) {
+      const titleNum = findCardinalInTitle(titleText)
+      if (titleNum === nCards) {
+        for (let k = 0; k < nCards; k++) {
+          const newCy = colY + k * (masterCardH + _GAP)
+          reqs.push(...makeBentoNumRequests(`bnum_${slideIdx}_${k}`, pageId, k, RBX, newCy))
+        }
+      }
+    }
     for (const el of slide.pageElements ?? []) {
       if (!el.objectId || !el.transform || !el.size) continue
       const sW  = el.size.width?.magnitude  ?? 0
@@ -2090,7 +2209,8 @@ export async function buildPresentation(
     if (!slide) continue
     const pSlots = bentoProcessedSlots.get(i) ?? plan.slides[i].slots
     if (!BENTO_TOKENS[compId]) continue
-    requests.push(...buildBentoRowLayoutRequests(slide, compId, pSlots))
+    const titleText = (plan.slides[i].slots['ЗАГОЛОВОК'] ?? '').trim()
+    requests.push(...buildBentoRowLayoutRequests(slide, compId, pSlots, pageId, i, titleText))
   }
 
   // Font-size auto-shrink + colon-split colouring.
