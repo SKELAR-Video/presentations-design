@@ -19,29 +19,29 @@ const _RBH = _H - 2 * _PAD  // 880
 const _KW = Math.floor((_UW - 3 * _GAP) / 4)  // 407
 
 function bentoDims(compId: string): { w: number; h: number } | null {
-  // h = max content height (lines * lineH(pt) must fit here).
-  // Must account for BENTO_VERT_PAD so the total column stays within slide bounds.
-  // Formula: maxCardH - 2*BENTO_VERT_PAD (not maxCardH - 2*INN which ignores padding).
+  // h = usable inner height inside the TEXT_BOX (after _INN padding on each side).
+  // Layout places TEXT_BOX at offset _INN from card edge (then _INSET-compensated),
+  // so inner content height = cardH - 2*_INN — must match pickBentoPt's height check.
   if (compId === 'two_columns') {
     const cw = Math.floor((_UW - _GAP) / 2)
-    return { w: cw - 2 * _INN, h: _CH - 2 * BENTO_VERT_PAD }
+    return { w: cw - 2 * _INN, h: _CH - 2 * _INN }
   }
   if (compId === 'three_columns') {
     const cw = Math.floor((_UW - 2 * _GAP) / 3)
-    return { w: cw - 2 * _INN, h: _CH - 2 * BENTO_VERT_PAD }
+    return { w: cw - 2 * _INN, h: _CH - 2 * _INN }
   }
   if (compId === 'bento_right_2') {
     const cardH = Math.floor((_RBH - _GAP) / 2)
-    return { w: _RBW - 2 * _INN, h: cardH - 2 * BENTO_VERT_PAD }
+    return { w: _RBW - 2 * _INN, h: cardH - 2 * _INN }
   }
   if (compId === 'bento_right_3') {
     const cardH = Math.floor((_RBH - 2 * _GAP) / 3)
-    return { w: _RBW - 2 * _INN, h: cardH - 2 * BENTO_VERT_PAD }
+    return { w: _RBW - 2 * _INN, h: cardH - 2 * _INN }
   }
   if (compId === 'bento_right_2x2') {
     const cellW = Math.floor((_RBW - _GAP) / 2)
     const cellH = Math.floor((_RBH - _GAP) / 2)
-    return { w: cellW - 2 * _INN, h: cellH - 2 * BENTO_VERT_PAD }
+    return { w: cellW - 2 * _INN, h: cellH - 2 * _INN }
   }
   return null
 }
@@ -872,30 +872,29 @@ function buildTitleBodyFloatRequests(
 // Algorithm: try from maxPt downward; stop at first pt where ALL cards pass word-fit + height.
 // Floor (minPt): chosen pt is never below BENTO_MIN_PT; if even minPt overflows → log ⚠ TEXT_TOO_LONG.
 // All cards in the group share ONE pt for visual uniformity.
-function pickBentoPt(compId: string, slots: Record<string, string>): number | null {
+// Returns per-card font sizes: each card independently picks the largest pt that fits.
+// This prevents one long-word card from dragging down the font of all other cards.
+function pickBentoCardPts(compId: string, slots: Record<string, string>): Record<string, number> | null {
   const dims   = bentoDims(compId)
   const tokens = BENTO_TOKENS[compId]
   const maxPt  = BENTO_MAX_PT[compId]
   const minPt  = BENTO_MIN_PT[compId] ?? 10
   if (!dims || !tokens || !maxPt) return null
-  // scale[0] = maxPt (largest); iterating forward → stop at first fit = largest fitting pt
   const scale = (BENTO_SCALE as readonly number[]).filter(s => s <= maxPt)
-  let chosenPt = scale[scale.length - 1]  // fallback = smallest (in case loop finds nothing)
-  for (const pt of scale) {
-    if (tokens.every(t => textFitsParagraphs(slots[t] ?? '', dims.w, dims.h, pt))) {
-      chosenPt = pt  // largest pt where ALL cards fit
-      break
-    }
-  }
-  // Enforce floor
-  const clampedToFloor = chosenPt < minPt
-  if (clampedToFloor) chosenPt = minPt
-  // Per-card diagnostic
+  const result: Record<string, number> = {}
   for (const [idx, t] of tokens.entries()) {
     const text = slots[t] ?? ''
     if (!text.trim()) continue
-    const wPass = longestWordPx(text, chosenPt) * 1.2 <= dims.w
-    const cpl = Math.max(1, Math.floor(dims.w / (chosenPt * 2.667 * 0.65)))
+    let cardPt = minPt  // fallback floor
+    for (const pt of scale) {
+      if (textFitsParagraphs(text, dims.w, dims.h, pt)) {
+        cardPt = pt  // largest pt where this card fits
+        break
+      }
+    }
+    result[t] = cardPt
+    const wPass = longestWordPx(text, cardPt) * 1.2 <= dims.w
+    const cpl = Math.max(1, Math.floor(dims.w / (cardPt * 2.667 * 0.65)))
     const paras = text.split('\n').filter(p => p.trim())
     const totalLines = paras.reduce((s, p) => {
       const words = p.split(/\s+/).filter(Boolean)
@@ -907,13 +906,12 @@ function pickBentoPt(compId: string, slots: Record<string, string>): number | nu
       }
       return s + lines
     }, 0)
-    const hPass = totalLines * lineH(chosenPt) <= dims.h
-    const flag  = clampedToFloor ? ' ⚠ TEXT_TOO_LONG' : ''
+    const hPass = totalLines * lineH(cardPt) <= dims.h
     console.log(
-      `[bento-fit] ${compId}/card${idx + 1}: max_font=${maxPt} | chosen_font=${chosenPt} | floor=${minPt} | fits_width=${wPass ? '✓' : '✗'} | fits_height=${hPass ? '✓' : '✗'}${flag}`,
+      `[bento-fit] ${compId}/card${idx + 1}: max_font=${maxPt} | chosen_font=${cardPt} | floor=${minPt} | fits_width=${wPass ? '✓' : '✗'} | fits_height=${hPass ? '✓' : '✗'}`,
     )
   }
-  return chosenPt
+  return result
 }
 
 // ─── Compact number formatting for KPI values ────────────────────────────────
@@ -996,9 +994,6 @@ function preprocessBentoText(text: string): string {
   }
   return text
 }
-
-// Comfortable vertical padding inside each bento card (above content and below it)
-const BENTO_VERT_PAD = 40
 
 // ─── Bento row layout: grid-driven card geometry ─────────────────────────────
 // Card dimensions are derived purely from grid constants — independent of font size.
@@ -1667,9 +1662,9 @@ export async function buildPresentation(
     const pageId = planPageIds[i]
     if (!pageId) continue
     const compId = plan.slides[i].composition
-    const pSlots = bentoProcessedSlots.get(i) ?? plan.slides[i].slots
-    const pt     = pickBentoPt(compId, pSlots)
-    if (pt === null) continue
+    const pSlots  = bentoProcessedSlots.get(i) ?? plan.slides[i].slots
+    const cardPts = pickBentoCardPts(compId, pSlots)
+    if (cardPts === null) continue
 
     const slide = updatedSlides.find(s => s.objectId === pageId)
     if (!slide) continue
@@ -1683,6 +1678,9 @@ export async function buildPresentation(
       const matchedToken = bentoTokens.find(t => elText.includes(`{{${t}}}`))
       if (!matchedToken) continue
       if (!pSlots[matchedToken]) continue  // empty card will be deleted — skip style updates
+
+      const pt = cardPts[matchedToken]
+      if (pt === undefined) continue
 
       // Font size (applied to all text in the box)
       requests.push({
