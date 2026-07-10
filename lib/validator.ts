@@ -574,9 +574,21 @@ function checkNoLiteralAsterisk(slots: Record<string, string>): CheckResult {
   return { check: 'no_literal_asterisk', pass: fails.length === 0, detail: fails.join('; ') || undefined }
 }
 
+// Returns true if two slides are variant siblings (same original slide, different layout).
+// Variant IDs are "<original_id>_v1", "<original_id>_v2", etc.
+function areVariantSiblings(a: SlidePlan['slides'][0], b: SlidePlan['slides'][0]): boolean {
+  const m = (id: string) => id.match(/^(.+)_v\d+$/)
+  const mA = m(a.id ?? ''), mB = m(b.id ?? '')
+  return !!(mA && mB && mA[1] === mB[1])
+}
+
 // Detect duplicated ЗАГОЛОВОК between consecutive slides (flat list split into multiple slides).
+// Variant siblings share the same ЗАГОЛОВОК intentionally — skip the check for them.
 function checkNoDuplicateTitle(plan: SlidePlan, slideIndex: number): CheckResult {
   if (slideIndex === 0) return { check: 'no_duplicate_title', pass: true }
+  if (areVariantSiblings(plan.slides[slideIndex - 1], plan.slides[slideIndex])) {
+    return { check: 'no_duplicate_title', pass: true, detail: 'variant siblings — shared title expected' }
+  }
   const cur  = (plan.slides[slideIndex].slots['ЗАГОЛОВОК'] ?? '').trim()
   const prev = (plan.slides[slideIndex - 1].slots['ЗАГОЛОВОК'] ?? '').trim()
   const dup  = Boolean(cur && cur === prev)
@@ -631,16 +643,16 @@ function checkFragmentCoverage(
 export function validatePlan(plan: SlidePlan): PlanCheckResult[] {
   const results: PlanCheckResult[] = []
 
-  // Deck-level: slide count must match sheet count when delimiter was used
+  // Deck-level: slide count must be >= sheet count (variants add extra slides)
   if (plan.sheetCount !== undefined) {
-    const pass = plan.slides.length === plan.sheetCount
+    const pass = plan.slides.length >= plan.sheetCount
     results.push({
       slideIndex: -1,
       check: 'slide_count_matches_sheets',
       pass,
       detail: pass
-        ? `${plan.slides.length} slides = ${plan.sheetCount} sheets`
-        : `${plan.slides.length} slides ≠ ${plan.sheetCount} sheets`,
+        ? `${plan.slides.length} slides ≥ ${plan.sheetCount} sheets`
+        : `${plan.slides.length} slides < ${plan.sheetCount} sheets (slides lost)`,
     })
   }
 
@@ -723,13 +735,13 @@ export async function validateDeck(
     if (i === 0) {
       checks.push(themeCheck)
       if (plan.sheetCount !== undefined) {
-        const pass = plan.slides.length === plan.sheetCount
+        const pass = plan.slides.length >= plan.sheetCount
         checks.push({
           check: 'slide_count_matches_sheets',
           pass,
           detail: pass
-            ? `${plan.slides.length} slides = ${plan.sheetCount} sheets`
-            : `${plan.slides.length} slides ≠ ${plan.sheetCount} sheets`,
+            ? `${plan.slides.length} slides ≥ ${plan.sheetCount} sheets`
+            : `${plan.slides.length} slides < ${plan.sheetCount} sheets (slides lost)`,
         })
       }
     }

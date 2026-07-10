@@ -1767,9 +1767,13 @@ function remapSlotsForVariant(
   }
   const map = MAPS[`${fromComp}:${toComp}`]
   if (!map) return { ...slots }
+  const targetComp = getComposition(toComp)
+  const validTarget = new Set(targetComp?.slots.map(s => s.name) ?? [])
   const result: Record<string, string> = {}
   for (const [slot, value] of Object.entries(slots)) {
-    result[map[slot] ?? slot] = value
+    const targetSlot = map[slot] ?? slot
+    if (validTarget.has(targetSlot)) result[targetSlot] = value
+    // else: slot absent in target composition → drop (e.g. ТЕКСТ when going to two_columns)
   }
   return result
 }
