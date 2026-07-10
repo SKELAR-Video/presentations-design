@@ -220,6 +220,20 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
       break
     }
 
+    case 'three_columns_num': {
+      const _3CN_GAP    = 50
+      const _3CN_COL_W  = Math.floor((UW - 2 * _3CN_GAP) / 3)  // 540
+      const _3CN_TITLE_W = 1339
+      const _3CN_TEXT_Y  = 540
+      const _3CN_TEXT_H  = H - PAD - _3CN_TEXT_Y  // 440
+      push(tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, _3CN_TITLE_W, 300, 44))
+      for (let k = 0; k < 3; k++) {
+        const cx = PAD + k * (_3CN_COL_W + _3CN_GAP)
+        push(tb(mk(), slideId, `КОЛОНКА_${k + 1}`, cx, _3CN_TEXT_Y, _3CN_COL_W, _3CN_TEXT_H, 18, MUTED))
+      }
+      break
+    }
+
     case 'kpi_cards': {
       const subH  = 56
       const kCY   = PAD + TH + subH + TG

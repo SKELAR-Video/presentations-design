@@ -63,6 +63,18 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     ],
   },
   {
+    id: 'three_columns_num',
+    name: 'Три колонки з нумерацією',
+    when_to_use: '3 послідовних кроки або категорії з акцентними номерами 1/2/3',
+    themes: ['dark'],
+    slots: [
+      { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 80, style: 'h2' },
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 180, style: 'body' },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 180, style: 'body' },
+      { name: 'КОЛОНКА_3', type: 'text', max_chars: 180, style: 'body' },
+    ],
+  },
+  {
     id: 'kpi_cards',
     name: 'KPI-картки',
     when_to_use: 'набір метрик (2–4 картки). ЗНАЧЕННЯ = тільки число/одиниця ≤10 символів («35», «2M+», «42%»). ПІДПИС = що це число означає.',

@@ -57,35 +57,42 @@ function bentoDims(compId: string): { w: number; h: number } | null {
     const cellH = Math.floor((_RBH - _GAP) / 2)
     return { w: cellW - 2 * _INN, h: cellH - 2 * _INN }
   }
+  if (compId === 'three_columns_num') {
+    const cw = Math.floor((_UW - 2 * 50) / 3)  // 540 — no card INN padding
+    return { w: cw, h: _H - _PAD - 540 }        // {w: 540, h: 440}
+  }
   return null
 }
 
 const BENTO_TOKENS: Record<string, string[]> = {
-  two_columns:     ['КОЛОНКА_1', 'КОЛОНКА_2'],
-  three_columns:   ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3'],
-  bento_right_2:   ['КАРТКА_1', 'КАРТКА_2'],
-  bento_right_3:   ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3'],
-  bento_right_2x2: ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
+  two_columns:       ['КОЛОНКА_1', 'КОЛОНКА_2'],
+  three_columns:     ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3'],
+  three_columns_num: ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3'],
+  bento_right_2:     ['КАРТКА_1', 'КАРТКА_2'],
+  bento_right_3:     ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3'],
+  bento_right_2x2:   ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
 }
 
 // Role-max font size per composition (start here; shrink only if text overflows).
 // Values from Figma: 2-card → 48pt possible for short text, 3-card → 28pt ceiling.
 const BENTO_MAX_PT: Record<string, number> = {
-  two_columns:     48,
-  three_columns:   28,
-  bento_right_2:   36,
-  bento_right_3:   22,
-  bento_right_2x2: 22,
+  two_columns:       48,
+  three_columns:     28,
+  three_columns_num: 18,
+  bento_right_2:     36,
+  bento_right_3:     22,
+  bento_right_2x2:   22,
 }
 
 // Floor: chosen pt is never smaller than this value.
 // If even floor pt overflows → log ⚠ TEXT_TOO_LONG (content is too long for this card type).
 const BENTO_MIN_PT: Record<string, number> = {
-  two_columns:     18,
-  three_columns:   14,
-  bento_right_2:   18,
-  bento_right_3:   14,
-  bento_right_2x2: 14,
+  two_columns:       18,
+  three_columns:     14,
+  three_columns_num: 10,
+  bento_right_2:     18,
+  bento_right_3:     14,
+  bento_right_2x2:   14,
 }
 
 const FONT_STEPS = [22, 18, 14, 10] as const
@@ -1760,7 +1767,7 @@ async function readDeckFacts(
 
 const VARIANT_GROUPS: readonly (readonly string[])[] = [
   ['two_columns', 'bento_right_2'],
-  ['three_columns', 'bento_right_3'],
+  ['three_columns', 'bento_right_3', 'three_columns_num'],
 ]
 
 function remapSlotsForVariant(
@@ -1772,8 +1779,10 @@ function remapSlotsForVariant(
   const MAPS: Record<string, Record<string, string>> = {
     'two_columns:bento_right_2':   { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2' },
     'bento_right_2:two_columns':   { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2' },
-    'three_columns:bento_right_3': { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3' },
-    'bento_right_3:three_columns': { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3' },
+    'three_columns:bento_right_3':     { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3' },
+    'bento_right_3:three_columns':     { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3' },
+    'bento_right_3:three_columns_num': { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3' },
+    'three_columns_num:bento_right_3': { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3' },
   }
   const map = MAPS[`${fromComp}:${toComp}`]
   if (!map) return { ...slots }
@@ -1839,6 +1848,78 @@ function expandPlanWithVariants(plan: SlidePlan): {
   }
 
   return { expanded: { ...plan, slides: expandedSlides }, variantMap }
+}
+
+function buildThreeColumnsNumRequests(pageId: string): object[] {
+  const _3CN_GAP    = 50
+  const _3CN_COL_W  = Math.floor((_UW - 2 * _3CN_GAP) / 3)  // 540
+  const _3CN_PILL_W = 75
+  const _3CN_PILL_H = 90
+  const _3CN_PILL_Y = 411
+  const reqs: object[] = []
+  for (let k = 0; k < 3; k++) {
+    const cx = _PAD + k * (_3CN_COL_W + _3CN_GAP)
+    const pillId = `${pageId}_3cnPill_${k}`
+    reqs.push(
+      {
+        createShape: {
+          objectId: pillId,
+          shapeType: 'ROUND_RECTANGLE',
+          elementProperties: {
+            pageObjectId: pageId,
+            size: {
+              width:  { magnitude: _eL(_3CN_PILL_W), unit: 'EMU' },
+              height: { magnitude: _eL(_3CN_PILL_H), unit: 'EMU' },
+            },
+            transform: {
+              scaleX: 1, shearX: 0, translateX: _eL(cx),
+              shearY: 0, scaleY: 1, translateY: _eL(_3CN_PILL_Y),
+              unit: 'EMU',
+            },
+          },
+        },
+      },
+      {
+        updateShapeProperties: {
+          objectId: pillId,
+          shapeProperties: {
+            shapeBackgroundFill: {
+              solidFill: {
+                color: { rgbColor: { red: 0xFD / 255, green: 0x34 / 255, blue: 0x33 / 255 } },
+                alpha: 1,
+              },
+            },
+            outline: { propertyState: 'NOT_RENDERED' },
+            contentAlignment: 'MIDDLE',
+          },
+          fields: 'shapeBackgroundFill,outline,contentAlignment',
+        },
+      },
+      { insertText: { objectId: pillId, insertionIndex: 0, text: `${k + 1}` } },
+      {
+        updateTextStyle: {
+          objectId: pillId,
+          style: {
+            fontSize: { magnitude: 18, unit: 'PT' },
+            bold: false,
+            foregroundColor: { opaqueColor: { rgbColor: { red: 0xFC / 255, green: 0xCA / 255, blue: 0xCA / 255 } } },
+            weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
+          },
+          fields: 'fontSize,bold,foregroundColor,weightedFontFamily',
+          textRange: { type: 'ALL' },
+        },
+      },
+      {
+        updateParagraphStyle: {
+          objectId: pillId,
+          style: { alignment: 'CENTER' },
+          fields: 'alignment',
+          textRange: { type: 'ALL' },
+        },
+      },
+    )
+  }
+  return reqs
 }
 
 function makeVariantPillRequests(pillId: string, pageId: string, variantIdx: number): object[] {
@@ -2359,6 +2440,14 @@ export async function buildPresentation(
     requests.push(...buildBadgesRequests(i, slide, plan.slides[i].slots, pageId))
   }
 
+  // ── three_columns_num: create numbered red pills ──────────────────────────────
+  for (let i = 0; i < plan.slides.length; i++) {
+    if (plan.slides[i].composition !== 'three_columns_num') continue
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    requests.push(...buildThreeColumnsNumRequests(pageId))
+  }
+
   // ── Title logo-safe resize: clamp ЗАГОЛОВОК to _TITLE_W=1610 ────────────────────
   // Fixes old-master slides (title right=1820) without requiring master regeneration.
   // Cover / bento_right / section / closing / title_body: handled above by their float functions.
@@ -2366,7 +2455,7 @@ export async function buildPresentation(
     const compId = plan.slides[i].composition
     if (compId === 'cover' || compId === 'cover_title_only' || compId.startsWith('bento_right_') ||
         compId === 'section' || compId === 'section_red' || compId === 'closing' ||
-        compId === 'title_body' || compId === 'badges') continue
+        compId === 'title_body' || compId === 'badges' || compId === 'three_columns_num') continue
     const titleObjId = slotObjectIds[i]?.['ЗАГОЛОВОК']
     if (!titleObjId) continue
     const pageId = planPageIds[i]

@@ -377,19 +377,21 @@ function _vBentoDims(compId: string): { w: number; h: number } | null {
   if (compId === 'bento_right_2')   { const ch = Math.floor((_V_RBH - _V_GAP) / 2);  return { w: _V_RBW - 2*_V_INN, h: ch - 2*_V_VERT_PAD } }
   if (compId === 'bento_right_3')   { const ch = Math.floor((_V_RBH - 2*_V_GAP) / 3);return { w: _V_RBW - 2*_V_INN, h: ch - 2*_V_VERT_PAD } }
   if (compId === 'bento_right_2x2') { const cw = Math.floor((_V_RBW - _V_GAP) / 2); const ch = Math.floor((_V_RBH - _V_GAP) / 2); return { w: cw - 2*_V_INN, h: ch - 2*_V_VERT_PAD } }
+  if (compId === 'three_columns_num') { const cw = Math.floor((_V_UW - 2 * 50) / 3); return { w: cw, h: 1080 - 100 - 540 } }
   return null
 }
 
 const _V_BENTO_TOKENS: Record<string, string[]> = {
-  two_columns:     ['КОЛОНКА_1', 'КОЛОНКА_2'],
-  three_columns:   ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3'],
-  bento_right_2:   ['КАРТКА_1', 'КАРТКА_2'],
-  bento_right_3:   ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3'],
-  bento_right_2x2: ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
+  two_columns:       ['КОЛОНКА_1', 'КОЛОНКА_2'],
+  three_columns:     ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3'],
+  three_columns_num: ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3'],
+  bento_right_2:     ['КАРТКА_1', 'КАРТКА_2'],
+  bento_right_3:     ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3'],
+  bento_right_2x2:   ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
 }
 
 const _V_BENTO_MAX_PT: Record<string, number> = {
-  two_columns: 48, three_columns: 28, bento_right_2: 36, bento_right_3: 22, bento_right_2x2: 22,
+  two_columns: 48, three_columns: 28, three_columns_num: 18, bento_right_2: 36, bento_right_3: 22, bento_right_2x2: 22,
 }
 
 function _vTextFits(text: string, wPx: number, hPx: number, pt: number): boolean {
