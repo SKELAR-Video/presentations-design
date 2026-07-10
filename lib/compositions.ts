@@ -63,6 +63,19 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     ],
   },
   {
+    id: 'bento_bottom_4',
+    name: 'Чотири картки знизу',
+    when_to_use: 'заголовок зверху + 4 рівні пункти в рядок знизу',
+    themes: ['dark'],
+    slots: [
+      { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 60, style: 'h2' },
+      { name: 'КАРТКА_1', type: 'text', max_chars: 120, style: 'body' },
+      { name: 'КАРТКА_2', type: 'text', max_chars: 120, style: 'body' },
+      { name: 'КАРТКА_3', type: 'text', max_chars: 120, style: 'body' },
+      { name: 'КАРТКА_4', type: 'text', max_chars: 120, style: 'body' },
+    ],
+  },
+  {
     id: 'three_columns_num',
     name: 'Три колонки з нумерацією',
     when_to_use: '3 послідовних кроки або категорії з акцентними номерами 1/2/3',

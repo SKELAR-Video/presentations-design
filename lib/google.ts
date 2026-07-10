@@ -61,6 +61,10 @@ function bentoDims(compId: string): { w: number; h: number } | null {
     const cw = Math.floor((_UW - 2 * 50) / 3)  // 540 — no card INN padding
     return { w: cw, h: _H - _PAD - 540 }        // {w: 540, h: 440}
   }
+  if (compId === 'bento_bottom_4') {
+    const cw = Math.floor((_UW - 3 * _GAP) / 4)  // 407
+    return { w: cw - 2 * _INN, h: _CH - 2 * _INN }  // {w: 347, h: 620}
+  }
   return null
 }
 
@@ -68,6 +72,7 @@ const BENTO_TOKENS: Record<string, string[]> = {
   two_columns:       ['КОЛОНКА_1', 'КОЛОНКА_2'],
   three_columns:     ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3'],
   three_columns_num: ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3'],
+  bento_bottom_4:    ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
   bento_right_2:     ['КАРТКА_1', 'КАРТКА_2'],
   bento_right_3:     ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3'],
   bento_right_2x2:   ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
@@ -79,6 +84,7 @@ const BENTO_MAX_PT: Record<string, number> = {
   two_columns:       48,
   three_columns:     28,
   three_columns_num: 18,
+  bento_bottom_4:    22,
   bento_right_2:     36,
   bento_right_3:     22,
   bento_right_2x2:   22,
@@ -90,6 +96,7 @@ const BENTO_MIN_PT: Record<string, number> = {
   two_columns:       18,
   three_columns:     14,
   three_columns_num: 10,
+  bento_bottom_4:    10,
   bento_right_2:     18,
   bento_right_3:     14,
   bento_right_2x2:   14,
@@ -314,6 +321,7 @@ function splitValueLabel(text: string): { valueEnd: number; labelStart: number }
 const BENTO_VALUE_PT: Record<string, number> = {
   two_columns:     36,
   three_columns:   28,
+  bento_bottom_4:  28,
   bento_right_2:   36,
   bento_right_3:   28,
   bento_right_2x2: 32,
@@ -1336,9 +1344,9 @@ function buildBentoRowLayoutRequests(
   if (!tokens) return []
   const TOL = 8
 
-  // ── Horizontal row: two_columns / three_columns ──────────────────────────
-  if (compId === 'two_columns' || compId === 'three_columns') {
-    const n      = compId === 'two_columns' ? 2 : 3
+  // ── Horizontal row: two_columns / three_columns / bento_bottom_4 ──────────
+  if (compId === 'two_columns' || compId === 'three_columns' || compId === 'bento_bottom_4') {
+    const n      = compId === 'two_columns' ? 2 : compId === 'three_columns' ? 3 : 4
     const cw     = Math.floor((_UW - (n - 1) * _GAP) / n)
     const innerW = cw - 2 * _INN
 
@@ -1360,7 +1368,7 @@ function buildBentoRowLayoutRequests(
     const rowY = Math.max(desiredRowY, _CY)   // _CY = 300 is the hard floor
     const cardH = _H - _PAD - rowY
 
-    const isNumbered = !!(pageId && slideIdx !== undefined && titleText && findCardinalInTitle(titleText) === n)
+    const isNumbered = compId !== 'bento_bottom_4' && !!(pageId && slideIdx !== undefined && titleText && findCardinalInTitle(titleText) === n)
     // Text Y offset depends on whether numbering is active
     const textTopOff = isNumbered ? _NUM_TEXT_TOP : (_INN - _INSET)
     const textH      = isNumbered ? (cardH - _NUM_TEXT_TOP - _NUM_PAD) : (cardH - 2 * _INN + 2 * _INSET)
@@ -1768,6 +1776,7 @@ async function readDeckFacts(
 const VARIANT_GROUPS: readonly (readonly string[])[] = [
   ['two_columns', 'bento_right_2'],
   ['three_columns', 'bento_right_3', 'three_columns_num'],
+  ['bento_right_2x2', 'bento_bottom_4'],
 ]
 
 function remapSlotsForVariant(

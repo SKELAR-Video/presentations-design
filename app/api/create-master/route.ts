@@ -220,6 +220,17 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
       break
     }
 
+    case 'bento_bottom_4': {
+      const cw = Math.floor((UW - 3 * GAP) / 4)  // 407
+      push(tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, TITLE_W, TH, 28))
+      for (let k = 0; k < 4; k++) {
+        const cx = PAD + k * (cw + GAP)
+        roundedCard(cx, CY, cw, CH)
+        push(tb(mk(), slideId, `КАРТКА_${k + 1}`, cx + INN, CY + INN, cw - 2 * INN, CH - 2 * INN, 18, MUTED))
+      }
+      break
+    }
+
     case 'three_columns_num': {
       const _3CN_GAP    = 50
       const _3CN_COL_W  = Math.floor((UW - 2 * _3CN_GAP) / 3)  // 540
