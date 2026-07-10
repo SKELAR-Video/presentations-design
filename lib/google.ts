@@ -23,6 +23,11 @@ const _NUM_H        = 100  // px height of number text box (fits 37pt single lin
 const _NUM_GAP      = 30   // px gap between number and card text
 const _NUM_TEXT_TOP = _NUM_PAD + _NUM_H + _NUM_GAP  // 170 — where card text starts
 const _NUM_FONT_PT  = 37   // 98 Figma px / 2.667 ≈ 37pt
+// Smaller variant for 3-card bento (cards are 273px — less vertical space)
+const _NUM_H_3        = 70   // 26pt single line fits in 70px
+const _NUM_GAP_3      = 20
+const _NUM_FONT_PT_3  = 26
+const _NUM_TEXT_TOP_3 = _NUM_PAD + _NUM_H_3 + _NUM_GAP_3  // 130
 
 // kpi_cards card width (mirrors create-master kw formula)
 const _KW = Math.floor((_UW - 3 * _GAP) / 4)  // 407
@@ -1251,7 +1256,7 @@ function findCardinalInTitle(title: string): number | null {
 
 // Creates a small ordinal number label in the top-left corner of a bento card.
 // numId must be unique across the deck. cardX/cardY are the card body top-left (Figma px).
-function makeBentoNumRequests(numId: string, pageId: string, cardIdx: number, cardX: number, cardY: number, cardW: number): object[] {
+function makeBentoNumRequests(numId: string, pageId: string, cardIdx: number, cardX: number, cardY: number, cardW: number, fontPt = _NUM_FONT_PT, numH = _NUM_H): object[] {
   const numText = String(cardIdx + 1).padStart(2, '0')  // "01", "02", ...
   // X/W match card text boxes (_INN-_INSET trick) so number and text share the same left axis
   const X = cardX + _INN - _INSET
@@ -1265,8 +1270,8 @@ function makeBentoNumRequests(numId: string, pageId: string, cardIdx: number, ca
         elementProperties: {
           pageObjectId: pageId,
           size: {
-            width:  { magnitude: _eL(W),      unit: 'EMU' },
-            height: { magnitude: _eL(_NUM_H), unit: 'EMU' },
+            width:  { magnitude: _eL(W),    unit: 'EMU' },
+            height: { magnitude: _eL(numH), unit: 'EMU' },
           },
           transform: { scaleX: 1, shearX: 0, translateX: _eL(X), shearY: 0, scaleY: 1, translateY: _eL(Y), unit: 'EMU' },
         },
@@ -1277,7 +1282,7 @@ function makeBentoNumRequests(numId: string, pageId: string, cardIdx: number, ca
       updateTextStyle: {
         objectId: numId,
         style: {
-          fontSize: { magnitude: _NUM_FONT_PT, unit: 'PT' },
+          fontSize: { magnitude: fontPt, unit: 'PT' },
           bold: false,
           foregroundColor: { opaqueColor: { rgbColor: { red: 1, green: 1, blue: 1 } } },
           weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
@@ -1509,14 +1514,19 @@ function buildBentoRowLayoutRequests(
     console.log(`[bento-layout] ${compId}: ${filledTokens.length}/${tokens.length} slots filled | masterCardH=${masterCardH} colY=${colY}`)
 
     const isNumberedLin = !!(pageId && slideIdx !== undefined && titleText && findCardinalInTitle(titleText) === nCards)
-    const linTextTopOff = isNumberedLin ? _NUM_TEXT_TOP : (_INN - _INSET)
+    // 3-card bento has shorter cards (273px) — use smaller numbers to fit text comfortably
+    const linNumFontPt  = nCards >= 3 ? _NUM_FONT_PT_3  : _NUM_FONT_PT
+    const linNumH       = nCards >= 3 ? _NUM_H_3         : _NUM_H
+    const linNumGap     = nCards >= 3 ? _NUM_GAP_3       : _NUM_GAP
+    const linNumTextTop = nCards >= 3 ? _NUM_TEXT_TOP_3  : _NUM_TEXT_TOP
+    const linTextTopOff = isNumberedLin ? linNumTextTop : (_INN - _INSET)
 
     const reqs: object[] = []
     // Auto-numbering for bento_right_2 / bento_right_3
     if (isNumberedLin) {
       for (let k = 0; k < nCards; k++) {
         const newCy = colY + k * (masterCardH + _GAP)
-        reqs.push(...makeBentoNumRequests(`bnum_${slideIdx}_${k}`, pageId!, k, RBX, newCy, _RBW))
+        reqs.push(...makeBentoNumRequests(`bnum_${slideIdx}_${k}`, pageId!, k, RBX, newCy, _RBW, linNumFontPt, linNumH))
       }
     }
     for (const el of slide.pageElements ?? []) {
@@ -1544,7 +1554,7 @@ function buildBentoRowLayoutRequests(
         : _RBH - (nCards - 1) * (masterCardH + _GAP)
       const isBottom = elY > origCy + masterCardH / 2
 
-      const linTH = isNumberedLin ? (kCardH - _NUM_TEXT_TOP - _NUM_PAD) : (kCardH - 2 * _INN + 2 * _INSET)
+      const linTH = isNumberedLin ? (kCardH - linNumTextTop - _NUM_PAD) : (kCardH - 2 * _INN + 2 * _INSET)
       if (el.shape?.shapeType === 'TEXT_BOX') {
         reqs.push(makeElemTransform(el.objectId, RBX + _INN - _INSET, newCy + linTextTopOff, innerW + 2 * _INSET, linTH, sW, sH))
       } else if (el.shape?.shapeType === 'RECTANGLE') {
