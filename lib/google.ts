@@ -1806,6 +1806,73 @@ function expandPlanWithVariants(plan: SlidePlan): {
   return { expanded: { ...plan, slides: expandedSlides }, variantMap }
 }
 
+function makeVariantPillRequests(pillId: string, pageId: string, variantIdx: number): object[] {
+  const PILL_W = 240
+  const PILL_H = 56
+  const PILL_X = _W - _PAD - PILL_W   // 1580 — right-aligned with slide padding
+  const PILL_Y = _H_SLIDE - _PAD + 8  // 988 — below content area, above slide bottom
+  const pillText = `Варіант дизайну ${variantIdx}`
+
+  return [
+    {
+      createShape: {
+        objectId: pillId,
+        shapeType: 'ROUND_RECTANGLE',
+        elementProperties: {
+          pageObjectId: pageId,
+          size: {
+            width:  { magnitude: _eL(PILL_W), unit: 'EMU' },
+            height: { magnitude: _eL(PILL_H), unit: 'EMU' },
+          },
+          transform: {
+            scaleX: 1, shearX: 0, translateX: _eL(PILL_X),
+            shearY: 0, scaleY: 1, translateY: _eL(PILL_Y),
+            unit: 'EMU',
+          },
+        },
+      },
+    },
+    {
+      updateShapeProperties: {
+        objectId: pillId,
+        shapeProperties: {
+          shapeBackgroundFill: {
+            solidFill: {
+              color: { rgbColor: { red: 1.0, green: 0.745, blue: 0.0 } }, // amber #FFBE00
+              alpha: 1,
+            },
+          },
+          outline: { propertyState: 'NOT_RENDERED' },
+          contentAlignment: 'MIDDLE',
+        },
+        fields: 'shapeBackgroundFill,outline,contentAlignment',
+      },
+    },
+    { insertText: { objectId: pillId, insertionIndex: 0, text: pillText } },
+    {
+      updateTextStyle: {
+        objectId: pillId,
+        style: {
+          fontSize: { magnitude: 16, unit: 'PT' },
+          bold: false,
+          foregroundColor: { opaqueColor: { rgbColor: { red: 0.106, green: 0.114, blue: 0.137 } } }, // dark #1B1D23
+          weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
+        },
+        fields: 'fontSize,bold,foregroundColor,weightedFontFamily',
+        textRange: { type: 'ALL' },
+      },
+    },
+    {
+      updateParagraphStyle: {
+        objectId: pillId,
+        style: { alignment: 'CENTER' },
+        fields: 'alignment',
+        textRange: { type: 'ALL' },
+      },
+    },
+  ]
+}
+
 export async function buildPresentation(
   accessToken: string,
   plan: SlidePlan,
@@ -2570,15 +2637,21 @@ export async function buildPresentation(
   }
 
 
-  // Variant speaker notes: prepend "Варіант X/N — ..." to notes of every variant slide.
+  // Variant pill + speaker notes for every variant slide.
   for (const [slideIdx, varInfo] of variantMap.entries()) {
     const pageId = planPageIds[slideIdx]
     if (!pageId) continue
+
+    // Visible pill element in bottom-right corner of the slide.
+    const pillId = `vpill_${slideIdx}`
+    requests.push(...makeVariantPillRequests(pillId, pageId, varInfo.variantIdx))
+
+    // Speaker notes reminder.
     const slide = updatedSlides.find(s => s.objectId === pageId)
     const notesObjId = slide?.slideProperties?.notesPage?.notesProperties?.speakerNotesObjectId
-    if (!notesObjId) continue
-    const noteText = `Варіант ${varInfo.variantIdx}/${varInfo.totalVariants} — обери одну розкладку, решту слайдів видали.\n`
-    requests.push({ insertText: { objectId: notesObjId, insertionIndex: 0, text: noteText } })
+    if (notesObjId) {
+      requests.push({ insertText: { objectId: notesObjId, insertionIndex: 0, text: 'Лиши один слайд, видали інші варіанти та цю позначку.\n' } })
+    }
   }
 
   if (requests.length > 0) {
