@@ -1842,9 +1842,9 @@ function expandPlanWithVariants(plan: SlidePlan): {
 }
 
 function makeVariantPillRequests(pillId: string, pageId: string, variantIdx: number): object[] {
-  const PILL_W = 240
-  const PILL_H = 56
-  const PILL_X = _W - _PAD - PILL_W   // 1580 — right-aligned with slide padding
+  const PILL_W = 300
+  const PILL_H = 62
+  const PILL_X = _W - _PAD - PILL_W   // 1520 — right-aligned with slide padding
   const PILL_Y = _H_SLIDE - _PAD + 8  // 988 — below content area, above slide bottom
   const pillText = `Варіант дизайну ${variantIdx}`
 
