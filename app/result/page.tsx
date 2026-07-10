@@ -52,10 +52,10 @@ export default function ResultPage() {
 
         <div className="flex gap-3">
           <button
-            onClick={() => router.push('/plan')}
+            onClick={() => router.push('/')}
             className="flex-1 py-3 rounded-xl border border-[#292D39] text-[#A2A6B1] text-sm hover:border-[#A2A6B1] hover:text-white transition-colors"
           >
-            ← Назад до плану
+            ← Назад
           </button>
           <button
             onClick={() => { sessionStorage.clear(); router.push('/') }}
