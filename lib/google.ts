@@ -18,7 +18,7 @@ const _RBW = 860
 const _RBH = _H - 2 * _PAD  // 880
 
 // Bento card numbering layout (Figma: 98px number, 40px padding, 30px gap)
-const _NUM_PAD      = 40   // px from card edge to number box
+const _NUM_PAD      = 11   // px from card edge to number box — matches _INN-_INSET so visual top = visual left = 30px
 const _NUM_H        = 100  // px height of number text box (fits 37pt single line)
 const _NUM_GAP      = 30   // px gap between number and card text
 const _NUM_TEXT_TOP = _NUM_PAD + _NUM_H + _NUM_GAP  // 170 — where card text starts
