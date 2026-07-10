@@ -2130,17 +2130,32 @@ export async function buildPresentation(
     }
   }
 
-  // Step 2.61: Strip compact ЗНАЧЕННЯ from ПІДПИС when no compaction occurred
-  // e.g. ЗНАЧЕННЯ "20+", ПІДПИС "20+ офіційних категорій" → "Офіційних категорій"
+  // Step 2.61: Strip ЗНАЧЕННЯ prefix from ПІДПИС — exact OR compact-equivalent.
+  // Case A (exact):   val="20+",  sub="20+ офіційних..."       → "Офіційних..."
+  // Case B (compact): val="2M+",  sub="2 000 000+ застосунків" → "Застосунків..."
   for (const slide of plan.slides) {
     if (slide.composition !== 'kpi_cards') continue
     for (let n = 1; n <= 4; n++) {
       const val = (slide.slots[`КАРТКА_${n}_ЗНАЧЕННЯ`] ?? '').trim()
       const subKey = `КАРТКА_${n}_ПІДПИС`
       const sub = (slide.slots[subKey] ?? '').trim()
-      if (!val || !sub || !sub.startsWith(val)) continue
-      const stripped = sub.slice(val.length).replace(/^[\s,.:;—–-]+/, '').trim()
-      if (stripped) slide.slots[subKey] = stripped.charAt(0).toUpperCase() + stripped.slice(1)
+      if (!val || !sub) continue
+
+      let stripLen = 0
+      if (sub.startsWith(val)) {
+        stripLen = val.length
+      } else {
+        // Leading non-letter token in ПІДПИС (e.g. "2 000 000+ ") — compact it and compare
+        const leadMatch = sub.match(/^[^а-яА-ЯіїєґА-Яa-zA-Z]+/)
+        if (leadMatch && compactNumber(leadMatch[0].trim()) === val) {
+          stripLen = leadMatch[0].length
+        }
+      }
+
+      if (stripLen > 0) {
+        const stripped = sub.slice(stripLen).replace(/^[\s,.:;—–-]+/, '').trim()
+        if (stripped) slide.slots[subKey] = stripped.charAt(0).toUpperCase() + stripped.slice(1)
+      }
     }
   }
 
