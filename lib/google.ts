@@ -1743,6 +1743,69 @@ async function readDeckFacts(
   return { pass, slides: slideResults, summary }
 }
 
+// ─── Variant layout expansion ─────────────────────────────────────────────────
+// Compositions in the same group render the same N-column content with a different layout.
+// Slides whose composition belongs to a group get expanded into one slide per group member
+// so the user can pick their preferred layout and delete the rest.
+
+const VARIANT_GROUPS: readonly (readonly string[])[] = [
+  ['two_columns', 'bento_right_2'],
+  ['three_columns', 'bento_right_3'],
+]
+
+function remapSlotsForVariant(
+  slots: Record<string, string>,
+  fromComp: string,
+  toComp: string,
+): Record<string, string> {
+  if (fromComp === toComp) return { ...slots }
+  const MAPS: Record<string, Record<string, string>> = {
+    'two_columns:bento_right_2':   { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2' },
+    'bento_right_2:two_columns':   { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2' },
+    'three_columns:bento_right_3': { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3' },
+    'bento_right_3:three_columns': { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3' },
+  }
+  const map = MAPS[`${fromComp}:${toComp}`]
+  if (!map) return { ...slots }
+  const result: Record<string, string> = {}
+  for (const [slot, value] of Object.entries(slots)) {
+    result[map[slot] ?? slot] = value
+  }
+  return result
+}
+
+type VariantInfo = { variantIdx: number; totalVariants: number }
+
+function expandPlanWithVariants(plan: SlidePlan): {
+  expanded: SlidePlan
+  variantMap: Map<number, VariantInfo>
+} {
+  const expandedSlides: SlidePlan['slides'] = []
+  const variantMap = new Map<number, VariantInfo>()
+
+  for (const slide of plan.slides) {
+    const group = VARIANT_GROUPS.find(g => g.includes(slide.composition))
+    if (!group) {
+      expandedSlides.push(slide)
+      continue
+    }
+    for (let vi = 0; vi < group.length; vi++) {
+      const varComp = group[vi]
+      const newIdx = expandedSlides.length
+      variantMap.set(newIdx, { variantIdx: vi + 1, totalVariants: group.length })
+      expandedSlides.push({
+        ...slide,
+        id: `${slide.id}_v${vi + 1}`,
+        composition: varComp,
+        slots: remapSlotsForVariant(slide.slots, slide.composition, varComp),
+        flags: { ...(slide.flags ?? {}) },
+      })
+    }
+  }
+
+  return { expanded: { ...plan, slides: expandedSlides }, variantMap }
+}
+
 export async function buildPresentation(
   accessToken: string,
   plan: SlidePlan,
@@ -1936,6 +1999,13 @@ export async function buildPresentation(
       delete slide.slots[`КАРТКА_${n}_ПІДПИС`]
     }
   }
+
+  // Step 2.8: Expand slides with multiple compatible layouts into variant copies.
+  // Runs AFTER all slot sanitization so variants inherit clean content.
+  // Result: for each two_columns/three_columns/bento_right_2/3 slide, insert
+  // one slide per composition in its VARIANT_GROUP (adjacent in the deck).
+  const { expanded: _expandedPlan, variantMap } = expandPlanWithVariants(plan)
+  plan = _expandedPlan
 
   // Step 3: Assign one real pageId to each plan slide; track what needs duplication
   const planPageIds: string[] = []
@@ -2499,6 +2569,17 @@ export async function buildPresentation(
     }
   }
 
+
+  // Variant speaker notes: prepend "Варіант X/N — ..." to notes of every variant slide.
+  for (const [slideIdx, varInfo] of variantMap.entries()) {
+    const pageId = planPageIds[slideIdx]
+    if (!pageId) continue
+    const slide = updatedSlides.find(s => s.objectId === pageId)
+    const notesObjId = slide?.slideProperties?.notesPage?.notesProperties?.speakerNotesObjectId
+    if (!notesObjId) continue
+    const noteText = `Варіант ${varInfo.variantIdx}/${varInfo.totalVariants} — обери одну розкладку, решту слайдів видали.\n`
+    requests.push({ insertText: { objectId: notesObjId, insertionIndex: 0, text: noteText } })
+  }
 
   if (requests.length > 0) {
     await slidesApi.presentations.batchUpdate({
