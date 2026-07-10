@@ -1842,9 +1842,9 @@ function expandPlanWithVariants(plan: SlidePlan): {
 }
 
 function makeVariantPillRequests(pillId: string, pageId: string, variantIdx: number): object[] {
-  const PILL_W = 300
-  const PILL_H = 62
-  const PILL_X = _W - _PAD - PILL_W   // 1520 — right-aligned with slide padding
+  const PILL_W = 500
+  const PILL_H = 70
+  const PILL_X = _W - _PAD - PILL_W   // 1320 — right-aligned with slide padding
   const PILL_Y = _H_SLIDE - _PAD + 8  // 988 — below content area, above slide bottom
   const pillText = `Варіант дизайну ${variantIdx}`
 
@@ -1888,7 +1888,7 @@ function makeVariantPillRequests(pillId: string, pageId: string, variantIdx: num
       updateTextStyle: {
         objectId: pillId,
         style: {
-          fontSize: { magnitude: 16, unit: 'PT' },
+          fontSize: { magnitude: 12, unit: 'PT' },
           bold: false,
           foregroundColor: { opaqueColor: { rgbColor: { red: 0.106, green: 0.114, blue: 0.137 } } }, // dark #1B1D23
           weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
