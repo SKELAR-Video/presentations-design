@@ -1803,10 +1803,31 @@ function expandPlanWithVariants(plan: SlidePlan): {
       expandedSlides.push(slide)
       continue
     }
-    for (let vi = 0; vi < group.length; vi++) {
-      const varComp = group[vi]
+
+    // Only include variants that preserve ALL non-empty content from the original.
+    // If a target composition drops a non-empty slot (e.g. ТЕКСТ lost when bento_right_2 → two_columns),
+    // skip that variant — don't sacrifice real content for a layout alternative.
+    const validVariants = group.filter(varComp => {
+      if (varComp === slide.composition) return true  // original always valid
+      const remapped = remapSlotsForVariant(slide.slots, slide.composition, varComp)
+      const remappedVals = new Set(Object.values(remapped).filter(v => (v ?? '').trim()))
+      return !Object.entries(slide.slots).some(([slot, val]) => {
+        if (!(val ?? '').trim()) return false
+        if (slot.startsWith('ЗОБРАЖЕННЯ_')) return false
+        return !remappedVals.has(val)  // non-empty value not in remapped → content lost
+      })
+    })
+
+    if (validVariants.length <= 1) {
+      // No meaningful alternatives — keep the original slide as-is (no pill, no expansion)
+      expandedSlides.push(slide)
+      continue
+    }
+
+    for (let vi = 0; vi < validVariants.length; vi++) {
+      const varComp = validVariants[vi]
       const newIdx = expandedSlides.length
-      variantMap.set(newIdx, { variantIdx: vi + 1, totalVariants: group.length })
+      variantMap.set(newIdx, { variantIdx: vi + 1, totalVariants: validVariants.length })
       expandedSlides.push({
         ...slide,
         id: `${slide.id}_v${vi + 1}`,
