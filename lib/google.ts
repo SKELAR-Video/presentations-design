@@ -2314,6 +2314,27 @@ export async function buildPresentation(
       if (slotName === 'ЗАГОЛОВОК' || BENTO_TOKENS[compId]?.includes(slotName)) {
         replaceText = stripTrailingPeriod(replaceText)
       }
+      // Failsafe: strip leading numeric from kpi_cards ПІДПИС that duplicates ЗНАЧЕННЯ.
+      // Runs at write-time so no upstream bug can bypass it.
+      if (compId === 'kpi_cards') {
+        const kpiM = slotName.match(/^КАРТКА_(\d+)_ПІДПИС$/)
+        if (kpiM) {
+          const kpiVal = (slideSlots[`КАРТКА_${kpiM[1]}_ЗНАЧЕННЯ`] ?? '').trim()
+          if (kpiVal) {
+            let stripLen = 0
+            if (replaceText.startsWith(kpiVal)) {
+              stripLen = kpiVal.length
+            } else {
+              const lm = replaceText.match(/^[^а-яА-ЯіїєґА-Яa-zA-Z]+/)
+              if (lm && compactNumber(lm[0].trim()) === kpiVal) stripLen = lm[0].length
+            }
+            if (stripLen > 0) {
+              const s = replaceText.slice(stripLen).replace(/^[\s,.:;—–-]+/, '').trim()
+              if (s) replaceText = s.charAt(0).toUpperCase() + s.slice(1)
+            }
+          }
+        }
+      }
       replaceText = addNbsp(replaceText)
       requests.push({
         replaceAllText: {
