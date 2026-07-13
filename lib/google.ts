@@ -2330,7 +2330,10 @@ export async function buildPresentation(
             }
             if (stripLen > 0) {
               const s = replaceText.slice(stripLen).replace(/^[\s,.:;—–-]+/, '').trim()
-              if (s) replaceText = s.charAt(0).toUpperCase() + s.slice(1)
+              if (s) {
+                replaceText = s.charAt(0).toUpperCase() + s.slice(1)
+                slideSlots[slotName] = replaceText  // keep slot in sync for buildKpiUpdateRequests
+              }
             }
           }
         }
@@ -2565,46 +2568,51 @@ export async function buildPresentation(
       const pt = cardPts[matchedToken]
       if (pt === undefined) continue
 
-      // Font size (applied to all text in the box)
-      requests.push({
-        updateTextStyle: {
-          objectId: el.objectId,
-          style: { fontSize: { magnitude: pt, unit: 'PT' }, bold: false },
-          fields: 'fontSize,bold',
-          textRange: { type: 'ALL' },
-        },
-      })
       const slotValue = pSlots[matchedToken] ?? ''
 
       // Value+label (number + description) OR plain colon-split
       const split = splitValueLabel(slotValue)
       if (split) {
-        // Large value (number/metric) → white; small label → inherits muted from template
+        // Step 1 (ALL): label style for the whole box — 14pt, bold:false.
+        // Step 2 (FIXED_RANGE [0, valueEnd]): override value portion — large pt, white.
+        // This avoids a second FIXED_RANGE with endIndex:slotValue.length that can exceed
+        // actual text length when stripTrailingPeriod shortens the slide text.
         const valuePt = BENTO_VALUE_PT[compId] ?? 36
-        requests.push({
-          updateTextStyle: {
-            objectId: el.objectId,
-            style: {
-              fontSize: { magnitude: valuePt, unit: 'PT' },
-              bold: false,
-              foregroundColor: { opaqueColor: { rgbColor: _WHITE } },
-            },
-            fields: 'fontSize,bold,foregroundColor',
-            textRange: { type: 'FIXED_RANGE', startIndex: 0, endIndex: split.valueEnd },
-          },
-        })
         requests.push({
           updateTextStyle: {
             objectId: el.objectId,
             style: { fontSize: { magnitude: 14, unit: 'PT' }, bold: false },
             fields: 'fontSize,bold',
-            textRange: { type: 'FIXED_RANGE', startIndex: split.labelStart, endIndex: slotValue.length },
+            textRange: { type: 'ALL' },
           },
         })
+        if (split.valueEnd > 0) {
+          requests.push({
+            updateTextStyle: {
+              objectId: el.objectId,
+              style: {
+                fontSize: { magnitude: valuePt, unit: 'PT' },
+                bold: false,
+                foregroundColor: { opaqueColor: { rgbColor: _WHITE } },
+              },
+              fields: 'fontSize,bold,foregroundColor',
+              textRange: { type: 'FIXED_RANGE', startIndex: 0, endIndex: split.valueEnd },
+            },
+          })
+        }
       } else {
+        // Plain text: base card font size for the whole box
+        requests.push({
+          updateTextStyle: {
+            objectId: el.objectId,
+            style: { fontSize: { magnitude: pt, unit: 'PT' }, bold: false },
+            fields: 'fontSize,bold',
+            textRange: { type: 'ALL' },
+          },
+        })
         // Plain colon-split: prefix up to and including ":" → WHITE
         const colonIdx = slotValue.indexOf(':')
-        if (colonIdx >= 0) {
+        if (colonIdx >= 0 && colonIdx + 1 <= slotValue.length) {
           requests.push({
             updateTextStyle: {
               objectId: el.objectId,
@@ -2649,6 +2657,14 @@ export async function buildPresentation(
     }
   }
 
+  // Build a set of objectIds already scheduled for deletion — prevents later style
+  // requests from referencing elements that will no longer exist when the batch runs.
+  const _pendingDeletes = new Set<string>(
+    (requests as Array<Record<string, unknown>>)
+      .map(r => (r['deleteObject'] as Record<string, string> | undefined)?.objectId)
+      .filter((id): id is string => !!id)
+  )
+
   // General colon-split for all non-title, non-bento text slots.
   // Rule: prefix up to and including ':' → WHITE (same rule as bento above).
   for (let i = 0; i < plan.slides.length; i++) {
@@ -2673,16 +2689,25 @@ export async function buildPresentation(
 
       for (const el of slide.pageElements ?? []) {
         if (!el.objectId) continue
+        if (_pendingDeletes.has(el.objectId)) continue  // element already scheduled for deletion
         const elText = (el.shape?.text?.textElements ?? [])
           .map(te => te.textRun?.content ?? '').join('')
         if (!elText.includes(`{{${slot.name}}}`)) continue
 
+        // Guard: endIndex must not exceed slotValue.length (≡ max possible text length in slide).
+        // colonIdx < slotValue.length always, so colonIdx+1 ≤ slotValue.length.
+        // Log a warning if the invariant somehow breaks — it would mean replaceAllText failed.
+        const endIdx = colonIdx + 1
+        if (endIdx > slotValue.length) {
+          console.error(`[colon-split] endIndex ${endIdx} > slotValue.length ${slotValue.length} for ${compId}/${slot.name} — skipping`)
+          continue
+        }
         requests.push({
           updateTextStyle: {
             objectId: el.objectId,
             style: { foregroundColor: { opaqueColor: { rgbColor: _WHITE } } },
             fields: 'foregroundColor',
-            textRange: { type: 'FIXED_RANGE', startIndex: 0, endIndex: colonIdx + 1 },
+            textRange: { type: 'FIXED_RANGE', startIndex: 0, endIndex: endIdx },
           },
         })
       }
@@ -2719,6 +2744,10 @@ export async function buildPresentation(
       if (compId.startsWith('bento_right_') && slotName === 'ТЕКСТ') continue
       // Skip kpi_cards — all slots handled by adaptive layout above
       if (compId === 'kpi_cards' && kpiAdaptiveSlides.has(i)) continue
+      // Skip badges ПУНКТИ — placeholder is deleted and replaced with pill shapes
+      if (compId === 'badges' && slotName === 'ПУНКТИ') continue
+      // Skip elements already scheduled for deletion
+      if (_pendingDeletes.has(el.objectId)) continue
 
       const slotValue = slots[slotName] ?? ''
       if (!slotValue.trim()) continue
