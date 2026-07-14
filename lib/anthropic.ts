@@ -335,6 +335,48 @@ ${sheetSummary}
           .join('\n')
         if (slotText) slots[slotName] = slotText
       }
+
+      // Detect "collapsed mapping": LLM assigned [all indices] to every slot → all slots identical.
+      // Fix: re-assign each sheet fragment to one composition slot in order.
+      if (hasSheets) {
+        const filledValues = Object.values(slots).filter(Boolean)
+        const allSame = filledValues.length >= 2 && filledValues.every(v => v === filledValues[0])
+        if (allSame) {
+          const [start, end] = sheetRanges[i] ?? [0, -1]
+          const sheetFrags = fragments.slice(start, end + 1).filter(Boolean)
+          if (sheetFrags.length >= 2) {
+            const compDef = PHASE0_COMPOSITIONS.find(c => c.id === s.composition)
+            if (compDef) {
+              let orderedSlotNames: string[]
+              if (s.composition === 'kpi_cards') {
+                // Skip ПІДПИС — auto-filled by kpi_sanitise from ЗНАЧЕННЯ.
+                // If second fragment is body text (not starting with digit), assign to ТЕКСТ.
+                const secondFrag = sheetFrags[1] ?? ''
+                const isBodyText = secondFrag.length > 40 && !/^[\d$€£±~≈<>]/.test(secondFrag.trim())
+                orderedSlotNames = ['ЗАГОЛОВОК']
+                if (isBodyText) orderedSlotNames.push('ТЕКСТ')
+                const metricStart = isBodyText ? 2 : 1
+                for (let n = 1; n <= 4 && metricStart + n - 1 < sheetFrags.length; n++) {
+                  orderedSlotNames.push(`КАРТКА_${n}_ЗНАЧЕННЯ`)
+                }
+              } else {
+                orderedSlotNames = compDef.slots
+                  .filter(sl => sl.type === 'text' && !sl.name.startsWith('ЗОБРАЖЕННЯ'))
+                  .map(sl => sl.name)
+              }
+              for (const k of Object.keys(slots)) delete slots[k]
+              orderedSlotNames.forEach((slotName, idx) => {
+                if (sheetFrags[idx]) slots[slotName] = sheetFrags[idx]
+              })
+              console.warn(
+                `[auto-remap] slide ${i + 1} (${s.composition}): collapsed-mapping → ` +
+                `re-assigned ${Math.min(sheetFrags.length, orderedSlotNames.length)} frags: ${orderedSlotNames.slice(0, sheetFrags.length).join(', ')}`
+              )
+            }
+          }
+        }
+      }
+
       return { id: `slide_${i + 1}`, composition: s.composition || 'title_body', slots, flags: {} }
     })
   }

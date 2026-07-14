@@ -2200,12 +2200,12 @@ export async function buildPresentation(
       if (!val) continue
       if (_KPI_NUMERIC_RE.test(val)) continue  // already a clean metric
 
-      // Try numeric prefix extraction: "35 категорій" → head="35", tail="категорій"
-      const spaceIdx = val.indexOf(' ')
-      if (spaceIdx > 0) {
-        const head = val.slice(0, spaceIdx)
-        const tail = val.slice(spaceIdx).trim()
-        if (_KPI_NUMERIC_RE.test(head)) {
+      // Try numeric prefix extraction: "35 категорій" → head="35", "2 000 000+ застосунків" → head="2 000 000+"
+      const numericMatch = val.match(/^[\d\s+\-±×x.,/%$€£<>≤≥~≈MKBmkb]+/i)
+      if (numericMatch) {
+        const head = numericMatch[0].trim()
+        const tail = val.slice(numericMatch[0].length).trim()
+        if (head && tail && _KPI_NUMERIC_RE.test(head)) {
           slide.slots[key] = head
           const pKey = `КАРТКА_${n}_ПІДПИС`
           if (!slide.slots[pKey] && tail) {
