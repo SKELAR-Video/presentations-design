@@ -396,21 +396,45 @@ ${sheetSummary}
   let missing = findMissing(slides)
   const hasMissing = missing.some(m => m.length > 0)
 
-  // ── Content-integrity retry ───────────────────────────────────────────────
-  if (hasMissing && hasSheets) {
-    const missingReport = missing
-      .map((m, i) => m.length > 0 ? `Аркуш ${i + 1}: не призначено ${m.length} фрагм.: ${m.map(f => `"${f.slice(0, 60)}"`).join(', ')}` : null)
-      .filter(Boolean)
-      .join('\n')
-    console.warn(`[content-integrity] FAIL before retry:\n${missingReport}`)
+  // Detect "allSame" slides where auto-remap couldn't split (1-fragment sheet).
+  const allSameIdxs = slides
+    .map((slide, i) => {
+      const vals = Object.values(slide.slots).filter(Boolean)
+      return vals.length >= 2 && vals.every(v => v === vals[0]) ? i : -1
+    })
+    .filter(n => n >= 0)
+  const hasAllSame = allSameIdxs.length > 0
 
-    const retryPrompt = `ПОМИЛКА: частина фрагментів не потрапила в жоден слот — контент буде ВТРАЧЕНО.
-${missingReport}
+  // ── Content-integrity retry ───────────────────────────────────────────────
+  if ((hasMissing || hasAllSame) && hasSheets) {
+    const retryParts: string[] = []
+
+    if (hasMissing) {
+      const missingReport = missing
+        .map((m, i) => m.length > 0 ? `Аркуш ${i + 1}: не призначено ${m.length} фрагм.: ${m.map(f => `"${f.slice(0, 60)}"`).join(', ')}` : null)
+        .filter(Boolean)
+        .join('\n')
+      console.warn(`[content-integrity] FAIL before retry:\n${missingReport}`)
+      retryParts.push(`ПОМИЛКА: частина фрагментів не потрапила в жоден слот — контент буде ВТРАЧЕНО.\n${missingReport}`)
+    }
+
+    if (hasAllSame) {
+      const allSameReport = allSameIdxs.map(i => {
+        const slide = slides[i]
+        const val = Object.values(slide.slots)[0] ?? ''
+        return `Аркуш ${i + 1} (${slide.composition}): усі слоти однакові "${val.slice(0, 60)}…" — призначай різний контент у кожен слот АБО зміни composition`
+      }).join('\n')
+      console.warn(`[allSame-retry] before retry:\n${allSameReport}`)
+      retryParts.push(`ПОМИЛКА "всі слоти однакові" — контент дублюється:\n${allSameReport}`)
+    }
+
+    const retryPrompt = `${retryParts.join('\n\n')}
 
 Правила виправлення (виконай ВСІ):
 1. Аркуш з 1 коротким рядком ("Дякуємо!", "Q&A", будь-який перехідний заголовок) → ОБОВ'ЯЗКОВО призначай ЗАГОЛОВОК = індекс того рядка. Не залишай assignment порожнім. Залишай composition section / section_red / closing — НЕ міняй на bento/kpi.
 2. Аркуш з кількома рядками → обери підходящу composition і призначай кожен рядок у окремий слот. Якщо не вистачає слотів — обери bento_right_3, title_body тощо.
-3. НЕ змінюй кількість слайдів і НЕ зливай аркуші.
+3. Якщо аркуш містить 1 довгий рядок-список — ЗМІНИ composition на title_body або badges і призначай весь fragment в 1 слот (ТЕКСТ або ПУНКТИ). НЕ дублюй один fragment у кількох слотах.
+4. НЕ змінюй кількість слайдів і НЕ зливай аркуші.
 Поверни виправлений JSON з РІВНО ${mapping.slides.length} слайдами.`
 
     const ciRetry = await client.messages.create({
@@ -455,6 +479,61 @@ ${missingReport}
       const lost = missing.flatMap((m, i) => m.map(t => `sheet ${i + 1}: "${t.slice(0, 80)}"`))
       throw new Error(`[content-integrity] Контент втрачено після retry. Фрагменти без слота:\n${lost.join('\n')}`)
     }
+  }
+
+  // ── Final-split: fix remaining allSame slides with 1-fragment sheets ──────
+  // If LLM retry still produces allSame (it can't split a single fragment),
+  // split the fragment deterministically by punctuation (;  .  ,) into sub-parts.
+  if (hasSheets) {
+    slides.forEach((slide, i) => {
+      const vals = Object.values(slide.slots).filter(Boolean)
+      if (vals.length < 2 || !vals.every(v => v === vals[0])) return
+      const [start, end] = sheetRanges[i] ?? [0, -1]
+      const sheetFrags = fragments.slice(start, end + 1).filter(Boolean)
+      if (sheetFrags.length !== 1) return  // multi-frag case handled by auto-remap
+
+      const raw = sheetFrags[0]
+      let subFrags: string[] = []
+      const bySemi  = raw.split(/;\s+/).map(s => s.trim()).filter(s => s.length > 2)
+      if (bySemi.length >= 2) { subFrags = bySemi }
+      if (!subFrags.length) {
+        const bySent = raw.split(/\.\s+(?=[А-ЯҐІЇЄа-яґіїє])/).map(s => s.trim()).filter(s => s.length > 2)
+        if (bySent.length >= 2) subFrags = bySent
+      }
+      if (!subFrags.length) {
+        const byComma = raw.split(/,\s+(?=[А-ЯҐІЇЄа-яґіїє])/).map(s => s.trim()).filter(s => s.length > 2)
+        if (byComma.length >= 2) subFrags = byComma
+      }
+      if (subFrags.length < 2) return
+
+      const compDef = PHASE0_COMPOSITIONS.find(c => c.id === slide.composition)
+      if (!compDef) return
+
+      let orderedSlotNames: string[]
+      if (slide.composition === 'kpi_cards') {
+        const secondFrag = subFrags[1] ?? ''
+        const isBodyText = secondFrag.length > 40 && !/^[\d$€£±~≈<>]/.test(secondFrag.trim())
+        orderedSlotNames = ['ЗАГОЛОВОК']
+        if (isBodyText) orderedSlotNames.push('ТЕКСТ')
+        const metricStart = isBodyText ? 2 : 1
+        for (let n = 1; n <= 4 && metricStart + n - 1 < subFrags.length; n++) {
+          orderedSlotNames.push(`КАРТКА_${n}_ЗНАЧЕННЯ`)
+        }
+      } else {
+        orderedSlotNames = compDef.slots
+          .filter(sl => sl.type === 'text' && !sl.name.startsWith('ЗОБРАЖЕННЯ'))
+          .map(sl => sl.name)
+      }
+
+      for (const k of Object.keys(slide.slots)) delete slide.slots[k]
+      orderedSlotNames.forEach((slotName, idx) => {
+        if (subFrags[idx]) slide.slots[slotName] = subFrags[idx]
+      })
+      console.warn(
+        `[final-split] slide ${i + 1} (${slide.composition}): allSame 1-frag → ` +
+        `split → ${subFrags.length} sub-frags → ${orderedSlotNames.slice(0, subFrags.length).join(', ')}`,
+      )
+    })
   }
 
   // Per-sheet composition log
