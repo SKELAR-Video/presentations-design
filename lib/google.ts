@@ -180,7 +180,7 @@ function logWordFit(label: string, text: string, innerW: number, pt: number): vo
 // Prevents borderline 9-char Cyrillic words (e.g. "щоденного") from visually breaking.
 function pickTitlePt(text: string, wPx: number): TitlePt {
   for (const pt of TITLE_PT_STEPS) {
-    if (longestWordPx(text, pt) * 1.1 <= wPx - 19) return pt  // 19 = _INSET buffer
+    if (longestWordPx(text, pt) * 1.2 <= wPx - 19) return pt  // 19 = _INSET buffer
   }
   return TITLE_PT_STEPS[TITLE_PT_STEPS.length - 1]
 }
@@ -1006,6 +1006,15 @@ function buildBentoRightLeftColumnRequests(
     const sH  = el.size.height?.magnitude ?? 0
     if (raw.includes('{{ЗАГОЛОВОК}}')) {
       reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, _PAD - _INSET, _LTW + 2 * _INSET, titleH + 2 * _INSET, sW, sH))
+      // TEXT_AUTOFIT: if a word is still wider than the box after pickTitlePt selection,
+      // Google Slides will shrink the font automatically (word-level wrapping is always preserved).
+      reqs.push({
+        updateShapeProperties: {
+          objectId: el.objectId,
+          shapeProperties: { autofit: { autofitType: 'TEXT_AUTOFIT' } },
+          fields: 'autofit.autofitType',
+        },
+      })
       // Apply stepped font size if it differs from the 44pt template default.
       if (titlePt !== 44) {
         reqs.push({
