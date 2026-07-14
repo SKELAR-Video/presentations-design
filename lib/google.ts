@@ -2090,6 +2090,20 @@ export async function buildPresentation(
     }
   }
 
+  // Step 2.51: Downgrade badges → title_body if any ПУНКТИ item exceeds 20 chars.
+  // LLM sometimes copies long source text verbatim despite prompt instructions.
+  for (const slide of plan.slides) {
+    if (slide.composition !== 'badges') continue
+    const items = (slide.slots['ПУНКТИ'] ?? '').split('\n').map(s => s.trim()).filter(Boolean)
+    const hasOverflow = items.some(item => item.length > 20)
+    if (hasOverflow) {
+      console.warn(`[badges-downgrade] item exceeds 20 chars — switching to title_body`)
+      slide.composition = 'title_body'
+      slide.slots['ТЕКСТ'] = items.join('\n')
+      delete slide.slots['ПУНКТИ']
+    }
+  }
+
   // Step 2.6: Log max_chars violations — DO NOT truncate.
   // Text content belongs to the user; silent truncation corrupts meaning.
   // Violations surface as FAIL in validateDeck (max_chars check).
