@@ -2846,6 +2846,9 @@ export async function buildPresentation(
     const pageId = planPageIds[i]
     if (!pageId) continue
     const compId = plan.slides[i].composition
+    // columns_flex column boxes are deleted and recreated in buildColumnsFlexRequests.
+    // Referencing their template objectIds here would cause "not found" in the fixedRange batch.
+    if (compId === 'columns_flex') continue
     const slots  = plan.slides[i].slots
     const comp   = getComposition(compId)
     if (!comp) continue
@@ -2922,6 +2925,8 @@ export async function buildPresentation(
       if (compId === 'kpi_cards' && kpiAdaptiveSlides.has(i)) continue
       // Skip badges ПУНКТИ — placeholder is deleted and replaced with pill shapes
       if (compId === 'badges' && slotName === 'ПУНКТИ') continue
+      // Skip columns_flex column slots — boxes are deleted and recreated by buildColumnsFlexRequests
+      if (compId === 'columns_flex' && slotName.startsWith('КОЛОНКА_')) continue
       // Skip elements already scheduled for deletion
       if (_pendingDeletes.has(el.objectId)) continue
 
