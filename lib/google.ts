@@ -188,11 +188,12 @@ function pickTitlePt(text: string, wPx: number): TitlePt {
 // Compute actual available height for ТЕКСТ given a (possibly long) title.
 // Uses exact text height (no minimum floor) so textY is as high as possible.
 function bentoRightTextAvailH(titleText: string): number {
-  const titlePt = pickTitlePt(titleText.trim(), _LTW)
-  const tLines  = estimateLineCount(titleText.trim(), _LTW, titlePt)
-  const dynH    = Math.ceil(tLines * lineH(titlePt))  // exact height, no floor
-  const textY   = _PAD + dynH + TITLE_GAP
-  const logoY   = _H_SLIDE - _PAD - _LOGO_H
+  const titlePt  = pickTitlePt(titleText.trim(), _LTW)
+  const tLines   = estimateLineCount(titleText.trim(), _LTW, titlePt)
+  const logoY    = _H_SLIDE - _PAD - _LOGO_H
+  const maxTitleH = logoY - TITLE_GAP - _PAD - 20  // 710 — mirrors buildBentoRightLeftColumnRequests cap
+  const dynH     = Math.min(Math.ceil(tLines * lineH(titlePt)), maxTitleH)
+  const textY    = _PAD + dynH + TITLE_GAP
   return Math.max(50, logoY - 20 - textY)
 }
 
@@ -975,9 +976,10 @@ function buildBentoRightLeftColumnRequests(
   // Title font stepping: largest pt where longest word fits in 830px (no mid-word break).
   const titlePt    = pickTitlePt(titleText, _LTW)
   const titleLines = estimateLineCount(titleText, _LTW, titlePt)
-  const titleH     = Math.ceil(titleLines * lineH(titlePt))  // exact — no floor → empty_space = 0
-  const textY      = _PAD + titleH + TITLE_GAP
   const logoY      = _H_SLIDE - _PAD - _LOGO_H  // 890
+  const maxTitleH  = logoY - TITLE_GAP - _PAD - 20  // 710 — cap: textY ≤ 870, collapsed ТЕКСТ bottom = 890 = logoY (no logo overlap)
+  const titleH     = Math.min(Math.ceil(titleLines * lineH(titlePt)), maxTitleH)
+  const textY      = _PAD + titleH + TITLE_GAP
   const textMaxH   = Math.max(1, logoY - 20 - textY)
 
   // ── Audit log ────────────────────────────────────────────────────────────────
