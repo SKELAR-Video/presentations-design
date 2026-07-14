@@ -2542,6 +2542,8 @@ export async function buildPresentation(
 
   // Font-size auto-shrink + colon-split colouring.
   // Runs AFTER replaceAllText — object IDs stay valid, text is already real content.
+  // FIXED_RANGE requests are isolated in a separate batch so a bad endIndex never kills the main batch.
+  const fixedRangeStyleRequests: object[] = []
   const _WHITE = { red: 1, green: 1, blue: 1 }
   // Save per-slide expected card pts for readDeckFacts verification.
   const expectedCardPts = new Map<number, Record<string, number>>()
@@ -2589,7 +2591,7 @@ export async function buildPresentation(
           },
         })
         if (split.valueEnd > 0) {
-          requests.push({
+          fixedRangeStyleRequests.push({
             updateTextStyle: {
               objectId: el.objectId,
               style: {
@@ -2615,7 +2617,7 @@ export async function buildPresentation(
         // Plain colon-split: prefix up to and including ":" → WHITE
         const colonIdx = slotValue.indexOf(':')
         if (colonIdx >= 0 && colonIdx + 1 <= slotValue.length) {
-          requests.push({
+          fixedRangeStyleRequests.push({
             updateTextStyle: {
               objectId: el.objectId,
               style: { foregroundColor: { opaqueColor: { rgbColor: _WHITE } } },
@@ -2704,7 +2706,7 @@ export async function buildPresentation(
           console.error(`[colon-split] endIndex ${endIdx} > slotValue.length ${slotValue.length} for ${compId}/${slot.name} — skipping`)
           continue
         }
-        requests.push({
+        fixedRangeStyleRequests.push({
           updateTextStyle: {
             objectId: el.objectId,
             style: { foregroundColor: { opaqueColor: { rgbColor: _WHITE } } },
@@ -2859,6 +2861,21 @@ export async function buildPresentation(
       presentationId,
       requestBody: { requests },
     })
+  }
+
+  // FIXED_RANGE colon-split colouring — separate batch so a bad endIndex never aborts text replacement.
+  // If this fails (e.g. a token was not replaced and text is shorter than expected), log and continue.
+  if (fixedRangeStyleRequests.length > 0) {
+    try {
+      await slidesApi.presentations.batchUpdate({
+        presentationId,
+        requestBody: { requests: fixedRangeStyleRequests },
+      })
+      console.log(`[colon-style] FIXED_RANGE batch ok (${fixedRangeStyleRequests.length} requests)`)
+    } catch (styleErr: unknown) {
+      const msg = styleErr instanceof Error ? styleErr.message : String(styleErr)
+      console.warn('[colon-style] FIXED_RANGE batch failed — colon colouring skipped:', msg)
+    }
   }
 
   // Background images — separate batch so a bad URL never breaks text replacement
