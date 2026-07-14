@@ -88,6 +88,19 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     ],
   },
   {
+    id: 'columns_flex',
+    name: 'Гнучкі колонки (2–4)',
+    when_to_use: '2–4 паралельних пункти або кроки — підходить коли контент природно ділиться на 2, 3 або 4 рівних частини. Ширина колонок підлаштовується автоматично. КОЛОНКА_3 і КОЛОНКА_4 — опціональні.',
+    themes: ['dark'],
+    slots: [
+      { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 60, style: 'h1' },
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 140, style: 'body' },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 140, style: 'body' },
+      { name: 'КОЛОНКА_3', type: 'text', max_chars: 140, style: 'body', optional: true },
+      { name: 'КОЛОНКА_4', type: 'text', max_chars: 120, style: 'body', optional: true },
+    ],
+  },
+  {
     id: 'kpi_cards',
     name: 'KPI-картки',
     when_to_use: 'набір метрик (2–4 картки). ЗНАЧЕННЯ = тільки число/одиниця ≤10 символів («35», «2M+», «42%»). ПІДПИС = що це число означає.',

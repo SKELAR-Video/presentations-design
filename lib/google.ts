@@ -1782,7 +1782,7 @@ async function readDeckFacts(
 
 const VARIANT_GROUPS: readonly (readonly string[])[] = [
   ['two_columns', 'bento_right_2'],
-  ['three_columns', 'bento_right_3', 'three_columns_num'],
+  ['three_columns', 'bento_right_3', 'three_columns_num', 'columns_flex'],
   ['bento_right_2x2', 'bento_bottom_4'],
 ]
 
@@ -1938,6 +1938,122 @@ function buildThreeColumnsNumRequests(pageId: string): object[] {
   return reqs
 }
 
+// columns_flex: dynamic 2–4 column layout with gray "(N)" labels.
+// Deletes the three_columns_num template column boxes and recreates N fresh boxes
+// at dynamic widths. Title stays in the template (already filled via replaceAllText).
+function buildColumnsFlexRequests(
+  pageId: string,
+  n: number,
+  colTexts: string[],
+  templateColIds: (string | undefined)[],
+): object[] {
+  const _CF_GAP   = 50
+  const _CF_X0    = _PAD        // 100
+  const _CF_UW    = _UW         // 1720
+  const _CF_NUM_Y = 411         // matches three_columns_num pill Y
+  const _CF_NUM_H = 90
+  const _CF_COL_Y = 540
+  const _CF_COL_H = _H_SLIDE - _PAD - _CF_COL_Y  // 440
+
+  const colW = Math.floor((_CF_UW - (n - 1) * _CF_GAP) / n)
+  const reqs: object[] = []
+
+  // Delete template column text boxes
+  for (const objId of templateColIds) {
+    if (objId) reqs.push({ deleteObject: { objectId: objId } })
+  }
+
+  const _MUTED_CF = _BADGE_FG   // #A2A6B1
+
+  for (let k = 0; k < n; k++) {
+    const cx  = _CF_X0 + k * (colW + _CF_GAP)
+    const numId = `${pageId}_cf_num${k + 1}`
+    const colId = `${pageId}_cf_col${k + 1}`
+
+    // "(N)" label in muted gray
+    reqs.push(
+      {
+        createShape: {
+          objectId: numId,
+          shapeType: 'TEXT_BOX',
+          elementProperties: {
+            pageObjectId: pageId,
+            size: {
+              width:  { magnitude: _eL(Math.min(colW, 200)), unit: 'EMU' },
+              height: { magnitude: _eL(_CF_NUM_H), unit: 'EMU' },
+            },
+            transform: {
+              scaleX: 1, shearX: 0, translateX: _eL(cx),
+              shearY: 0, scaleY: 1, translateY: _eL(_CF_NUM_Y),
+              unit: 'EMU',
+            },
+          },
+        },
+      },
+      { insertText: { objectId: numId, insertionIndex: 0, text: `(${k + 1})` } },
+      {
+        updateTextStyle: {
+          objectId: numId,
+          style: {
+            fontSize: { magnitude: 18, unit: 'PT' },
+            bold: false,
+            foregroundColor: { opaqueColor: { rgbColor: _MUTED_CF } },
+            weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
+          },
+          fields: 'fontSize,bold,foregroundColor,weightedFontFamily',
+          textRange: { type: 'ALL' },
+        },
+      },
+    )
+
+    // Column text box in white
+    reqs.push(
+      {
+        createShape: {
+          objectId: colId,
+          shapeType: 'TEXT_BOX',
+          elementProperties: {
+            pageObjectId: pageId,
+            size: {
+              width:  { magnitude: _eL(colW), unit: 'EMU' },
+              height: { magnitude: _eL(_CF_COL_H), unit: 'EMU' },
+            },
+            transform: {
+              scaleX: 1, shearX: 0, translateX: _eL(cx),
+              shearY: 0, scaleY: 1, translateY: _eL(_CF_COL_Y),
+              unit: 'EMU',
+            },
+          },
+        },
+      },
+      { insertText: { objectId: colId, insertionIndex: 0, text: colTexts[k] } },
+      {
+        updateTextStyle: {
+          objectId: colId,
+          style: {
+            fontSize: { magnitude: 18, unit: 'PT' },
+            bold: false,
+            foregroundColor: { opaqueColor: { rgbColor: { red: 1, green: 1, blue: 1 } } },
+            weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
+          },
+          fields: 'fontSize,bold,foregroundColor,weightedFontFamily',
+          textRange: { type: 'ALL' },
+        },
+      },
+      {
+        updateParagraphStyle: {
+          objectId: colId,
+          style: { lineSpacing: 118 },
+          fields: 'lineSpacing',
+          textRange: { type: 'ALL' },
+        },
+      },
+    )
+  }
+
+  return reqs
+}
+
 function makeVariantPillRequests(pillId: string, pageId: string, variantIdx: number): object[] {
   const PILL_W = 500
   const PILL_H = 70
@@ -2084,6 +2200,13 @@ export async function buildPresentation(
       bento_right_2x2: { 0: 'title_body', 1: 'title_body', 2: 'bento_right_2', 3: 'bento_right_3' },
       two_columns:     { 0: 'title_body', 1: 'title_body' },
       three_columns:   { 0: 'title_body', 1: 'title_body', 2: 'two_columns' },
+    }
+    // columns_flex: needs ≥2 filled КОЛОНКА_N; otherwise downgrade to title_body.
+    // Handled separately since it's not in BENTO_TOKENS (avoid bento layout interference).
+    for (const slide of plan.slides) {
+      if (slide.composition !== 'columns_flex') continue
+      const filled = ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3', 'КОЛОНКА_4'].filter(t => !!slide.slots[t]).length
+      if (filled < 2) slide.composition = 'title_body'
     }
     for (const slide of plan.slides) {
       const tokens = BENTO_TOKENS[slide.composition]
@@ -2240,9 +2363,13 @@ export async function buildPresentation(
   const compUsage: Record<string, number> = {}
   const toDuplicate: Array<{ sourceId: string; planIndex: number }> = []
 
+  // columns_flex reuses three_columns_num template (same ЗАГОЛОВОК + 3-column layout).
+  // The custom rendering step deletes and recreates the column text boxes dynamically.
+  const TEMPLATE_ALIAS: Record<string, string> = { columns_flex: 'three_columns_num' }
+
   for (let i = 0; i < plan.slides.length; i++) {
     const compId = plan.slides[i].composition
-    const available = compMap[compId] ?? []
+    const available = compMap[TEMPLATE_ALIAS[compId] ?? compId] ?? []
     const useIdx = compUsage[compId] ?? 0
     compUsage[compId] = useIdx + 1
 
@@ -2517,6 +2644,25 @@ export async function buildPresentation(
     requests.push(...buildThreeColumnsNumRequests(pageId))
   }
 
+  // ── columns_flex: delete template columns, build N dynamic white columns + gray "(N)" labels ──
+  for (let i = 0; i < plan.slides.length; i++) {
+    if (plan.slides[i].composition !== 'columns_flex') continue
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    const slots = plan.slides[i].slots
+    const colTexts: string[] = []
+    const templateColIds: (string | undefined)[] = []
+    for (let k = 1; k <= 4; k++) {
+      const val = slots[`КОЛОНКА_${k}`]
+      if (val) colTexts.push(val)
+      templateColIds.push(slotObjectIds[i]?.[`КОЛОНКА_${k}`])
+    }
+    const n = colTexts.length
+    if (n < 2) continue
+    requests.push(...buildColumnsFlexRequests(pageId, n, colTexts, templateColIds))
+    console.log(`[columns_flex] slide ${i + 1}: ${n} columns, colW=${Math.floor((1720 - (n - 1) * 50) / n)}px`)
+  }
+
   // ── Title logo-safe resize: clamp ЗАГОЛОВОК to _TITLE_W=1610 ────────────────────
   // Fixes old-master slides (title right=1820) without requiring master regeneration.
   // Cover / bento_right / section / closing / title_body: handled above by their float functions.
@@ -2524,7 +2670,7 @@ export async function buildPresentation(
     const compId = plan.slides[i].composition
     if (compId === 'cover' || compId === 'cover_title_only' || compId.startsWith('bento_right_') ||
         compId === 'section' || compId === 'section_red' || compId === 'closing' ||
-        compId === 'title_body' || compId === 'badges' || compId === 'three_columns_num') continue
+        compId === 'title_body' || compId === 'badges' || compId === 'three_columns_num' || compId === 'columns_flex') continue
     const titleObjId = slotObjectIds[i]?.['ЗАГОЛОВОК']
     if (!titleObjId) continue
     const pageId = planPageIds[i]
