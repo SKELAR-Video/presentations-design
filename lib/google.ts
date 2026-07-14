@@ -2588,13 +2588,17 @@ export async function buildPresentation(
 
       const slotValue = pSlots[matchedToken] ?? ''
 
-      // Value+label (number + description) OR plain colon-split
+      // Value+label (number + description) OR plain colon-split.
+      // actualLen = length of the string replaceAllText will insert:
+      //   replaceAllText uses stripTrailingPeriod(pSlots[tok]) for BENTO_TOKEN slots,
+      //   then addNbsp (same code-unit count). Any text transformation that ran
+      //   before this point (compactNumber, de-dup, stripTrailingPeriod) is already
+      //   reflected in pSlots[matchedToken], so actualLen is the post-transform length.
+      const actualLen = stripTrailingPeriod(slotValue).length
       const split = splitValueLabel(slotValue)
       if (split) {
         // Step 1 (ALL): label style for the whole box — 14pt, bold:false.
-        // Step 2 (FIXED_RANGE [0, valueEnd]): override value portion — large pt, white.
-        // This avoids a second FIXED_RANGE with endIndex:slotValue.length that can exceed
-        // actual text length when stripTrailingPeriod shortens the slide text.
+        // Step 2 (FIXED_RANGE [0, safeEnd]): override value portion — large pt, white.
         const valuePt = BENTO_VALUE_PT[compId] ?? 36
         requests.push({
           updateTextStyle: {
@@ -2604,7 +2608,8 @@ export async function buildPresentation(
             textRange: { type: 'ALL' },
           },
         })
-        if (split.valueEnd > 0) {
+        const safeEnd = Math.min(split.valueEnd, actualLen)
+        if (safeEnd > 0) {
           fixedRangeStyleRequests.push({
             updateTextStyle: {
               objectId: el.objectId,
@@ -2614,7 +2619,7 @@ export async function buildPresentation(
                 foregroundColor: { opaqueColor: { rgbColor: _WHITE } },
               },
               fields: 'fontSize,bold,foregroundColor',
-              textRange: { type: 'FIXED_RANGE', startIndex: 0, endIndex: split.valueEnd },
+              textRange: { type: 'FIXED_RANGE', startIndex: 0, endIndex: safeEnd },
             },
           })
         }
@@ -2630,13 +2635,14 @@ export async function buildPresentation(
         })
         // Plain colon-split: prefix up to and including ":" → WHITE
         const colonIdx = slotValue.indexOf(':')
-        if (colonIdx >= 0 && colonIdx + 1 <= slotValue.length) {
+        const safeColonEnd = Math.min(colonIdx + 1, actualLen)
+        if (colonIdx >= 0 && safeColonEnd > 0) {
           fixedRangeStyleRequests.push({
             updateTextStyle: {
               objectId: el.objectId,
               style: { foregroundColor: { opaqueColor: { rgbColor: _WHITE } } },
               fields: 'foregroundColor',
-              textRange: { type: 'FIXED_RANGE', startIndex: 0, endIndex: colonIdx + 1 },
+              textRange: { type: 'FIXED_RANGE', startIndex: 0, endIndex: safeColonEnd },
             },
           })
         }
@@ -2712,13 +2718,14 @@ export async function buildPresentation(
           .map(te => te.textRun?.content ?? '').join('')
         if (!elText.includes(`{{${slot.name}}}`)) continue
 
-        // Guard: endIndex must not exceed slotValue.length (≡ max possible text length in slide).
-        // colonIdx < slotValue.length always, so colonIdx+1 ≤ slotValue.length.
-        // Log a warning if the invariant somehow breaks — it would mean replaceAllText failed.
-        const endIdx = colonIdx + 1
-        if (endIdx > slotValue.length) {
-          console.error(`[colon-split] endIndex ${endIdx} > slotValue.length ${slotValue.length} for ${compId}/${slot.name} — skipping`)
-          continue
+        // Clamp endIndex to actual text length that replaceAllText will insert.
+        // slotValue reflects all pre-batch mutations (compactNumber, de-dup, etc.).
+        // addNbsp (applied in replaceAllText loop) keeps the same code-unit count.
+        const rawEnd = colonIdx + 1
+        const endIdx = Math.min(rawEnd, slotValue.length)
+        if (endIdx <= 0) continue
+        if (rawEnd !== endIdx) {
+          console.warn(`[colon-split] clamped endIndex ${rawEnd}→${endIdx} for ${compId}/${slot.name}`)
         }
         fixedRangeStyleRequests.push({
           updateTextStyle: {
