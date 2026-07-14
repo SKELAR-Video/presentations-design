@@ -2365,13 +2365,16 @@ export async function buildPresentation(
 
   // columns_flex reuses three_columns_num template (same ЗАГОЛОВОК + 3-column layout).
   // The custom rendering step deletes and recreates the column text boxes dynamically.
+  // IMPORTANT: compUsage must be keyed by effectiveCompId so that columns_flex and
+  // three_columns_num compete for the same pool of template slides (avoiding duplicate pageIds).
   const TEMPLATE_ALIAS: Record<string, string> = { columns_flex: 'three_columns_num' }
 
   for (let i = 0; i < plan.slides.length; i++) {
     const compId = plan.slides[i].composition
-    const available = compMap[TEMPLATE_ALIAS[compId] ?? compId] ?? []
-    const useIdx = compUsage[compId] ?? 0
-    compUsage[compId] = useIdx + 1
+    const effectiveCompId = TEMPLATE_ALIAS[compId] ?? compId
+    const available = compMap[effectiveCompId] ?? []
+    const useIdx = compUsage[effectiveCompId] ?? 0
+    compUsage[effectiveCompId] = useIdx + 1
 
     if (available[useIdx]) {
       planPageIds.push(available[useIdx])
