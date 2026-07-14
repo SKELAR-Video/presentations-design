@@ -250,12 +250,17 @@ const _GITHUB_BG_BASE = 'https://raw.githubusercontent.com/SKELAR-Video/presenta
 const _BG_COUNT = 6
 function getBgBaseUrl(): string {
   if (process.env.BG_BASE_URL) return process.env.BG_BASE_URL.replace(/\/?$/, '/')
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}/assets/backgrounds/`
+  // VERCEL_PROJECT_PRODUCTION_URL is the stable production hostname (e.g. my-app.vercel.app).
+  // VERCEL_URL is the per-deployment hostname — also works but changes each deploy.
+  const host = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL
+  if (host) return `https://${host}/assets/backgrounds/`
   return _GITHUB_BG_BASE
 }
 function randomCoverBg(): string {
   const idx = Math.floor(Math.random() * _BG_COUNT)
-  return `${getBgBaseUrl()}Mountain%20${idx}.png`
+  const url = `${getBgBaseUrl()}Mountain%20${idx}.png`
+  console.log(`[bg] image URL: ${url}`)
+  return url
 }
 
 let _logoUrlCache: string | undefined
