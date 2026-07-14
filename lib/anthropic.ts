@@ -495,17 +495,37 @@ ${sheetSummary}
 
       const raw = sheetFrags[0]
       let subFrags: string[] = []
-      const bySemi  = raw.split(/;\s+/).map(s => s.trim()).filter(s => s.length > 2)
-      if (bySemi.length >= 2) { subFrags = bySemi }
+
+      // 1. Semicolons — most reliable list separator
+      const bySemi = raw.split(/;\s*/).map(s => s.trim()).filter(s => s.length > 5)
+      if (bySemi.length >= 2) subFrags = bySemi
+
+      // 2. Periods followed by a space (sentence boundary)
       if (!subFrags.length) {
-        const bySent = raw.split(/\.\s+(?=[А-ЯҐІЇЄа-яґіїє])/).map(s => s.trim()).filter(s => s.length > 2)
+        const bySent = raw.split(/\.\s+/).map(s => s.trim()).filter(s => s.length > 5)
         if (bySent.length >= 2) subFrags = bySent
       }
+
+      // 3. Any comma — broad fallback, keep only chunks > 15 chars to filter noise
       if (!subFrags.length) {
-        const byComma = raw.split(/,\s+(?=[А-ЯҐІЇЄа-яґіїє])/).map(s => s.trim()).filter(s => s.length > 2)
+        const byComma = raw.split(/,\s*/).map(s => s.trim()).filter(s => s.length > 15)
         if (byComma.length >= 2) subFrags = byComma
       }
-      if (subFrags.length < 2) return
+
+      // 4. Hard fallback: assign entire fragment to the first non-optional body slot;
+      //    clears all duplicated slots so the slide at least renders something useful.
+      if (subFrags.length < 2) {
+        const compDef4 = PHASE0_COMPOSITIONS.find(c => c.id === slide.composition)
+        if (!compDef4) return
+        const bodySlot = compDef4.slots.find(
+          sl => sl.type === 'text' && sl.name !== 'ЗАГОЛОВОК' && !sl.name.includes('ПІДПИС') && !sl.optional
+        ) ?? compDef4.slots.find(sl => sl.type === 'text')
+        if (!bodySlot) return
+        for (const k of Object.keys(slide.slots)) delete slide.slots[k]
+        slide.slots[bodySlot.name] = raw
+        console.warn(`[final-split] slide ${i + 1} (${slide.composition}): no delimiter → assigned all to ${bodySlot.name}`)
+        return
+      }
 
       const compDef = PHASE0_COMPOSITIONS.find(c => c.id === slide.composition)
       if (!compDef) return
