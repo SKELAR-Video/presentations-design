@@ -13,6 +13,14 @@ export default function HomePage() {
     if (!docUrl.trim()) { setError('Додайте посилання'); return }
     setError('')
     setLoading(true)
+    async function safeJson(res: Response, label: string) {
+      const text = await res.text()
+      if (!text.trim()) throw new Error(`${label}: порожня відповідь сервера (status ${res.status})`)
+      try { return JSON.parse(text) } catch {
+        throw new Error(`${label}: некоректний JSON (status ${res.status}): ${text.slice(0, 300)}`)
+      }
+    }
+
     try {
       // Step 1: fetch content from the link
       const fetchRes = await fetch('/api/fetch-doc', {
@@ -20,7 +28,7 @@ export default function HomePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: docUrl }),
       })
-      const fetchData = await fetchRes.json()
+      const fetchData = await safeJson(fetchRes, 'fetch-doc')
       if (!fetchRes.ok) throw new Error(fetchData.error ?? 'Не вдалося завантажити документ')
       // Step 2: map to slide plan
       // gslides → 1:1 mode (text preserved verbatim, one slide per source slide)
@@ -35,7 +43,7 @@ export default function HomePage() {
             : { text: fetchData.text, theme: 'dark' }
         ),
       })
-      const mapData = await mapRes.json()
+      const mapData = await safeJson(mapRes, 'map')
       if (!mapRes.ok) throw new Error(mapData.error ?? 'Помилка аналізу')
 
       const genRes = await fetch('/api/generate', {
@@ -43,7 +51,7 @@ export default function HomePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan: mapData.plan, title: 'SKELAR Presentation' }),
       })
-      const genData = await genRes.json()
+      const genData = await safeJson(genRes, 'generate')
       if (!genRes.ok) throw new Error(genData.error ?? 'Помилка генерації деку')
 
       sessionStorage.setItem('deck_url', genData.url)

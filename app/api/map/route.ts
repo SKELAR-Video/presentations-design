@@ -20,8 +20,14 @@ export async function POST(req: NextRequest) {
   const theme = body.theme ?? 'dark'
 
   if (body.mode === '1to1' && body.slides?.length) {
-    const plan = await mapSlides1to1(body.slides, theme)
-    return NextResponse.json({ plan })
+    try {
+      const plan = await mapSlides1to1(body.slides, theme)
+      return NextResponse.json({ plan })
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e)
+      console.error('[map/1to1] error:', message)
+      return NextResponse.json({ error: message }, { status: 500 })
+    }
   }
 
   if (!body.text?.trim()) {
