@@ -1659,8 +1659,11 @@ function getServerGoogleAuth() {
     throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY не містить JSON-об\'єкту (не знайдено { }). Вставте весь вміст JSON-файлу сервіс-акаунту.')
   }
   let credentials: unknown
+  const extracted = keyJson.slice(start, end + 1)
+  const first5 = Array.from({ length: Math.min(5, extracted.length) }, (_, i) => extracted.charCodeAt(i))
+  console.log(`[service-account] extracted len=${extracted.length} first5charCodes=${JSON.stringify(first5)}`)
   try {
-    credentials = JSON.parse(keyJson.slice(start, end + 1))
+    credentials = JSON.parse(extracted)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     throw new Error(`GOOGLE_SERVICE_ACCOUNT_KEY містить некоректний JSON: ${msg}`)
