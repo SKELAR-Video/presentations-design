@@ -69,16 +69,48 @@ export default function ResultPage() {
   )
 }
 
+function formatDeckFacts(report: DeckFactReport): string {
+  const lines: string[] = [`Факти з файлу\n${report.pass ? 'PASS' : 'FAIL'}`]
+  for (const sf of report.slides.filter(s => s.facts.length > 0)) {
+    lines.push(`\n${sf.pass ? '✓' : '✗'} Slide ${sf.slideIndex + 1} [${sf.composition}]`)
+    for (const f of sf.facts) {
+      if (f.expectedFontSize !== undefined) {
+        const match = f.fontSize === f.expectedFontSize
+        lines.push(`${match ? '✓' : '✗'} ${f.slotName}: "${f.text}" — ${f.fontSize ?? '?'}pt${!match ? ` (expected ${f.expectedFontSize}pt)` : ''}`)
+      } else {
+        lines.push(`${f.pass ? '✓' : '✗'} ${f.slotName}: ${f.pass ? `"${f.text}"` : (f.reason ?? 'FAIL')}`)
+      }
+    }
+  }
+  return lines.join('\n')
+}
+
 function DeckFactsPanel({ report }: { report: DeckFactReport }) {
   const slidesWithFacts = report.slides.filter(s => s.facts.length > 0)
+  const [copied, setCopied] = useState(false)
+
+  function handleCopy() {
+    navigator.clipboard.writeText(formatDeckFacts(report)).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }
 
   return (
     <div className="text-left space-y-3 text-xs font-mono border border-[#292D39] rounded-xl p-4">
       <div className="flex items-center justify-between mb-1">
         <p className="text-[#A2A6B1] font-sans text-sm font-medium">Факти з файлу</p>
-        <span className={`text-xs font-bold ${report.pass ? 'text-green-400' : 'text-red-400'}`}>
-          {report.pass ? 'PASS' : 'FAIL'}
-        </span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleCopy}
+            className="text-xs text-[#A2A6B1] hover:text-white transition-colors px-2 py-0.5 rounded border border-[#3B404C] hover:border-[#A2A6B1]"
+          >
+            {copied ? '✓ скопійовано' : 'copy'}
+          </button>
+          <span className={`text-xs font-bold ${report.pass ? 'text-green-400' : 'text-red-400'}`}>
+            {report.pass ? 'PASS' : 'FAIL'}
+          </span>
+        </div>
       </div>
 
       {slidesWithFacts.length === 0 && (
@@ -123,10 +155,38 @@ function FactLine({ f }: { f: DeckFact }) {
   )
 }
 
+function formatValidation(slides: SlideValidation[]): string {
+  const lines: string[] = ['Статичний валідатор (FAILs):']
+  for (const sv of slides) {
+    lines.push(`\n${sv.pass ? '✅' : '❌'} Slide ${sv.slideIndex + 1} — ${sv.composition}`)
+    for (const c of sv.checks.filter(ch => !ch.pass)) {
+      lines.push(`  ${c.check}: ${c.detail ?? 'FAIL'}`)
+    }
+  }
+  return lines.join('\n')
+}
+
 function ValidationDetails({ slides }: { slides: SlideValidation[] }) {
+  const [copied, setCopied] = useState(false)
+
+  function handleCopy() {
+    navigator.clipboard.writeText(formatValidation(slides)).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }
+
   return (
     <div className="text-left space-y-2 text-xs font-mono border border-[#292D39] rounded-xl p-4">
-      <p className="text-[#A2A6B1] mb-3">Статичний валідатор (FAILs):</p>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-[#A2A6B1]">Статичний валідатор (FAILs):</p>
+        <button
+          onClick={handleCopy}
+          className="text-xs text-[#A2A6B1] hover:text-white transition-colors px-2 py-0.5 rounded border border-[#3B404C] hover:border-[#A2A6B1]"
+        >
+          {copied ? '✓ скопійовано' : 'copy'}
+        </button>
+      </div>
       {slides.map(sv => (
         <div key={sv.slideIndex} className="space-y-0.5">
           <p className={`font-semibold ${sv.pass ? 'text-green-400' : 'text-yellow-400'}`}>

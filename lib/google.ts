@@ -312,11 +312,11 @@ function getLogoWordmarkUrl(): string {
 // Only triggers when the first part contains a digit (metric/number indicator).
 function splitValueLabel(text: string): { valueEnd: number; labelStart: number } | null {
   const nlIdx = text.indexOf('\n')
-  if (nlIdx > 0 && nlIdx <= 35 && /\d/.test(text.slice(0, nlIdx))) {
+  if (nlIdx > 0 && nlIdx <= 12 && /^\s*[\d$€£±~≈<>]/.test(text.slice(0, nlIdx))) {
     return { valueEnd: nlIdx, labelStart: nlIdx + 1 }
   }
   const colonIdx = text.indexOf(':')
-  if (colonIdx > 0 && colonIdx <= 35 && /\d/.test(text.slice(0, colonIdx))) {
+  if (colonIdx > 0 && colonIdx <= 12 && /^\s*[\d$€£±~≈<>]/.test(text.slice(0, colonIdx))) {
     const labelStart = text[colonIdx + 1] === ' ' ? colonIdx + 2 : colonIdx + 1
     return { valueEnd: colonIdx + 1, labelStart }  // include ":" in value range
   }
