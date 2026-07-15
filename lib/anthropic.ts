@@ -451,6 +451,7 @@ ${sheetSummary}
 3. Якщо аркуш містить 1 довгий рядок-список — ЗМІНИ composition на title_body або badges і призначай весь fragment в 1 слот (ТЕКСТ або ПУНКТИ). НЕ дублюй один fragment у кількох слотах.
 4. Для kpi_cards: ТЕКСТ ≤70 символів — якщо вміст аркуша довший і немає окремих числових значень/підписів (ЗНАЧЕННЯ ≤10 символів), ОБОВ'ЯЗКОВО зміни composition на title_body.
 5. НЕ змінюй кількість слайдів і НЕ зливай аркуші.
+6. Якщо в аркуші більше фрагментів ніж слотів у будь-якій одній композиції (наприклад, 5+ пронумерованих пунктів agenda) — ОБОВ'ЯЗКОВО використовуй title_body і поклади ПЕРШИЙ фрагмент у ЗАГОЛОВОК, а решту через "\\n" в ТЕКСТ. НЕ кидай жоден фрагмент без слота.
 Поверни виправлений JSON з РІВНО ${mapping.slides.length} слайдами.`
 
     const ciRetry = await client.messages.create({
@@ -492,8 +493,19 @@ ${sheetSummary}
       )
     })
     if (anyFail) {
-      const lost = missing.flatMap((m, i) => m.map(t => `sheet ${i + 1}: "${t.slice(0, 80)}"`))
-      throw new Error(`[content-integrity] Контент втрачено після retry. Фрагменти без слота:\n${lost.join('\n')}`)
+      // Deterministic fallback: downgrade slides with missing fragments to title_body,
+      // concatenating all sheet fragments so no content is lost.
+      slides.forEach((slide, i) => {
+        if ((missing[i]?.length ?? 0) === 0) return
+        const [start, end] = sheetRanges[i] ?? [0, -1]
+        const sheetFrags = fragments.slice(start, end + 1).filter(Boolean)
+        slide.composition = 'title_body'
+        slide.slots = {}
+        if (sheetFrags[0]) slide.slots['ЗАГОЛОВОК'] = sheetFrags[0]
+        if (sheetFrags.length > 1) slide.slots['ТЕКСТ'] = sheetFrags.slice(1).join('\n')
+        missing[i] = []
+        console.warn(`[content-integrity-fallback] slide ${i + 1}: downgraded to title_body, preserved ${sheetFrags.length} frags`)
+      })
     }
   }
 
