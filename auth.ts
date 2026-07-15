@@ -34,7 +34,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             'openid',
             'email',
             'profile',
-            'https://www.googleapis.com/auth/presentations',
+            'https://www.googleapis.com/auth/documents.readonly',
             'https://www.googleapis.com/auth/drive.file',
           ].join(' '),
           access_type: 'offline',
