@@ -1652,14 +1652,18 @@ function getOAuth2Client(accessToken: string) {
 function getServerGoogleAuth() {
   const keyJson = process.env.GOOGLE_SERVICE_ACCOUNT_KEY
   if (!keyJson) throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY не заданий в env — вставте JSON сервіс-акаунту в цю змінну')
-  // Strip surrounding quotes or whitespace that can appear when pasting into .env.local
-  const cleaned = keyJson.trim().replace(/^['"]|['"]$/g, '')
+  // Extract JSON object — strips BOM, quotes, whitespace, or any prefix/suffix chars
+  const start = keyJson.indexOf('{')
+  const end = keyJson.lastIndexOf('}')
+  if (start === -1 || end <= start) {
+    throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY не містить JSON-об\'єкту (не знайдено { }). Вставте весь вміст JSON-файлу сервіс-акаунту.')
+  }
   let credentials: unknown
   try {
-    credentials = JSON.parse(cleaned)
+    credentials = JSON.parse(keyJson.slice(start, end + 1))
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    throw new Error(`GOOGLE_SERVICE_ACCOUNT_KEY містить некоректний JSON: ${msg}. Перевірте що скопіювали весь JSON-файл без зайвих символів.`)
+    throw new Error(`GOOGLE_SERVICE_ACCOUNT_KEY містить некоректний JSON: ${msg}`)
   }
   return new google.auth.GoogleAuth({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
