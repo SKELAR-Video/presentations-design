@@ -2154,36 +2154,31 @@ export async function buildPresentation(
   const masterDeckId = process.env.MASTER_DECK_ID
   if (!masterDeckId) throw new Error('MASTER_DECK_ID не заданий у .env.local — оновіть його і перезапустіть сервер')
 
-  // Step 1: Copy master deck (owned by service account initially)
+  // Step 1: Copy master deck into OUTPUT_DRIVE_ID (Shared Drive) if configured,
+  // otherwise into SA's default Drive. Shared Drive has org quota — no SA quota issue.
+  const outputDriveId = process.env.OUTPUT_DRIVE_ID
   const copyRes = await drive.files.copy({
     fileId: masterDeckId,
     supportsAllDrives: true,
-    requestBody: { name: title },
+    requestBody: {
+      name: title,
+      ...(outputDriveId ? { parents: [outputDriveId] } : {}),
+    },
+    ...(outputDriveId ? { driveId: outputDriveId } : {}),
   })
   const presentationId = copyRes.data.id!
 
-  // Transfer ownership to user immediately — file counts against user's quota, not SA's.
-  // SA retains editor access after transfer and continues all Slides API operations.
+  // Share with user so they can open/edit the result
   if (userEmail) {
     try {
       await drive.permissions.create({
         fileId: presentationId,
-        transferOwnership: true,
-        moveToNewOwnersRoot: true,
+        supportsAllDrives: true,
         sendNotificationEmail: false,
-        requestBody: { role: 'owner', type: 'user', emailAddress: userEmail },
+        requestBody: { role: 'writer', type: 'user', emailAddress: userEmail },
       })
-      console.log(`[ownership] transferred ${presentationId} to ${userEmail}`)
-    } catch (ownerErr) {
-      const msg = ownerErr instanceof Error ? ownerErr.message : String(ownerErr)
-      console.warn(`[ownership] transfer failed, adding writer instead: ${msg}`)
-      try {
-        await drive.permissions.create({
-          fileId: presentationId,
-          sendNotificationEmail: false,
-          requestBody: { role: 'writer', type: 'user', emailAddress: userEmail },
-        })
-      } catch { /* best-effort */ }
+    } catch (shareErr) {
+      console.warn('[share] failed:', shareErr instanceof Error ? shareErr.message : String(shareErr))
     }
   }
 
