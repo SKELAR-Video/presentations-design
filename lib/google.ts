@@ -1652,21 +1652,13 @@ function getOAuth2Client(accessToken: string) {
 function getServerGoogleAuth() {
   const keyJson = process.env.GOOGLE_SERVICE_ACCOUNT_KEY
   if (!keyJson) throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY не заданий в env — вставте JSON сервіс-акаунту в цю змінну')
-  // Extract JSON object — strips BOM, quotes, whitespace, or any prefix/suffix chars
-  const start = keyJson.indexOf('{')
-  const end = keyJson.lastIndexOf('}')
-  if (start === -1 || end <= start) {
-    throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY не містить JSON-об\'єкту (не знайдено { }). Вставте весь вміст JSON-файлу сервіс-акаунту.')
-  }
   let credentials: unknown
-  const extracted = keyJson.slice(start, end + 1)
-  const first5 = Array.from({ length: Math.min(5, extracted.length) }, (_, i) => extracted.charCodeAt(i))
-  console.log(`[service-account] extracted len=${extracted.length} first5charCodes=${JSON.stringify(first5)}`)
   try {
-    credentials = JSON.parse(extracted)
+    const decoded = Buffer.from(keyJson.trim(), 'base64').toString('utf-8')
+    credentials = JSON.parse(decoded)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    throw new Error(`GOOGLE_SERVICE_ACCOUNT_KEY містить некоректний JSON: ${msg}`)
+    throw new Error(`GOOGLE_SERVICE_ACCOUNT_KEY: помилка декодування base64 або JSON: ${msg}`)
   }
   return new google.auth.GoogleAuth({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
