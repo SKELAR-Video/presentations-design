@@ -1649,6 +1649,19 @@ function getOAuth2Client(accessToken: string) {
   return oauth2
 }
 
+function getServerGoogleAuth() {
+  const keyJson = process.env.GOOGLE_SERVICE_ACCOUNT_KEY
+  if (!keyJson) throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY не заданий в env — вставте JSON сервіс-акаунту в цю змінну')
+  return new google.auth.GoogleAuth({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    credentials: JSON.parse(keyJson) as any,
+    scopes: [
+      'https://www.googleapis.com/auth/drive',
+      'https://www.googleapis.com/auth/presentations',
+    ],
+  })
+}
+
 function getSlideNotes(slide: slides_v1.Schema$Page): string {
   return (
     slide.slideProperties?.notesPage?.pageElements
@@ -2122,13 +2135,13 @@ function makeVariantPillRequests(pillId: string, pageId: string, variantIdx: num
 }
 
 export async function buildPresentation(
-  accessToken: string,
+  userEmail: string,
   plan: SlidePlan,
   title: string,
 ): Promise<{ url: string; presentationId: string; validation: ValidationReport; deckFacts: DeckFactReport }> {
-  const auth = getOAuth2Client(accessToken)
-  const drive = google.drive({ version: 'v3', auth })
-  const slidesApi = google.slides({ version: 'v1', auth })
+  const serverAuth = getServerGoogleAuth()
+  const drive = google.drive({ version: 'v3', auth: serverAuth })
+  const slidesApi = google.slides({ version: 'v1', auth: serverAuth })
   const logoUrl = getLogoUrl()
   const masterDeckId = process.env.MASTER_DECK_ID
   if (!masterDeckId) throw new Error('MASTER_DECK_ID не заданий у .env.local — оновіть його і перезапустіть сервер')
@@ -3194,6 +3207,19 @@ export async function buildPresentation(
   }
 
   const url = `https://docs.google.com/presentation/d/${presentationId}/edit`
+
+  // Share the generated deck with the user (writer access)
+  if (userEmail) {
+    try {
+      await drive.permissions.create({
+        fileId: presentationId,
+        sendNotificationEmail: false,
+        requestBody: { role: 'writer', type: 'user', emailAddress: userEmail },
+      })
+    } catch (shareErr) {
+      console.warn('[share] failed to share with user:', shareErr instanceof Error ? shareErr.message : String(shareErr))
+    }
+  }
 
   let validation = await validateDeck(slidesApi, presentationId, plan, planPageIds)
   console.log('[validator]', validation.summary)
