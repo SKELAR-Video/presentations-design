@@ -2154,13 +2154,38 @@ export async function buildPresentation(
   const masterDeckId = process.env.MASTER_DECK_ID
   if (!masterDeckId) throw new Error('MASTER_DECK_ID не заданий у .env.local — оновіть його і перезапустіть сервер')
 
-  // Step 1: Copy master deck
+  // Step 1: Copy master deck (owned by service account initially)
   const copyRes = await drive.files.copy({
     fileId: masterDeckId,
     supportsAllDrives: true,
     requestBody: { name: title },
   })
   const presentationId = copyRes.data.id!
+
+  // Transfer ownership to user immediately — file counts against user's quota, not SA's.
+  // SA retains editor access after transfer and continues all Slides API operations.
+  if (userEmail) {
+    try {
+      await drive.permissions.create({
+        fileId: presentationId,
+        transferOwnership: true,
+        moveToNewOwnersRoot: true,
+        sendNotificationEmail: false,
+        requestBody: { role: 'owner', type: 'user', emailAddress: userEmail },
+      })
+      console.log(`[ownership] transferred ${presentationId} to ${userEmail}`)
+    } catch (ownerErr) {
+      const msg = ownerErr instanceof Error ? ownerErr.message : String(ownerErr)
+      console.warn(`[ownership] transfer failed, adding writer instead: ${msg}`)
+      try {
+        await drive.permissions.create({
+          fileId: presentationId,
+          sendNotificationEmail: false,
+          requestBody: { role: 'writer', type: 'user', emailAddress: userEmail },
+        })
+      } catch { /* best-effort */ }
+    }
+  }
 
   // Step 2: Read slides, build composition → pageId map
   const presentation = await slidesApi.presentations.get({ presentationId })
@@ -3215,19 +3240,6 @@ export async function buildPresentation(
   }
 
   const url = `https://docs.google.com/presentation/d/${presentationId}/edit`
-
-  // Share the generated deck with the user (writer access)
-  if (userEmail) {
-    try {
-      await drive.permissions.create({
-        fileId: presentationId,
-        sendNotificationEmail: false,
-        requestBody: { role: 'writer', type: 'user', emailAddress: userEmail },
-      })
-    } catch (shareErr) {
-      console.warn('[share] failed to share with user:', shareErr instanceof Error ? shareErr.message : String(shareErr))
-    }
-  }
 
   let validation = await validateDeck(slidesApi, presentationId, plan, planPageIds)
   console.log('[validator]', validation.summary)
