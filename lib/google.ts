@@ -2143,44 +2143,24 @@ function makeVariantPillRequests(pillId: string, pageId: string, variantIdx: num
 }
 
 export async function buildPresentation(
-  userEmail: string,
+  accessToken: string,
   plan: SlidePlan,
   title: string,
 ): Promise<{ url: string; presentationId: string; validation: ValidationReport; deckFacts: DeckFactReport }> {
-  const serverAuth = getServerGoogleAuth()
-  const drive = google.drive({ version: 'v3', auth: serverAuth })
-  const slidesApi = google.slides({ version: 'v1', auth: serverAuth })
+  const auth = getOAuth2Client(accessToken)
+  const drive = google.drive({ version: 'v3', auth })
+  const slidesApi = google.slides({ version: 'v1', auth })
   const logoUrl = getLogoUrl()
   const masterDeckId = process.env.MASTER_DECK_ID
   if (!masterDeckId) throw new Error('MASTER_DECK_ID не заданий у .env.local — оновіть його і перезапустіть сервер')
 
-  // Step 1: Copy master deck into OUTPUT_DRIVE_ID (Shared Drive) if configured,
-  // otherwise into SA's default Drive. Shared Drive has org quota — no SA quota issue.
-  const outputDriveId = process.env.OUTPUT_DRIVE_ID
+  // Step 1: Copy master deck — user token with drive scope, file owned by user
   const copyRes = await drive.files.copy({
     fileId: masterDeckId,
     supportsAllDrives: true,
-    requestBody: {
-      name: title,
-      ...(outputDriveId ? { parents: [outputDriveId] } : {}),
-    },
-    ...(outputDriveId ? { driveId: outputDriveId } : {}),
+    requestBody: { name: title },
   })
   const presentationId = copyRes.data.id!
-
-  // Share with user so they can open/edit the result
-  if (userEmail) {
-    try {
-      await drive.permissions.create({
-        fileId: presentationId,
-        supportsAllDrives: true,
-        sendNotificationEmail: false,
-        requestBody: { role: 'writer', type: 'user', emailAddress: userEmail },
-      })
-    } catch (shareErr) {
-      console.warn('[share] failed:', shareErr instanceof Error ? shareErr.message : String(shareErr))
-    }
-  }
 
   // Step 2: Read slides, build composition → pageId map
   const presentation = await slidesApi.presentations.get({ presentationId })

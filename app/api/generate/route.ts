@@ -9,6 +9,9 @@ export async function POST(req: NextRequest) {
   const session = await auth()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const accessToken = session.accessToken
+  if (!accessToken) return NextResponse.json({ error: 'No Google access token' }, { status: 401 })
+
   const { plan, title } = await req.json() as { plan: SlidePlan; title: string }
 
   if (!plan?.slides?.length) {
@@ -16,7 +19,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { url, presentationId, validation, deckFacts } = await buildPresentation(session.user?.email ?? '', plan, title || 'SKELAR Presentation')
+    const { url, presentationId, validation, deckFacts } = await buildPresentation(accessToken, plan, title || 'SKELAR Presentation')
     return NextResponse.json({ url, presentationId, validation, deckFacts })
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e)
