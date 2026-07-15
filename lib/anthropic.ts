@@ -132,8 +132,19 @@ JSON з рівно ${slides.length} елементами в "slides".`
   const content = message.content[0]
   if (content.type !== 'text') throw new Error('Unexpected response type from Anthropic')
   const raw = content.text.trim()
-  const json = raw.startsWith('```') ? raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '') : raw
-  const mapping = JSON.parse(json) as { slides: SlideAssignment[] }
+  let json = raw.startsWith('```') ? raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```\s*$/, '').trim() : raw
+  let mapping: { slides: SlideAssignment[] }
+  try {
+    mapping = JSON.parse(json) as { slides: SlideAssignment[] }
+  } catch {
+    const start = json.indexOf('{'), end = json.lastIndexOf('}')
+    if (start !== -1 && end > start) {
+      json = json.slice(start, end + 1)
+      mapping = JSON.parse(json) as { slides: SlideAssignment[] }
+    } else {
+      throw new SyntaxError(`No JSON object found in 1to1 LLM response (len=${json.length})`)
+    }
+  }
 
   // Build SlidePlan — text copied verbatim from source, LLM never touched it
   return {
@@ -284,8 +295,20 @@ ${fragmentsList}
   if (content.type !== 'text') throw new Error('Unexpected response type from Anthropic')
 
   const parseJSON = (raw: string) => {
-    const j = raw.startsWith('```') ? raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '') : raw
-    return JSON.parse(j) as { slides: SlideAssignment[] }
+    let s = raw.trim()
+    // Strip markdown fences
+    if (s.startsWith('```')) s = s.replace(/^```(?:json)?\n?/, '').replace(/\n?```\s*$/, '').trim()
+    // Try direct parse first
+    try { return JSON.parse(s) as { slides: SlideAssignment[] } } catch { /* fall through */ }
+    // Extract JSON object between first { and last } — handles leading/trailing prose
+    const start = s.indexOf('{')
+    const end = s.lastIndexOf('}')
+    if (start !== -1 && end > start) {
+      const extracted = s.slice(start, end + 1)
+      console.warn(`[parseJSON] extracted JSON from position ${start}..${end} (raw len=${s.length})`)
+      return JSON.parse(extracted) as { slides: SlideAssignment[] }
+    }
+    throw new SyntaxError(`No JSON object found in LLM response (len=${s.length})`)
   }
 
   let raw = content.text.trim()
