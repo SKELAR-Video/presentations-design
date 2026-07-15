@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { signOut } from 'next-auth/react'
 
 export default function HomePage() {
   const router = useRouter()
@@ -103,6 +104,15 @@ export default function HomePage() {
         >
           {loading ? 'Аналізую та генерую презентацію…' : 'Згенерувати презентацію →'}
         </button>
+
+        <div className="flex justify-end">
+          <button
+            onClick={() => signOut({ callbackUrl: '/auth/signin' })}
+            className="text-xs text-[#A2A6B1] hover:text-white transition-colors"
+          >
+            Вийти з акаунту
+          </button>
+        </div>
 
       </div>
     </main>
