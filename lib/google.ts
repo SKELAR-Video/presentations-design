@@ -1601,6 +1601,243 @@ function buildBentoRowLayoutRequests(
   return []
 }
 
+// ─── Agenda 6 layout ─────────────────────────────────────────────────────────
+// 3 cols × 2 rows. Col X: [90, 773, 1456] (pitch=683, text_w=374, dot_size=54).
+// From Figma: number=18pt MUTED, body=14pt WHITE, dot=54px RED, line=2px RED.
+// Font conversion: Figma px / 2.667 = Google Slides pt  (e.g. 48/2.667≈18, 36/2.667≈14)
+const _AG_COL_X   = [90, 773, 1456] as const
+const _AG_TEXT_W  = 374  // item text box width (px)
+const _AG_DOT_SZ  = 54   // dot ellipse diameter
+const _AG_NUM_PT  = 18   // number font size (48 Figma px / 2.667)
+const _AG_BODY_PT = 14   // body text (36 Figma px / 2.667 ≈ 13.5 → 14)
+const _AG_NUM_H   = 54   // number text box height
+const _AG_TEXT_H  = 200  // item text box height (both rows — enough for ~4 lines at 14pt)
+const _AG_LINE_X  = 90   // line left edge (left margin)
+const _AG_LINE_W  = 1740 // line width: 90 → 1830 (full content width)
+const _AG_LINE_H  = 2    // line thickness (px)
+// Y positions per row (from Figma)
+const _AG_ROWS = [
+  { numY: 337, dotY: 394, lineY: 420, textY: 487 },
+  { numY: 690, dotY: 747, lineY: 773, textY: 840 },
+] as const
+const _AG_RED_RGB   = { red: 0xFD / 255, green: 0x34 / 255, blue: 0x33 / 255 }
+const _AG_MUTED_RGB = { red: 162 / 255, green: 166 / 255, blue: 177 / 255 }
+
+function buildAgendaRequests(
+  slide: slides_v1.Schema$Page,
+  slots: Record<string, string>,
+  pageId: string,
+  slideIdx: number,
+): object[] {
+  const reqs: object[] = []
+
+  // Delete all {{ПУНКТ_N}} placeholder text boxes (tokens were NOT replaced — see skip in main loop)
+  for (const el of slide.pageElements ?? []) {
+    if (!el.objectId) continue
+    const raw = (el.shape?.text?.textElements ?? []).map(te => te.textRun?.content ?? '').join('')
+    if (/\{\{ПУНКТ_[1-6]\}\}/.test(raw)) {
+      reqs.push({ deleteObject: { objectId: el.objectId } })
+    }
+  }
+
+  const ITEMS_PER_ROW = 3
+  for (let rowIdx = 0; rowIdx < 2; rowIdx++) {
+    const row = _AG_ROWS[rowIdx]
+
+    // Horizontal red line (thin rectangle behind dots)
+    const lineId = `ag_line_${slideIdx}_r${rowIdx}`
+    reqs.push(
+      {
+        createShape: {
+          objectId: lineId,
+          shapeType: 'RECTANGLE',
+          elementProperties: {
+            pageObjectId: pageId,
+            size: {
+              width:  { magnitude: _eL(_AG_LINE_W), unit: 'EMU' },
+              height: { magnitude: _eL(_AG_LINE_H), unit: 'EMU' },
+            },
+            transform: {
+              scaleX: 1, shearX: 0, translateX: _eL(_AG_LINE_X),
+              shearY: 0, scaleY: 1, translateY: _eL(row.lineY),
+              unit: 'EMU',
+            },
+          },
+        },
+      },
+      {
+        updateShapeProperties: {
+          objectId: lineId,
+          shapeProperties: {
+            shapeBackgroundFill: { solidFill: { color: { rgbColor: _AG_RED_RGB } } },
+            outline: { propertyState: 'NOT_RENDERED' },
+          },
+          fields: 'shapeBackgroundFill,outline',
+        },
+      },
+    )
+
+    for (let colIdx = 0; colIdx < ITEMS_PER_ROW; colIdx++) {
+      const itemIdx  = rowIdx * ITEMS_PER_ROW + colIdx  // 0–5
+      const slotName = `ПУНКТ_${itemIdx + 1}`
+      const itemText = stripTrailingPeriod(addNbsp((slots[slotName] ?? '').trim()))
+      const colX     = _AG_COL_X[colIdx]
+      const numText  = String(itemIdx + 1).padStart(2, '0')
+
+      // Red dot (ellipse) — sits on the line
+      const dotId = `ag_dot_${slideIdx}_${itemIdx}`
+      reqs.push(
+        {
+          createShape: {
+            objectId: dotId,
+            shapeType: 'ELLIPSE',
+            elementProperties: {
+              pageObjectId: pageId,
+              size: {
+                width:  { magnitude: _eL(_AG_DOT_SZ), unit: 'EMU' },
+                height: { magnitude: _eL(_AG_DOT_SZ), unit: 'EMU' },
+              },
+              transform: {
+                scaleX: 1, shearX: 0, translateX: _eL(colX),
+                shearY: 0, scaleY: 1, translateY: _eL(row.dotY),
+                unit: 'EMU',
+              },
+            },
+          },
+        },
+        {
+          updateShapeProperties: {
+            objectId: dotId,
+            shapeProperties: {
+              shapeBackgroundFill: { solidFill: { color: { rgbColor: _AG_RED_RGB } } },
+              outline: { propertyState: 'NOT_RENDERED' },
+            },
+            fields: 'shapeBackgroundFill,outline',
+          },
+        },
+      )
+
+      // Number text box (01, 02...) — centered on dot, above line
+      const numId = `ag_num_${slideIdx}_${itemIdx}`
+      reqs.push(
+        {
+          createShape: {
+            objectId: numId,
+            shapeType: 'TEXT_BOX',
+            elementProperties: {
+              pageObjectId: pageId,
+              size: {
+                width:  { magnitude: _eL(_AG_DOT_SZ + 2 * _INSET), unit: 'EMU' },
+                height: { magnitude: _eL(_AG_NUM_H + 2 * _INSET), unit: 'EMU' },
+              },
+              transform: {
+                scaleX: 1, shearX: 0, translateX: _eL(colX - _INSET),
+                shearY: 0, scaleY: 1, translateY: _eL(row.numY - _INSET),
+                unit: 'EMU',
+              },
+            },
+          },
+        },
+        { insertText: { objectId: numId, insertionIndex: 0, text: numText } },
+        {
+          updateTextStyle: {
+            objectId: numId,
+            style: {
+              weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
+              foregroundColor: { opaqueColor: { rgbColor: _AG_MUTED_RGB } },
+              fontSize: { magnitude: _AG_NUM_PT, unit: 'PT' },
+              bold: false,
+            },
+            fields: 'weightedFontFamily,foregroundColor,fontSize,bold',
+            textRange: { type: 'ALL' },
+          },
+        },
+        {
+          updateParagraphStyle: {
+            objectId: numId,
+            style: { alignment: 'CENTER', lineSpacing: 90, spaceAbove: { magnitude: 0, unit: 'PT' }, spaceBelow: { magnitude: 0, unit: 'PT' } },
+            fields: 'alignment,lineSpacing,spaceAbove,spaceBelow',
+            textRange: { type: 'ALL' },
+          },
+        },
+        {
+          updateShapeProperties: {
+            objectId: numId,
+            shapeProperties: {
+              shapeBackgroundFill: { propertyState: 'NOT_RENDERED' },
+              outline:             { propertyState: 'NOT_RENDERED' },
+              contentAlignment: 'MIDDLE',
+              autofit: { autofitType: 'NONE' },
+            },
+            fields: 'shapeBackgroundFill,outline,contentAlignment,autofit.autofitType',
+          },
+        },
+      )
+
+      if (!itemText) continue  // dot+number always shown; text only if slot filled
+
+      // Item text box — below line
+      const textId = `ag_txt_${slideIdx}_${itemIdx}`
+      reqs.push(
+        {
+          createShape: {
+            objectId: textId,
+            shapeType: 'TEXT_BOX',
+            elementProperties: {
+              pageObjectId: pageId,
+              size: {
+                width:  { magnitude: _eL(_AG_TEXT_W + 2 * _INSET), unit: 'EMU' },
+                height: { magnitude: _eL(_AG_TEXT_H + 2 * _INSET), unit: 'EMU' },
+              },
+              transform: {
+                scaleX: 1, shearX: 0, translateX: _eL(colX - _INSET),
+                shearY: 0, scaleY: 1, translateY: _eL(row.textY - _INSET),
+                unit: 'EMU',
+              },
+            },
+          },
+        },
+        { insertText: { objectId: textId, insertionIndex: 0, text: itemText } },
+        {
+          updateTextStyle: {
+            objectId: textId,
+            style: {
+              weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
+              foregroundColor: { opaqueColor: { rgbColor: { red: 1, green: 1, blue: 1 } } },
+              fontSize: { magnitude: _AG_BODY_PT, unit: 'PT' },
+              bold: false,
+            },
+            fields: 'weightedFontFamily,foregroundColor,fontSize,bold',
+            textRange: { type: 'ALL' },
+          },
+        },
+        {
+          updateParagraphStyle: {
+            objectId: textId,
+            style: { alignment: 'START', lineSpacing: 118, spaceAbove: { magnitude: 0, unit: 'PT' }, spaceBelow: { magnitude: 0, unit: 'PT' } },
+            fields: 'alignment,lineSpacing,spaceAbove,spaceBelow',
+            textRange: { type: 'ALL' },
+          },
+        },
+        {
+          updateShapeProperties: {
+            objectId: textId,
+            shapeProperties: {
+              shapeBackgroundFill: { propertyState: 'NOT_RENDERED' },
+              outline:             { propertyState: 'NOT_RENDERED' },
+              contentAlignment: 'TOP',
+              autofit: { autofitType: 'NONE' },
+            },
+            fields: 'shapeBackgroundFill,outline,contentAlignment,autofit.autofitType',
+          },
+        },
+      )
+    }
+  }
+
+  return reqs
+}
+
 // ─── Post-generation self-repair ─────────────────────────────────────────────
 // After validateDeck, if max_chars FAILs remain, collect them with objectIds so
 // fixOverflowSlots can patch the live slide without re-running the full pipeline.
@@ -2482,6 +2719,8 @@ export async function buildPresentation(
       if (!slotValue || slotName.startsWith('ЗОБРАЖЕННЯ')) continue
       // badges: ПУНКТИ is deleted and replaced with pill shapes — skip replaceAllText
       if (compId === 'badges' && slotName === 'ПУНКТИ') continue
+      // agenda_6: ПУНКТ_N placeholders are deleted and recreated by buildAgendaRequests — skip replaceAllText
+      if (compId === 'agenda_6' && slotName.startsWith('ПУНКТ_')) continue
       let replaceText = processedSlots?.[slotName] ?? slotValue
       if (slotName === 'ЗАГОЛОВОК' || BENTO_TOKENS[compId]?.includes(slotName)) {
         replaceText = stripTrailingPeriod(replaceText)
@@ -2660,6 +2899,16 @@ export async function buildPresentation(
     requests.push(...buildBadgesRequests(i, slide, plan.slides[i].slots, pageId))
   }
 
+  // ── agenda_6: delete placeholder items + create timeline shapes ──────────────
+  for (let i = 0; i < plan.slides.length; i++) {
+    if (plan.slides[i].composition !== 'agenda_6') continue
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    const slide = updatedSlides.find(s => s.objectId === pageId)
+    if (!slide) continue
+    requests.push(...buildAgendaRequests(slide, plan.slides[i].slots, pageId, i))
+  }
+
   // ── three_columns_num: create numbered red pills ──────────────────────────────
   for (let i = 0; i < plan.slides.length; i++) {
     if (plan.slides[i].composition !== 'three_columns_num') continue
@@ -2694,7 +2943,8 @@ export async function buildPresentation(
     const compId = plan.slides[i].composition
     if (compId === 'cover' || compId === 'cover_title_only' || compId.startsWith('bento_right_') ||
         compId === 'section' || compId === 'section_red' || compId === 'closing' ||
-        compId === 'title_body' || compId === 'badges' || compId === 'three_columns_num' || compId === 'columns_flex') continue
+        compId === 'title_body' || compId === 'badges' || compId === 'three_columns_num' || compId === 'columns_flex' ||
+        compId === 'agenda_6') continue
     const titleObjId = slotObjectIds[i]?.['ЗАГОЛОВОК']
     if (!titleObjId) continue
     const pageId = planPageIds[i]
@@ -2949,6 +3199,8 @@ export async function buildPresentation(
       if (compId === 'kpi_cards' && kpiAdaptiveSlides.has(i)) continue
       // Skip badges ПУНКТИ — placeholder is deleted and replaced with pill shapes
       if (compId === 'badges' && slotName === 'ПУНКТИ') continue
+      // Skip agenda_6 ПУНКТ_N — placeholders are deleted and recreated by buildAgendaRequests
+      if (compId === 'agenda_6' && slotName.startsWith('ПУНКТ_')) continue
       // Skip columns_flex column slots — boxes are deleted and recreated by buildColumnsFlexRequests
       if (compId === 'columns_flex' && slotName.startsWith('КОЛОНКА_')) continue
       // Skip elements already scheduled for deletion

@@ -200,6 +200,21 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
       { name: 'ПУНКТИ', type: 'text', max_chars: 400, style: 'body' },
     ],
   },
+  {
+    id: 'agenda_6',
+    name: 'Адженда — 6 пунктів',
+    when_to_use: 'слайд адженди або порядку денного з рівно 6 пунктами (timeline-дизайн: 3 колонки × 2 рядки). ЗАГОЛОВОК = "Адженда". ПУНКТ_1..6 = стислий текст кожного пункту.',
+    themes: ['dark'],
+    slots: [
+      { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 40, style: 'h1' },
+      { name: 'ПУНКТ_1', type: 'text', max_chars: 80, style: 'body' },
+      { name: 'ПУНКТ_2', type: 'text', max_chars: 80, style: 'body' },
+      { name: 'ПУНКТ_3', type: 'text', max_chars: 80, style: 'body' },
+      { name: 'ПУНКТ_4', type: 'text', max_chars: 80, style: 'body' },
+      { name: 'ПУНКТ_5', type: 'text', max_chars: 80, style: 'body' },
+      { name: 'ПУНКТ_6', type: 'text', max_chars: 80, style: 'body' },
+    ],
+  },
 ]
 
 export function getComposition(id: string): Composition | undefined {

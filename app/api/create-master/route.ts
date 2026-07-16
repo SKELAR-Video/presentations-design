@@ -353,6 +353,16 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
       )
       break
     }
+
+    case 'agenda_6': {
+      // Title — same width as three_columns_num (1339px), 44pt
+      push(tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, 1339, 130, 44))
+      // 6 placeholder item boxes (stacked) — buildAgendaRequests will delete + recreate at correct positions
+      for (let k = 0; k < 6; k++) {
+        push(tb(mk(), slideId, `ПУНКТ_${k + 1}`, PAD, PAD + 130 + k * 20, 200, 20, 14, MUTED))
+      }
+      break
+    }
   }
 
   return out
