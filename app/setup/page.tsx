@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { signIn } from 'next-auth/react'
 
 export default function SetupPage() {
   const [loading, setLoading] = useState(false)
@@ -54,7 +55,17 @@ export default function SetupPage() {
             </div>
 
             {error && (
-              <p className="text-sm text-[#FD3433] bg-[#FD3433]/10 rounded-lg px-4 py-3">{error}</p>
+              <div className="space-y-3">
+                <p className="text-sm text-[#FD3433] bg-[#FD3433]/10 rounded-lg px-4 py-3">{error}</p>
+                {(error.toLowerCase().includes('unauthorized') || error.toLowerCase().includes('auth') || error.toLowerCase().includes('credential')) && (
+                  <button
+                    onClick={() => signIn('google', { callbackUrl: '/setup' })}
+                    className="w-full py-3 rounded-xl bg-white text-[#090D17] font-medium text-sm hover:bg-gray-100 transition-colors"
+                  >
+                    Перелогінитись через Google →
+                  </button>
+                )}
+              </div>
             )}
 
             <button
