@@ -1680,7 +1680,11 @@ function buildAgendaRequests(
     for (let colIdx = 0; colIdx < ITEMS_PER_ROW; colIdx++) {
       const itemIdx  = rowIdx * ITEMS_PER_ROW + colIdx  // 0–5
       const slotName = `ПУНКТ_${itemIdx + 1}`
-      const itemText = stripTrailingPeriod(addNbsp((slots[slotName] ?? '').trim()))
+      // Strip leading "1." / "1) " / "1 " patterns — LLM copies numbered lists from source doc.
+      // Numbers are already shown via red dots (01/02...).
+      const itemText = stripTrailingPeriod(addNbsp(
+        (slots[slotName] ?? '').trim().replace(/^\d+[\.\)\s]\s*/, '').trim()
+      ))
       const colX     = _AG_COL_X[colIdx]
       const numText  = String(itemIdx + 1).padStart(2, '0')
 
