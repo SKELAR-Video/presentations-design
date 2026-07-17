@@ -1609,6 +1609,12 @@ const _AG8_COL_X  = [90, 545, 1000, 1455] as const   // 4 cols (pitch=455)
 const _AG5_R1_X   = [90, 773] as const               // agenda_5 row 1: 2 cols
 const _AG7_R1_X   = [90, 545, 1000] as const         // agenda_7 row 1: 3 cols
 
+// Max chars per agenda item slot (mirrors compositions.ts — used for in-flight truncation)
+const AGENDA_MAX_CHARS: Readonly<Record<string, number>> = {
+  agenda_3: 80, agenda_4: 80, agenda_5: 80, agenda_6: 80,
+  agenda_7: 60, agenda_8: 60,
+}
+
 // Row definitions per composition: each entry is the colXs for that row.
 // Single-element = single row (agenda_3/4); uses _AG_ROW_SINGLE Y positions.
 const AGENDA_ROW_DEFS: Readonly<Record<string, readonly (readonly number[])[]>> = {
@@ -1642,6 +1648,7 @@ function buildAgendaRequests(
   pageId: string,
   slideIdx: number,
   rowDefs: readonly (readonly number[])[],
+  maxChars: number,
 ): object[] {
   const reqs: object[] = []
 
@@ -1706,9 +1713,12 @@ function buildAgendaRequests(
       const slotName = `ПУНКТ_${itemIdx + 1}`
       // Strip leading "1." / "1) " / "1 " patterns — LLM copies numbered lists from source doc.
       // Numbers are already shown via red dots (01/02...).
-      const itemText = stripTrailingPeriod(addNbsp(
-        (slots[slotName] ?? '').trim().replace(/^\d+[\.\)\s]\s*/, '').trim()
-      ))
+      const rawText = (slots[slotName] ?? '').trim().replace(/^\d+[\.\)\s]\s*/, '').trim()
+      // Truncate at maxChars — cut at word boundary to avoid mid-word splits
+      const capped = rawText.length > maxChars
+        ? rawText.slice(0, maxChars - 1).replace(/\s+\S*$/, '') + '…'
+        : rawText
+      const itemText = stripTrailingPeriod(addNbsp(capped))
       const colX     = colXs[colIdx]
       const numText  = String(itemIdx + 1).padStart(2, '0')
 
@@ -2941,7 +2951,8 @@ export async function buildPresentation(
     if (!pageId) continue
     const slide = updatedSlides.find(s => s.objectId === pageId)
     if (!slide) continue
-    requests.push(...buildAgendaRequests(slide, plan.slides[i].slots, pageId, i, rowDefs))
+    const maxChars = AGENDA_MAX_CHARS[compId] ?? 80
+    requests.push(...buildAgendaRequests(slide, plan.slides[i].slots, pageId, i, rowDefs, maxChars))
   }
 
   // ── three_columns_num: create numbered red pills ──────────────────────────────
