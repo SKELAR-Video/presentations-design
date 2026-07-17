@@ -1601,12 +1601,23 @@ function buildBentoRowLayoutRequests(
   return []
 }
 
-// ─── Agenda 6 layout ─────────────────────────────────────────────────────────
-// 3 cols × 2 rows. Col X: [90, 773, 1456] (pitch=683, text_w=374, dot_size=54).
-// From Figma: number=18pt MUTED, body=14pt WHITE, dot=54px RED, line=2px RED.
+// ─── Agenda layout ───────────────────────────────────────────────────────────
+// Shared by agenda_3/4/5/6/7/8. Per-row column X positions (dot left edge, px).
 // Font conversion: Figma px / 2.667 = Google Slides pt  (e.g. 48/2.667≈18, 36/2.667≈14)
-const _AG_COL_X   = [90, 773, 1456] as const   // agenda_6: 3 cols
-const _AG8_COL_X  = [90, 545, 1000, 1455] as const // agenda_8: 4 cols
+const _AG_COL_X   = [90, 773, 1456] as const         // 3 cols (pitch=683)
+const _AG2_COL_X  = [90, 960] as const               // 2 cols (symmetric half-split)
+const _AG8_COL_X  = [90, 545, 1000, 1455] as const   // 4 cols (pitch=455)
+
+// Row definitions per composition: each entry is the colXs for that row.
+// Single-element = single row; asymmetric rows allowed (e.g. 3+2 for agenda_5).
+const AGENDA_ROW_DEFS: Readonly<Record<string, readonly (readonly number[])[]>> = {
+  agenda_3: [_AG_COL_X],
+  agenda_4: [_AG2_COL_X, _AG2_COL_X],
+  agenda_5: [_AG_COL_X, _AG2_COL_X],
+  agenda_6: [_AG_COL_X, _AG_COL_X],
+  agenda_7: [_AG8_COL_X, _AG_COL_X],
+  agenda_8: [_AG8_COL_X, _AG8_COL_X],
+}
 const _AG_TEXT_W  = 374  // item text box width (px)
 const _AG_DOT_SZ  = 54   // dot ellipse diameter
 const _AG_NUM_PT  = 18   // number font size (48 Figma px / 2.667)
@@ -1627,7 +1638,7 @@ function buildAgendaRequests(
   slots: Record<string, string>,
   pageId: string,
   slideIdx: number,
-  colXs: readonly number[],
+  rowDefs: readonly (readonly number[])[],
 ): object[] {
   const reqs: object[] = []
 
@@ -1640,17 +1651,20 @@ function buildAgendaRequests(
     }
   }
 
-  const ITEMS_PER_ROW = colXs.length
-  for (let rowIdx = 0; rowIdx < 2; rowIdx++) {
-    const row = _AG_ROWS[rowIdx]
+  let itemIdx = 0  // global item counter across all rows
 
-    // Horizontal red line:
-    //   row 0 — from slide left edge (x=0) to center of last dot in row
-    //   row 1 — from center of first dot in row to slide right edge (x=1920)
+  for (let rowIdx = 0; rowIdx < rowDefs.length; rowIdx++) {
+    const row = _AG_ROWS[rowIdx]
+    const colXs = rowDefs[rowIdx]
+    const ITEMS_PER_ROW = colXs.length
+
+    // Horizontal red line — each row uses its own colXs:
+    //   row 0 — from slide left edge (x=0) to center of last dot in this row
+    //   row 1 — from center of first dot in this row to slide right edge (x=1920)
     const dotCenter0 = colXs[0] + _AG_DOT_SZ / 2
     const dotCenterLast = colXs[ITEMS_PER_ROW - 1] + _AG_DOT_SZ / 2
-    const lineX = rowIdx === 0 ? 0 : dotCenter0                                 // 0 or 117
-    const lineW = rowIdx === 0 ? dotCenterLast : 1920 - dotCenter0              // 1483 or 1803
+    const lineX = rowIdx === 0 ? 0 : dotCenter0
+    const lineW = rowIdx === 0 ? dotCenterLast : 1920 - dotCenter0
     const lineTopY = row.dotY + _AG_DOT_SZ / 2 - _AG_LINE_H / 2               // center on dot
     const lineId = `ag_line_${slideIdx}_r${rowIdx}`
     reqs.push(
@@ -1684,8 +1698,7 @@ function buildAgendaRequests(
       },
     )
 
-    for (let colIdx = 0; colIdx < ITEMS_PER_ROW; colIdx++) {
-      const itemIdx  = rowIdx * ITEMS_PER_ROW + colIdx  // 0–5
+    for (let colIdx = 0; colIdx < ITEMS_PER_ROW; colIdx++, itemIdx++) {
       const slotName = `ПУНКТ_${itemIdx + 1}`
       // Strip leading "1." / "1) " / "1 " patterns — LLM copies numbered lists from source doc.
       // Numbers are already shown via red dots (01/02...).
@@ -2915,16 +2928,16 @@ export async function buildPresentation(
     requests.push(...buildBadgesRequests(i, slide, plan.slides[i].slots, pageId))
   }
 
-  // ── agenda_6 / agenda_8: delete placeholder items + create timeline shapes ───
+  // ── agenda_*: delete placeholder items + create timeline shapes ─────────────
   for (let i = 0; i < plan.slides.length; i++) {
     const compId = plan.slides[i].composition
-    if (compId !== 'agenda_6' && compId !== 'agenda_8') continue
+    const rowDefs = AGENDA_ROW_DEFS[compId]
+    if (!rowDefs) continue
     const pageId = planPageIds[i]
     if (!pageId) continue
     const slide = updatedSlides.find(s => s.objectId === pageId)
     if (!slide) continue
-    const colXs = compId === 'agenda_8' ? _AG8_COL_X : _AG_COL_X
-    requests.push(...buildAgendaRequests(slide, plan.slides[i].slots, pageId, i, colXs))
+    requests.push(...buildAgendaRequests(slide, plan.slides[i].slots, pageId, i, rowDefs))
   }
 
   // ── three_columns_num: create numbered red pills ──────────────────────────────

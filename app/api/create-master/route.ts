@@ -355,8 +355,12 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
     }
 
     case 'agenda_8':
-    case 'agenda_6': {
-      const n = compId === 'agenda_8' ? 8 : 6
+    case 'agenda_7':
+    case 'agenda_6':
+    case 'agenda_5':
+    case 'agenda_4':
+    case 'agenda_3': {
+      const n = { agenda_3: 3, agenda_4: 4, agenda_5: 5, agenda_6: 6, agenda_7: 7, agenda_8: 8 }[compId]!
       push(tb(mk(), slideId, 'ЗАГОЛОВОК', 90, PAD, 1339, 130, 44))
       for (let k = 0; k < n; k++) {
         push(tb(mk(), slideId, `ПУНКТ_${k + 1}`, PAD, PAD + 130 + k * 20, 200, 20, 14, MUTED))
