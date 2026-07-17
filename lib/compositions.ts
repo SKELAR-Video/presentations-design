@@ -287,6 +287,17 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
       { name: 'ПУНКТ_6', type: 'text', max_chars: 80, style: 'body' },
     ],
   },
+  {
+    id: 'title_photo',
+    name: 'Заголовок + фото (половина екрану)',
+    when_to_use: 'Слайд із великим заголовком та текстом зліва і фото справа на половину екрану. Обирай коли є одна сильна теза + потрібен емоційний візуал: відкриття теми, ключова думка розділу, closing без стандартного слайда. ФОТО — опціональне посилання на зображення (http...); якщо не вказано — підставляється автоматично.',
+    themes: ['dark'],
+    slots: [
+      { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 80, style: 'h1' },
+      { name: 'ТЕКСТ', type: 'text', max_chars: 300, style: 'body', optional: true },
+      { name: 'ФОТО', type: 'text', max_chars: 300, style: 'body', optional: true },
+    ],
+  },
 ]
 
 export function getComposition(id: string): Composition | undefined {

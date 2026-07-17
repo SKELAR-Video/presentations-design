@@ -263,6 +263,32 @@ function randomCoverBg(): string {
   return url
 }
 
+// ── title_photo helpers ─────────────────────────────────────────────────────
+const _TP_TITLE_W     = 827
+const _TP_TITLE_H     = 341
+const _TP_TITLE_SCALE = [33, 28, 22, 18, 14] as const
+const _HALF_PHOTOS    = ['1.png', '2.png', '3.png', '4.png', '5.png'] as const
+
+function getHalfPhotoBaseUrl(): string {
+  const host = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL
+  if (host) return `https://${host}/assets/half%20screen%20photos/`
+  return _GITHUB_BG_BASE.replace('backgrounds/', 'half%20screen%20photos/')
+}
+
+function getHalfPhotoUrl(customUrl?: string): string {
+  if (customUrl?.startsWith('http')) return customUrl
+  const base = getHalfPhotoBaseUrl()
+  const file = _HALF_PHOTOS[Math.floor(Math.random() * _HALF_PHOTOS.length)]
+  return `${base}${file}`
+}
+
+function pickTitlePhotoPt(title: string): number {
+  for (const pt of _TP_TITLE_SCALE) {
+    if (textFits(title, _TP_TITLE_W, _TP_TITLE_H, pt)) return pt
+  }
+  return 14
+}
+
 let _logoUrlCache: string | undefined
 let _logoRedUrlCache: string | undefined
 
@@ -3186,6 +3212,32 @@ export async function buildPresentation(
     }
   }
 
+  // ── title_photo: title auto-shrink ──────────────────────────────────────────
+  for (let i = 0; i < plan.slides.length; i++) {
+    if (plan.slides[i].composition !== 'title_photo') continue
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    const slide = updatedSlides.find(s => s.objectId === pageId)
+    if (!slide) continue
+    const title = plan.slides[i].slots['ЗАГОЛОВОК'] ?? ''
+    const pt = pickTitlePhotoPt(title)
+    if (pt >= 33) continue
+    for (const el of slide.pageElements ?? []) {
+      if (!el.objectId) continue
+      const elText = (el.shape?.text?.textElements ?? [])
+        .map(te => te.textRun?.content ?? '').join('')
+      if (!elText.includes('{{ЗАГОЛОВОК}}')) continue
+      requests.push({
+        updateTextStyle: {
+          objectId: el.objectId,
+          style: { fontSize: { magnitude: pt, unit: 'PT' }, bold: false },
+          fields: 'fontSize,bold',
+          textRange: { type: 'ALL' },
+        },
+      })
+    }
+  }
+
   // Build a set of objectIds already scheduled for deletion — prevents later style
   // requests from referencing elements that will no longer exist when the batch runs.
   const _pendingDeletes = new Set<string>(
@@ -3444,6 +3496,47 @@ export async function buildPresentation(
         const msg = bgErr instanceof Error ? bgErr.message : String(bgErr)
         console.warn('[bg] background insertion failed (URL not accessible):', msg)
         console.warn('[bg] Set BG_BASE_URL in .env.local to fix.')
+      }
+    }
+  }
+
+  // title_photo: right-half image insertion — separate batch so a bad URL never breaks main batch
+  {
+    const photoRequests: object[] = []
+    for (let i = 0; i < plan.slides.length; i++) {
+      if (plan.slides[i].composition !== 'title_photo') continue
+      const pageId = planPageIds[i]
+      if (!pageId) continue
+      const photoUrl = getHalfPhotoUrl(plan.slides[i].slots['ФОТО'])
+      console.log(`[title_photo] slide ${i + 1} photo URL: ${photoUrl}`)
+      photoRequests.push({
+        createImage: {
+          url: photoUrl,
+          elementProperties: {
+            pageObjectId: pageId,
+            size: {
+              width:  { magnitude: _eL(960),  unit: 'EMU' },
+              height: { magnitude: _eL(1080), unit: 'EMU' },
+            },
+            transform: {
+              scaleX: 1, shearX: 0, translateX: _eL(960),
+              shearY: 0, scaleY: 1, translateY: 0,
+              unit: 'EMU',
+            },
+          },
+        },
+      })
+    }
+    if (photoRequests.length > 0) {
+      try {
+        await slidesApi.presentations.batchUpdate({
+          presentationId,
+          requestBody: { requests: photoRequests },
+        })
+        console.log(`[title_photo] inserted ${photoRequests.length} photo(s) ok`)
+      } catch (photoErr: unknown) {
+        const msg = photoErr instanceof Error ? photoErr.message : String(photoErr)
+        console.warn('[title_photo] photo insertion failed:', msg)
       }
     }
   }

@@ -367,6 +367,19 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
       }
       break
     }
+
+    case 'title_photo': {
+      push(
+        tb(mk(), slideId, 'ЗАГОЛОВОК', 90, 99, 827, 341, 33),
+        tb(mk(), slideId, 'ТЕКСТ', 100, 440, 765, 400, 18, MUTED),
+      )
+      const phId = mk('ph')
+      push(
+        [{ createShape: { objectId: phId, shapeType: 'RECTANGLE', elementProperties: elProps(slideId, 960, 0, 960, H) } }],
+        shapeProps(phId, CARD),
+      )
+      break
+    }
   }
 
   return out
