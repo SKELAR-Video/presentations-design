@@ -424,6 +424,28 @@ ${sheetSummary}
         }
       }
 
+      // Guard: three_columns/three_columns_num supports only 3 columns.
+      // If LLM assigned КОЛОНКА_4, upgrade to columns_flex so no content is lost.
+      if ((s.composition === 'three_columns' || s.composition === 'three_columns_num') && slots['КОЛОНКА_4']) {
+        console.warn(`[four-col-guard] slide ${i + 1}: ${s.composition} has КОЛОНКА_4 → remapped to columns_flex`)
+        s.composition = 'columns_flex'
+      }
+
+      // Guard: bento_right_N uses КАРТКА_N, not КОЛОНКА_N.
+      // If LLM assigned КОЛОНКА_N, rename to КАРТКА_N and pick correct variant by count.
+      if (s.composition.startsWith('bento_right_') && slots['КОЛОНКА_1'] !== undefined) {
+        const colCount = [1, 2, 3, 4].filter(n => slots[`КОЛОНКА_${n}`] !== undefined).length
+        for (let n = 1; n <= 4; n++) {
+          if (slots[`КОЛОНКА_${n}`] !== undefined) {
+            slots[`КАРТКА_${n}`] = slots[`КОЛОНКА_${n}`]
+            delete slots[`КОЛОНКА_${n}`]
+          }
+        }
+        const fixed = colCount === 4 ? 'bento_right_2x2' : colCount === 2 ? 'bento_right_2' : 'bento_right_3'
+        console.warn(`[bento-right-guard] slide ${i + 1}: КОЛОНКА_N → КАРТКА_N, ${s.composition} → ${fixed} (${colCount} items)`)
+        s.composition = fixed
+      }
+
       return { id: `slide_${i + 1}`, composition: s.composition || 'title_body', slots, flags: {} }
     })
   }
