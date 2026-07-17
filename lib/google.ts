@@ -1663,13 +1663,12 @@ function buildAgendaRequests(
     const ITEMS_PER_ROW = colXs.length
 
     // Horizontal red line:
-    //   single row   — full slide width (x=0 to x=1920)
-    //   two rows r0  — left edge to center of last dot in this row
-    //   two rows r1  — center of first dot in this row to right edge
+    //   row 0 (incl. single-row) — from center of first dot to right slide edge
+    //   row 1                    — from left slide edge to center of last dot
     const dotCenter0 = colXs[0] + _AG_DOT_SZ / 2
     const dotCenterLast = colXs[ITEMS_PER_ROW - 1] + _AG_DOT_SZ / 2
-    const lineX = isSingleRow ? 0 : (rowIdx === 0 ? 0 : dotCenter0)
-    const lineW = isSingleRow ? 1920 : (rowIdx === 0 ? dotCenterLast : 1920 - dotCenter0)
+    const lineX = rowIdx === 0 ? dotCenter0 : 0
+    const lineW = rowIdx === 0 ? 1920 - dotCenter0 : dotCenterLast
     const lineTopY = row.dotY + _AG_DOT_SZ / 2 - _AG_LINE_H / 2               // center on dot
     const lineId = `ag_line_${slideIdx}_r${rowIdx}`
     reqs.push(
