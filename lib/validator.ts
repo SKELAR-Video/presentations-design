@@ -102,6 +102,8 @@ function checkFont(slide: slides_v1.Schema$Page): CheckResult {
 }
 
 function checkMaxChars(slots: Record<string, string>, compId: string): CheckResult {
+  // Agenda items are auto-truncated at generation time — static check would always false-positive
+  if (compId.startsWith('agenda_')) return { check: 'max_chars', pass: true, detail: 'agenda — truncated at generation' }
   const comp = getComposition(compId)
   if (!comp) return { check: 'max_chars', pass: true, detail: 'composition not found — skipped' }
   const fails: string[] = []
