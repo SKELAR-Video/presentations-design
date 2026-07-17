@@ -590,6 +590,10 @@ function areVariantSiblings(a: SlidePlan['slides'][0], b: SlidePlan['slides'][0]
 // Variant siblings share the same ЗАГОЛОВОК intentionally — skip the check for them.
 function checkNoDuplicateTitle(plan: SlidePlan, slideIndex: number): CheckResult {
   if (slideIndex === 0) return { check: 'no_duplicate_title', pass: true }
+  // Agenda slides always share "Адженда" as the canonical title — not a content duplication.
+  if (plan.slides[slideIndex].composition.startsWith('agenda_')) {
+    return { check: 'no_duplicate_title', pass: true, detail: 'agenda — canonical title expected' }
+  }
   if (areVariantSiblings(plan.slides[slideIndex - 1], plan.slides[slideIndex])) {
     return { check: 'no_duplicate_title', pass: true, detail: 'variant siblings — shared title expected' }
   }
