@@ -2452,12 +2452,15 @@ export async function buildPresentation(
         if (stripped !== v) slide.slots[k] = stripped || undefined as unknown as string
         if (stripped === '') delete slide.slots[k]
       }
+      const isAgendaSlide = slide.composition.startsWith('agenda_')
       const title = (slide.slots['ЗАГОЛОВОК'] ?? '').trim()
-      if (title && title === prevFinalTitle) {
+      if (!isAgendaSlide && title && title === prevFinalTitle) {
         delete slide.slots['ЗАГОЛОВОК']
         prevFinalTitle = undefined  // this slide now has no title — next slide is compared to null
       } else {
-        prevFinalTitle = title || undefined
+        // Agenda slides never set prevFinalTitle — their canonical "Адженда" title
+        // must never cause the next slide's title to be deduped.
+        prevFinalTitle = isAgendaSlide ? undefined : (title || undefined)
       }
     }
   }
