@@ -1605,7 +1605,8 @@ function buildBentoRowLayoutRequests(
 // 3 cols × 2 rows. Col X: [90, 773, 1456] (pitch=683, text_w=374, dot_size=54).
 // From Figma: number=18pt MUTED, body=14pt WHITE, dot=54px RED, line=2px RED.
 // Font conversion: Figma px / 2.667 = Google Slides pt  (e.g. 48/2.667≈18, 36/2.667≈14)
-const _AG_COL_X   = [90, 773, 1456] as const
+const _AG_COL_X   = [90, 773, 1456] as const   // agenda_6: 3 cols
+const _AG8_COL_X  = [90, 545, 1000, 1455] as const // agenda_8: 4 cols
 const _AG_TEXT_W  = 374  // item text box width (px)
 const _AG_DOT_SZ  = 54   // dot ellipse diameter
 const _AG_NUM_PT  = 18   // number font size (48 Figma px / 2.667)
@@ -1626,6 +1627,7 @@ function buildAgendaRequests(
   slots: Record<string, string>,
   pageId: string,
   slideIdx: number,
+  colXs: readonly number[],
 ): object[] {
   const reqs: object[] = []
 
@@ -1633,12 +1635,12 @@ function buildAgendaRequests(
   for (const el of slide.pageElements ?? []) {
     if (!el.objectId) continue
     const raw = (el.shape?.text?.textElements ?? []).map(te => te.textRun?.content ?? '').join('')
-    if (/\{\{ПУНКТ_[1-6]\}\}/.test(raw)) {
+    if (/\{\{ПУНКТ_\d+\}\}/.test(raw)) {
       reqs.push({ deleteObject: { objectId: el.objectId } })
     }
   }
 
-  const ITEMS_PER_ROW = 3
+  const ITEMS_PER_ROW = colXs.length
   for (let rowIdx = 0; rowIdx < 2; rowIdx++) {
     const row = _AG_ROWS[rowIdx]
 
@@ -1690,7 +1692,7 @@ function buildAgendaRequests(
       const itemText = stripTrailingPeriod(addNbsp(
         (slots[slotName] ?? '').trim().replace(/^\d+[\.\)\s]\s*/, '').trim()
       ))
-      const colX     = _AG_COL_X[colIdx]
+      const colX     = colXs[colIdx]
       const numText  = String(itemIdx + 1).padStart(2, '0')
 
       // Red dot (ellipse) — sits on the line
@@ -2730,8 +2732,8 @@ export async function buildPresentation(
       if (!slotValue || slotName.startsWith('ЗОБРАЖЕННЯ')) continue
       // badges: ПУНКТИ is deleted and replaced with pill shapes — skip replaceAllText
       if (compId === 'badges' && slotName === 'ПУНКТИ') continue
-      // agenda_6: ПУНКТ_N placeholders are deleted and recreated by buildAgendaRequests — skip replaceAllText
-      if (compId === 'agenda_6' && slotName.startsWith('ПУНКТ_')) continue
+      // agenda_6/8: ПУНКТ_N placeholders are deleted and recreated by buildAgendaRequests — skip replaceAllText
+      if (compId.startsWith('agenda_') && slotName.startsWith('ПУНКТ_')) continue
       let replaceText = processedSlots?.[slotName] ?? slotValue
       if (slotName === 'ЗАГОЛОВОК' || BENTO_TOKENS[compId]?.includes(slotName)) {
         replaceText = stripTrailingPeriod(replaceText)
@@ -2910,14 +2912,16 @@ export async function buildPresentation(
     requests.push(...buildBadgesRequests(i, slide, plan.slides[i].slots, pageId))
   }
 
-  // ── agenda_6: delete placeholder items + create timeline shapes ──────────────
+  // ── agenda_6 / agenda_8: delete placeholder items + create timeline shapes ───
   for (let i = 0; i < plan.slides.length; i++) {
-    if (plan.slides[i].composition !== 'agenda_6') continue
+    const compId = plan.slides[i].composition
+    if (compId !== 'agenda_6' && compId !== 'agenda_8') continue
     const pageId = planPageIds[i]
     if (!pageId) continue
     const slide = updatedSlides.find(s => s.objectId === pageId)
     if (!slide) continue
-    requests.push(...buildAgendaRequests(slide, plan.slides[i].slots, pageId, i))
+    const colXs = compId === 'agenda_8' ? _AG8_COL_X : _AG_COL_X
+    requests.push(...buildAgendaRequests(slide, plan.slides[i].slots, pageId, i, colXs))
   }
 
   // ── three_columns_num: create numbered red pills ──────────────────────────────
@@ -2955,7 +2959,7 @@ export async function buildPresentation(
     if (compId === 'cover' || compId === 'cover_title_only' || compId.startsWith('bento_right_') ||
         compId === 'section' || compId === 'section_red' || compId === 'closing' ||
         compId === 'title_body' || compId === 'badges' || compId === 'three_columns_num' || compId === 'columns_flex' ||
-        compId === 'agenda_6') continue
+        compId === 'agenda_6' || compId === 'agenda_8') continue
     const titleObjId = slotObjectIds[i]?.['ЗАГОЛОВОК']
     if (!titleObjId) continue
     const pageId = planPageIds[i]
@@ -3210,8 +3214,8 @@ export async function buildPresentation(
       if (compId === 'kpi_cards' && kpiAdaptiveSlides.has(i)) continue
       // Skip badges ПУНКТИ — placeholder is deleted and replaced with pill shapes
       if (compId === 'badges' && slotName === 'ПУНКТИ') continue
-      // Skip agenda_6 ПУНКТ_N — placeholders are deleted and recreated by buildAgendaRequests
-      if (compId === 'agenda_6' && slotName.startsWith('ПУНКТ_')) continue
+      // Skip agenda_6/8 ПУНКТ_N — placeholders are deleted and recreated by buildAgendaRequests
+      if (compId.startsWith('agenda_') && slotName.startsWith('ПУНКТ_')) continue
       // Skip columns_flex column slots — boxes are deleted and recreated by buildColumnsFlexRequests
       if (compId === 'columns_flex' && slotName.startsWith('КОЛОНКА_')) continue
       // Skip elements already scheduled for deletion

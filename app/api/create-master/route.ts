@@ -354,11 +354,11 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
       break
     }
 
+    case 'agenda_8':
     case 'agenda_6': {
-      // Title at x=90 (agenda left edge, same as dots/items), not PAD=100
+      const n = compId === 'agenda_8' ? 8 : 6
       push(tb(mk(), slideId, 'ЗАГОЛОВОК', 90, PAD, 1339, 130, 44))
-      // 6 placeholder item boxes (stacked) — buildAgendaRequests will delete + recreate at correct positions
-      for (let k = 0; k < 6; k++) {
+      for (let k = 0; k < n; k++) {
         push(tb(mk(), slideId, `ПУНКТ_${k + 1}`, PAD, PAD + 130 + k * 20, 200, 20, 14, MUTED))
       }
       break

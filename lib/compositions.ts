@@ -201,6 +201,23 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     ],
   },
   {
+    id: 'agenda_8',
+    name: 'Адженда — 8 пунктів',
+    when_to_use: 'слайд адженди або порядку денного з рівно 8 пунктами (timeline-дизайн: 4 колонки × 2 рядки). ЗАГОЛОВОК = "Адженда". ПУНКТ_1..8 = стислий текст кожного пункту БЕЗ нумерації.',
+    themes: ['dark'],
+    slots: [
+      { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 40, style: 'h1' },
+      { name: 'ПУНКТ_1', type: 'text', max_chars: 60, style: 'body' },
+      { name: 'ПУНКТ_2', type: 'text', max_chars: 60, style: 'body' },
+      { name: 'ПУНКТ_3', type: 'text', max_chars: 60, style: 'body' },
+      { name: 'ПУНКТ_4', type: 'text', max_chars: 60, style: 'body' },
+      { name: 'ПУНКТ_5', type: 'text', max_chars: 60, style: 'body' },
+      { name: 'ПУНКТ_6', type: 'text', max_chars: 60, style: 'body' },
+      { name: 'ПУНКТ_7', type: 'text', max_chars: 60, style: 'body' },
+      { name: 'ПУНКТ_8', type: 'text', max_chars: 60, style: 'body' },
+    ],
+  },
+  {
     id: 'agenda_6',
     name: 'Адженда — 6 пунктів',
     when_to_use: 'слайд адженди або порядку денного з рівно 6 пунктами (timeline-дизайн: 3 колонки × 2 рядки). ЗАГОЛОВОК = "Адженда". ПУНКТ_1..6 = стислий текст кожного пункту.',
