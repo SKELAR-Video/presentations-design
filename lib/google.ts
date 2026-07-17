@@ -1647,8 +1647,8 @@ function buildAgendaRequests(
     // Horizontal red line:
     //   row 0 — from slide left edge (x=0) to center of last dot in row
     //   row 1 — from center of first dot in row to slide right edge (x=1920)
-    const dotCenter0 = _AG_COL_X[0] + _AG_DOT_SZ / 2                          // 90+27=117
-    const dotCenterLast = _AG_COL_X[ITEMS_PER_ROW - 1] + _AG_DOT_SZ / 2       // 1456+27=1483
+    const dotCenter0 = colXs[0] + _AG_DOT_SZ / 2
+    const dotCenterLast = colXs[ITEMS_PER_ROW - 1] + _AG_DOT_SZ / 2
     const lineX = rowIdx === 0 ? 0 : dotCenter0                                 // 0 or 117
     const lineW = rowIdx === 0 ? dotCenterLast : 1920 - dotCenter0              // 1483 or 1803
     const lineTopY = row.dotY + _AG_DOT_SZ / 2 - _AG_LINE_H / 2               // center on dot
