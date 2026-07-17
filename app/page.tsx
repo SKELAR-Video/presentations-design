@@ -1,14 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { signOut } from 'next-auth/react'
 
 export default function HomePage() {
   const router = useRouter()
-  const [docUrl, setDocUrl] = useState(() =>
-    typeof window !== 'undefined' ? (localStorage.getItem('last_doc_url') ?? '') : ''
-  )
+  const [docUrl, setDocUrl] = useState('')
+
+  useEffect(() => {
+    const saved = localStorage.getItem('last_doc_url')
+    if (saved) setDocUrl(saved)
+  }, [])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
