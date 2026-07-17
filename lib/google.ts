@@ -1609,12 +1609,6 @@ const _AG8_COL_X  = [90, 545, 1000, 1455] as const   // 4 cols (pitch=455)
 const _AG5_R1_X   = [90, 773] as const               // agenda_5 row 1: 2 cols
 const _AG7_R1_X   = [90, 545, 1000] as const         // agenda_7 row 1: 3 cols
 
-// Max chars per agenda item slot (mirrors compositions.ts — used for in-flight truncation)
-const AGENDA_MAX_CHARS: Readonly<Record<string, number>> = {
-  agenda_3: 80, agenda_4: 80, agenda_5: 80, agenda_6: 80,
-  agenda_7: 60, agenda_8: 60,
-}
-
 // Row definitions per composition: each entry is the colXs for that row.
 // Single-element = single row (agenda_3/4); uses _AG_ROW_SINGLE Y positions.
 const AGENDA_ROW_DEFS: Readonly<Record<string, readonly (readonly number[])[]>> = {
@@ -1625,12 +1619,14 @@ const AGENDA_ROW_DEFS: Readonly<Record<string, readonly (readonly number[])[]>> 
   agenda_7: [_AG8_COL_X, _AG7_R1_X],  // 2 rows: 4+3
   agenda_8: [_AG8_COL_X, _AG8_COL_X], // 2 rows: 4+4 (unchanged)
 }
-const _AG_TEXT_W  = 374  // item text box width (px)
-const _AG_DOT_SZ  = 54   // dot ellipse diameter
-const _AG_NUM_PT  = 18   // number font size (48 Figma px / 2.667)
-const _AG_BODY_PT = 14   // body text (36 Figma px / 2.667 ≈ 13.5 → 14)
-const _AG_NUM_H   = 54   // number text box height
-const _AG_TEXT_H  = 200  // item text box height (both rows — enough for ~4 lines at 14pt)
+const _AG_TEXT_W     = 374  // item text box content width (px)
+const _AG_DOT_SZ     = 54   // dot ellipse diameter
+const _AG_NUM_PT     = 18   // number font size (48 Figma px / 2.667)
+const _AG_BODY_PT    = 14   // body text max (36 Figma px / 2.667 ≈ 13.5 → 14)
+const _AG_BODY_MIN   = 8    // body text floor — below this text is unreadable
+const _AG_BODY_SCALE = [14, 12, 10, 9, 8] as const  // shrink steps
+const _AG_NUM_H      = 54   // number text box height
+const _AG_TEXT_H     = 200  // item text box content height
 const _AG_LINE_H  = 8    // line thickness (px) — 4× original 2px
 // Y positions for two-row agendas (agenda_5/6/7/8)
 const _AG_ROWS = [
@@ -1642,13 +1638,44 @@ const _AG_ROW_SINGLE = { numY: 493, dotY: 550, textY: 643 } as const
 const _AG_RED_RGB   = { red: 0xFD / 255, green: 0x34 / 255, blue: 0x33 / 255 }
 const _AG_MUTED_RGB = { red: 162 / 255, green: 166 / 255, blue: 177 / 255 }
 
+// Agenda uses 90% line-spacing — different lineH than bento's 140%
+function agendaLineH(pt: number): number { return pt * 2.667 * 0.9 }
+
+function agendaTextFits(text: string, pt: number): boolean {
+  if (!text.trim()) return true
+  if (longestWordPx(text, pt) * 1.1 > _AG_TEXT_W) return false
+  const cpl = Math.max(1, Math.floor(_AG_TEXT_W / (pt * 2.667 * 0.65)))
+  const words = text.split(/\s+/).filter(Boolean)
+  let lines = 1, cur = 0
+  for (const w of words) {
+    if (!cur) { cur = w.length }
+    else if (cur + 1 + w.length <= cpl) { cur += 1 + w.length }
+    else { lines++; cur = w.length }
+  }
+  return lines * agendaLineH(pt) <= _AG_TEXT_H
+}
+
+// Returns the largest pt (≤ _AG_BODY_PT, ≥ _AG_BODY_MIN) at which every item fits.
+// Tightest item dictates the group — all items on the slide share one font size.
+function pickAgendaBodyPt(texts: string[]): number {
+  let groupPt = _AG_BODY_PT
+  for (const text of texts) {
+    if (!text.trim()) continue
+    let itemPt = _AG_BODY_MIN
+    for (const pt of _AG_BODY_SCALE) {
+      if (agendaTextFits(text, pt)) { itemPt = pt; break }
+    }
+    groupPt = Math.min(groupPt, itemPt)
+  }
+  return Math.max(groupPt, _AG_BODY_MIN)
+}
+
 function buildAgendaRequests(
   slide: slides_v1.Schema$Page,
   slots: Record<string, string>,
   pageId: string,
   slideIdx: number,
   rowDefs: readonly (readonly number[])[],
-  maxChars: number,
 ): object[] {
   const reqs: object[] = []
 
@@ -1660,6 +1687,17 @@ function buildAgendaRequests(
       reqs.push({ deleteObject: { objectId: el.objectId } })
     }
   }
+
+  // Pre-pass: collect all item texts → pick uniform font size for the slide
+  const allTexts: string[] = []
+  let _cnt = 0
+  for (const cols of rowDefs) {
+    for (let c = 0; c < cols.length; c++, _cnt++) {
+      const raw = (slots[`ПУНКТ_${_cnt + 1}`] ?? '').trim().replace(/^\d+[\.\)\s]\s*/, '').trim()
+      allTexts.push(raw)
+    }
+  }
+  const bodyPt = pickAgendaBodyPt(allTexts)
 
   const isSingleRow = rowDefs.length === 1
   let itemIdx = 0  // global item counter across all rows
@@ -1713,12 +1751,9 @@ function buildAgendaRequests(
       const slotName = `ПУНКТ_${itemIdx + 1}`
       // Strip leading "1." / "1) " / "1 " patterns — LLM copies numbered lists from source doc.
       // Numbers are already shown via red dots (01/02...).
-      const rawText = (slots[slotName] ?? '').trim().replace(/^\d+[\.\)\s]\s*/, '').trim()
-      // Truncate at maxChars — cut at word boundary to avoid mid-word splits
-      const capped = rawText.length > maxChars
-        ? rawText.slice(0, maxChars - 1).replace(/\s+\S*$/, '') + '…'
-        : rawText
-      const itemText = stripTrailingPeriod(addNbsp(capped))
+      const itemText = stripTrailingPeriod(addNbsp(
+        (slots[slotName] ?? '').trim().replace(/^\d+[\.\)\s]\s*/, '').trim()
+      ))
       const colX     = colXs[colIdx]
       const numText  = String(itemIdx + 1).padStart(2, '0')
 
@@ -1844,7 +1879,7 @@ function buildAgendaRequests(
             style: {
               weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
               foregroundColor: { opaqueColor: { rgbColor: { red: 1, green: 1, blue: 1 } } },
-              fontSize: { magnitude: _AG_BODY_PT, unit: 'PT' },
+              fontSize: { magnitude: bodyPt, unit: 'PT' },
               bold: false,
             },
             fields: 'weightedFontFamily,foregroundColor,fontSize,bold',
@@ -2951,8 +2986,7 @@ export async function buildPresentation(
     if (!pageId) continue
     const slide = updatedSlides.find(s => s.objectId === pageId)
     if (!slide) continue
-    const maxChars = AGENDA_MAX_CHARS[compId] ?? 80
-    requests.push(...buildAgendaRequests(slide, plan.slides[i].slots, pageId, i, rowDefs, maxChars))
+    requests.push(...buildAgendaRequests(slide, plan.slides[i].slots, pageId, i, rowDefs))
   }
 
   // ── three_columns_num: create numbered red pills ──────────────────────────────
