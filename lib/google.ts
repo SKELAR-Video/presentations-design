@@ -1612,9 +1612,7 @@ const _AG_NUM_PT  = 18   // number font size (48 Figma px / 2.667)
 const _AG_BODY_PT = 14   // body text (36 Figma px / 2.667 ≈ 13.5 → 14)
 const _AG_NUM_H   = 54   // number text box height
 const _AG_TEXT_H  = 200  // item text box height (both rows — enough for ~4 lines at 14pt)
-const _AG_LINE_X  = 90   // line left edge (left margin)
-const _AG_LINE_W  = 1740 // line width: 90 → 1830 (full content width)
-const _AG_LINE_H  = 2    // line thickness (px)
+const _AG_LINE_H  = 8    // line thickness (px) — 4× original 2px
 // Y positions per row (from Figma)
 const _AG_ROWS = [
   { numY: 337, dotY: 394, lineY: 420, textY: 487 },
@@ -1644,7 +1642,14 @@ function buildAgendaRequests(
   for (let rowIdx = 0; rowIdx < 2; rowIdx++) {
     const row = _AG_ROWS[rowIdx]
 
-    // Horizontal red line (thin rectangle behind dots)
+    // Horizontal red line:
+    //   row 0 — from slide left edge (x=0) to center of last dot in row
+    //   row 1 — from center of first dot in row to slide right edge (x=1920)
+    const dotCenter0 = _AG_COL_X[0] + _AG_DOT_SZ / 2                          // 90+27=117
+    const dotCenterLast = _AG_COL_X[ITEMS_PER_ROW - 1] + _AG_DOT_SZ / 2       // 1456+27=1483
+    const lineX = rowIdx === 0 ? 0 : dotCenter0                                 // 0 or 117
+    const lineW = rowIdx === 0 ? dotCenterLast : 1920 - dotCenter0              // 1483 or 1803
+    const lineTopY = row.dotY + _AG_DOT_SZ / 2 - _AG_LINE_H / 2               // center on dot
     const lineId = `ag_line_${slideIdx}_r${rowIdx}`
     reqs.push(
       {
@@ -1654,12 +1659,12 @@ function buildAgendaRequests(
           elementProperties: {
             pageObjectId: pageId,
             size: {
-              width:  { magnitude: _eL(_AG_LINE_W), unit: 'EMU' },
+              width:  { magnitude: _eL(lineW), unit: 'EMU' },
               height: { magnitude: _eL(_AG_LINE_H), unit: 'EMU' },
             },
             transform: {
-              scaleX: 1, shearX: 0, translateX: _eL(_AG_LINE_X),
-              shearY: 0, scaleY: 1, translateY: _eL(row.lineY),
+              scaleX: 1, shearX: 0, translateX: _eL(lineX),
+              shearY: 0, scaleY: 1, translateY: _eL(lineTopY),
               unit: 'EMU',
             },
           },
@@ -1731,11 +1736,13 @@ function buildAgendaRequests(
             elementProperties: {
               pageObjectId: pageId,
               size: {
-                width:  { magnitude: _eL(_AG_DOT_SZ + 2 * _INSET), unit: 'EMU' },
+                // 120px element → 82px content, safely fits "06" at 18pt (≈48px Figma)
+                // Centered over dot: element_x = dot_center - 60 = colX + 27 - 60 = colX - 33
+                width:  { magnitude: _eL(120), unit: 'EMU' },
                 height: { magnitude: _eL(_AG_NUM_H + 2 * _INSET), unit: 'EMU' },
               },
               transform: {
-                scaleX: 1, shearX: 0, translateX: _eL(colX - _INSET),
+                scaleX: 1, shearX: 0, translateX: _eL(colX + _AG_DOT_SZ / 2 - 60),
                 shearY: 0, scaleY: 1, translateY: _eL(row.numY - _INSET),
                 unit: 'EMU',
               },
@@ -1818,7 +1825,7 @@ function buildAgendaRequests(
         {
           updateParagraphStyle: {
             objectId: textId,
-            style: { alignment: 'START', lineSpacing: 118, spaceAbove: { magnitude: 0, unit: 'PT' }, spaceBelow: { magnitude: 0, unit: 'PT' } },
+            style: { alignment: 'START', lineSpacing: 90, spaceAbove: { magnitude: 0, unit: 'PT' }, spaceBelow: { magnitude: 0, unit: 'PT' } },
             fields: 'alignment,lineSpacing,spaceAbove,spaceBelow',
             textRange: { type: 'ALL' },
           },
