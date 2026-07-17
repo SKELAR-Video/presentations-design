@@ -2942,6 +2942,18 @@ export async function buildPresentation(
     requests.push(...buildBadgesRequests(i, slide, plan.slides[i].slots, pageId))
   }
 
+  // ── agenda_*: pre-truncate slots in-plan so validateDeck sees clean values ───
+  for (const s of plan.slides) {
+    const mc = AGENDA_MAX_CHARS[s.composition]
+    if (!mc) continue
+    for (const key of Object.keys(s.slots)) {
+      const val = s.slots[key]
+      if (val.length > mc) {
+        s.slots[key] = val.slice(0, mc - 1).replace(/\s+\S*$/, '') + '…'
+      }
+    }
+  }
+
   // ── agenda_*: delete placeholder items + create timeline shapes ─────────────
   for (let i = 0; i < plan.slides.length; i++) {
     const compId = plan.slides[i].composition
