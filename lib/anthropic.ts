@@ -101,6 +101,40 @@ type SlideAssignment = {
   assignment: Record<string, number | number[] | null>
 }
 
+// Corrects common LLM slot-naming mistakes — runs in both 1to1 and free-form paths.
+function applyMappingGuards(composition: string, slots: Record<string, string>, slideNum: number): string {
+  // columns_flex uses КОЛОНКА_N — if LLM put КАРТКА_N, rename.
+  if (composition === 'columns_flex') {
+    for (let n = 1; n <= 4; n++) {
+      const k = `КАРТКА_${n}`
+      if (slots[k] !== undefined) {
+        slots[`КОЛОНКА_${n}`] = slots[k]
+        delete slots[k]
+        console.warn(`[columns_flex-guard] slide ${slideNum}: renamed КАРТКА_${n} → КОЛОНКА_${n}`)
+      }
+    }
+  }
+  // three_columns/three_columns_num support only 3 columns — upgrade to columns_flex if 4 items.
+  if ((composition === 'three_columns' || composition === 'three_columns_num') && slots['КОЛОНКА_4']) {
+    console.warn(`[four-col-guard] slide ${slideNum}: ${composition} has КОЛОНКА_4 → remapped to columns_flex`)
+    composition = 'columns_flex'
+  }
+  // bento_right_N uses КАРТКА_N — if LLM put КОЛОНКА_N, rename and pick correct variant.
+  if (composition.startsWith('bento_right_') && slots['КОЛОНКА_1'] !== undefined) {
+    const colCount = [1, 2, 3, 4].filter(n => slots[`КОЛОНКА_${n}`] !== undefined).length
+    for (let n = 1; n <= 4; n++) {
+      if (slots[`КОЛОНКА_${n}`] !== undefined) {
+        slots[`КАРТКА_${n}`] = slots[`КОЛОНКА_${n}`]
+        delete slots[`КОЛОНКА_${n}`]
+      }
+    }
+    const fixed = colCount === 4 ? 'bento_right_2x2' : colCount === 2 ? 'bento_right_2' : 'bento_right_3'
+    console.warn(`[bento-right-guard] slide ${slideNum}: КОЛОНКА_N → КАРТКА_N, ${composition} → ${fixed} (${colCount} items)`)
+    composition = fixed
+  }
+  return composition
+}
+
 export async function mapSlides1to1(
   slides: SourceSlide[],
   theme: Theme,
@@ -172,9 +206,10 @@ JSON з рівно ${slides.length} елементами в "slides".`
         if (text) slots[slotName] = text
       }
 
+      const composition = applyMappingGuards(m.composition || 'title_body', slots, i + 1)
       return {
         id: `slide_${i + 1}`,
-        composition: m.composition || 'title_body',
+        composition,
         slots,
         flags: {},
       }
@@ -412,41 +447,8 @@ ${sheetSummary}
         }
       }
 
-      // Guard: columns_flex uses КОЛОНКА_N — if LLM put КАРТКА_N, auto-remap.
-      if (s.composition === 'columns_flex') {
-        for (let n = 1; n <= 4; n++) {
-          const kartkKey = `КАРТКА_${n}`
-          if (slots[kartkKey] !== undefined) {
-            slots[`КОЛОНКА_${n}`] = slots[kartkKey]
-            delete slots[kartkKey]
-            console.warn(`[columns_flex-guard] slide ${i + 1}: renamed КАРТКА_${n} → КОЛОНКА_${n}`)
-          }
-        }
-      }
-
-      // Guard: three_columns/three_columns_num supports only 3 columns.
-      // If LLM assigned КОЛОНКА_4, upgrade to columns_flex so no content is lost.
-      if ((s.composition === 'three_columns' || s.composition === 'three_columns_num') && slots['КОЛОНКА_4']) {
-        console.warn(`[four-col-guard] slide ${i + 1}: ${s.composition} has КОЛОНКА_4 → remapped to columns_flex`)
-        s.composition = 'columns_flex'
-      }
-
-      // Guard: bento_right_N uses КАРТКА_N, not КОЛОНКА_N.
-      // If LLM assigned КОЛОНКА_N, rename to КАРТКА_N and pick correct variant by count.
-      if (s.composition.startsWith('bento_right_') && slots['КОЛОНКА_1'] !== undefined) {
-        const colCount = [1, 2, 3, 4].filter(n => slots[`КОЛОНКА_${n}`] !== undefined).length
-        for (let n = 1; n <= 4; n++) {
-          if (slots[`КОЛОНКА_${n}`] !== undefined) {
-            slots[`КАРТКА_${n}`] = slots[`КОЛОНКА_${n}`]
-            delete slots[`КОЛОНКА_${n}`]
-          }
-        }
-        const fixed = colCount === 4 ? 'bento_right_2x2' : colCount === 2 ? 'bento_right_2' : 'bento_right_3'
-        console.warn(`[bento-right-guard] slide ${i + 1}: КОЛОНКА_N → КАРТКА_N, ${s.composition} → ${fixed} (${colCount} items)`)
-        s.composition = fixed
-      }
-
-      return { id: `slide_${i + 1}`, composition: s.composition || 'title_body', slots, flags: {} }
+      const composition = applyMappingGuards(s.composition || 'title_body', slots, i + 1)
+      return { id: `slide_${i + 1}`, composition, slots, flags: {} }
     })
   }
 
