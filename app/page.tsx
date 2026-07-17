@@ -6,7 +6,9 @@ import { signOut } from 'next-auth/react'
 
 export default function HomePage() {
   const router = useRouter()
-  const [docUrl, setDocUrl] = useState('')
+  const [docUrl, setDocUrl] = useState(() =>
+    typeof window !== 'undefined' ? (localStorage.getItem('last_doc_url') ?? '') : ''
+  )
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -84,7 +86,7 @@ export default function HomePage() {
           <input
             type="url"
             value={docUrl}
-            onChange={(e) => { setDocUrl(e.target.value); setError('') }}
+            onChange={(e) => { setDocUrl(e.target.value); localStorage.setItem('last_doc_url', e.target.value); setError('') }}
             onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
             placeholder="Додай сюди посилання на Google Slides або Google Doc"
             className="w-full rounded-xl bg-[#292D39] border border-[#3B404C] text-white placeholder-[#A2A6B1] px-4 py-4 text-sm focus:outline-none focus:border-[#A2A6B1] transition-colors"
