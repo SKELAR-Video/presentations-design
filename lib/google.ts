@@ -1605,18 +1605,19 @@ function buildBentoRowLayoutRequests(
 // Shared by agenda_3/4/5/6/7/8. Per-row column X positions (dot left edge, px).
 // Font conversion: Figma px / 2.667 = Google Slides pt  (e.g. 48/2.667≈18, 36/2.667≈14)
 const _AG_COL_X   = [90, 773, 1456] as const         // 3 cols (pitch=683)
-const _AG2_COL_X  = [90, 960] as const               // 2 cols (symmetric half-split)
 const _AG8_COL_X  = [90, 545, 1000, 1455] as const   // 4 cols (pitch=455)
+const _AG5_R1_X   = [90, 773] as const               // agenda_5 row 1: 2 cols
+const _AG7_R1_X   = [90, 545, 1000] as const         // agenda_7 row 1: 3 cols
 
 // Row definitions per composition: each entry is the colXs for that row.
-// Single-element = single row; asymmetric rows allowed (e.g. 3+2 for agenda_5).
+// Single-element = single row (agenda_3/4); uses _AG_ROW_SINGLE Y positions.
 const AGENDA_ROW_DEFS: Readonly<Record<string, readonly (readonly number[])[]>> = {
-  agenda_3: [_AG_COL_X],
-  agenda_4: [_AG2_COL_X, _AG2_COL_X],
-  agenda_5: [_AG_COL_X, _AG2_COL_X],
-  agenda_6: [_AG_COL_X, _AG_COL_X],
-  agenda_7: [_AG8_COL_X, _AG_COL_X],
-  agenda_8: [_AG8_COL_X, _AG8_COL_X],
+  agenda_3: [_AG_COL_X],               // 1 row × 3 cols
+  agenda_4: [_AG8_COL_X],              // 1 row × 4 cols
+  agenda_5: [_AG_COL_X, _AG5_R1_X],   // 2 rows: 3+2
+  agenda_6: [_AG_COL_X, _AG_COL_X],   // 2 rows: 3+3 (unchanged)
+  agenda_7: [_AG8_COL_X, _AG7_R1_X],  // 2 rows: 4+3
+  agenda_8: [_AG8_COL_X, _AG8_COL_X], // 2 rows: 4+4 (unchanged)
 }
 const _AG_TEXT_W  = 374  // item text box width (px)
 const _AG_DOT_SZ  = 54   // dot ellipse diameter
@@ -1625,11 +1626,13 @@ const _AG_BODY_PT = 14   // body text (36 Figma px / 2.667 ≈ 13.5 → 14)
 const _AG_NUM_H   = 54   // number text box height
 const _AG_TEXT_H  = 200  // item text box height (both rows — enough for ~4 lines at 14pt)
 const _AG_LINE_H  = 8    // line thickness (px) — 4× original 2px
-// Y positions per row (from Figma)
+// Y positions for two-row agendas (agenda_5/6/7/8)
 const _AG_ROWS = [
-  { numY: 337, dotY: 394, lineY: 420, textY: 487 },
-  { numY: 690, dotY: 747, lineY: 773, textY: 840 },
+  { numY: 337, dotY: 394, textY: 487 },
+  { numY: 690, dotY: 747, textY: 840 },
 ] as const
+// Y positions for single-row agendas (agenda_3/4) — vertically centred on slide
+const _AG_ROW_SINGLE = { numY: 493, dotY: 550, textY: 643 } as const
 const _AG_RED_RGB   = { red: 0xFD / 255, green: 0x34 / 255, blue: 0x33 / 255 }
 const _AG_MUTED_RGB = { red: 162 / 255, green: 166 / 255, blue: 177 / 255 }
 
@@ -1651,20 +1654,22 @@ function buildAgendaRequests(
     }
   }
 
+  const isSingleRow = rowDefs.length === 1
   let itemIdx = 0  // global item counter across all rows
 
   for (let rowIdx = 0; rowIdx < rowDefs.length; rowIdx++) {
-    const row = _AG_ROWS[rowIdx]
+    const row = isSingleRow ? _AG_ROW_SINGLE : _AG_ROWS[rowIdx]
     const colXs = rowDefs[rowIdx]
     const ITEMS_PER_ROW = colXs.length
 
-    // Horizontal red line — each row uses its own colXs:
-    //   row 0 — from slide left edge (x=0) to center of last dot in this row
-    //   row 1 — from center of first dot in this row to slide right edge (x=1920)
+    // Horizontal red line:
+    //   single row   — full slide width (x=0 to x=1920)
+    //   two rows r0  — left edge to center of last dot in this row
+    //   two rows r1  — center of first dot in this row to right edge
     const dotCenter0 = colXs[0] + _AG_DOT_SZ / 2
     const dotCenterLast = colXs[ITEMS_PER_ROW - 1] + _AG_DOT_SZ / 2
-    const lineX = rowIdx === 0 ? 0 : dotCenter0
-    const lineW = rowIdx === 0 ? dotCenterLast : 1920 - dotCenter0
+    const lineX = isSingleRow ? 0 : (rowIdx === 0 ? 0 : dotCenter0)
+    const lineW = isSingleRow ? 1920 : (rowIdx === 0 ? dotCenterLast : 1920 - dotCenter0)
     const lineTopY = row.dotY + _AG_DOT_SZ / 2 - _AG_LINE_H / 2               // center on dot
     const lineId = `ag_line_${slideIdx}_r${rowIdx}`
     reqs.push(
