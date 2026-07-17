@@ -2485,6 +2485,25 @@ export async function buildPresentation(
   plan: SlidePlan,
   title: string,
 ): Promise<{ url: string; presentationId: string; validation: ValidationReport; deckFacts: DeckFactReport }> {
+  // Guard: fix common LLM slot-naming mistakes before anything else runs.
+  for (const slide of plan.slides) {
+    const s = slide.slots
+    const c = slide.composition
+    if ((c === 'three_columns' || c === 'three_columns_num') && s['КОЛОНКА_4']) {
+      console.warn(`[four-col-guard/build] ${c} has КОЛОНКА_4 → columns_flex`)
+      slide.composition = 'columns_flex'
+    }
+    if (slide.composition.startsWith('bento_right_') && s['КОЛОНКА_1'] !== undefined) {
+      const n = [1,2,3,4].filter(k => s[`КОЛОНКА_${k}`] !== undefined).length
+      for (let k = 1; k <= 4; k++) {
+        if (s[`КОЛОНКА_${k}`] !== undefined) { s[`КАРТКА_${k}`] = s[`КОЛОНКА_${k}`]; delete s[`КОЛОНКА_${k}`] }
+      }
+      const fixed = n === 4 ? 'bento_right_2x2' : n === 2 ? 'bento_right_2' : 'bento_right_3'
+      console.warn(`[bento-right-guard/build] ${slide.composition} → ${fixed} (${n} items)`)
+      slide.composition = fixed
+    }
+  }
+
   const auth = getOAuth2Client(accessToken)
   const drive = google.drive({ version: 'v3', auth })
   const slidesApi = google.slides({ version: 'v1', auth })
