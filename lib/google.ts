@@ -2154,8 +2154,7 @@ async function readDeckFacts(
 const VARIANT_GROUPS: readonly (readonly string[])[] = [
   ['two_columns', 'bento_right_2'],
   ['three_columns', 'bento_right_3', 'three_columns_num', 'columns_flex'],
-  ['four_columns', 'four_columns_num'],
-  ['bento_right_2x2', 'bento_bottom_4'],
+  ['four_columns', 'four_columns_num', 'bento_right_2x2', 'bento_bottom_4'],
 ]
 
 function remapSlotsForVariant(
@@ -2171,6 +2170,14 @@ function remapSlotsForVariant(
     'bento_right_3:three_columns':     { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3' },
     'bento_right_3:three_columns_num': { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3' },
     'three_columns_num:bento_right_3': { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3' },
+    'four_columns:bento_right_2x2':     { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
+    'four_columns:bento_bottom_4':      { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
+    'four_columns_num:bento_right_2x2': { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
+    'four_columns_num:bento_bottom_4':  { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
+    'bento_right_2x2:four_columns':     { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
+    'bento_right_2x2:four_columns_num': { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
+    'bento_bottom_4:four_columns':      { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
+    'bento_bottom_4:four_columns_num':  { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
   }
   const map = MAPS[`${fromComp}:${toComp}`]
   if (!map) return { ...slots }
