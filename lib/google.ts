@@ -2485,28 +2485,45 @@ export async function buildPresentation(
   plan: SlidePlan,
   title: string,
 ): Promise<{ url: string; presentationId: string; validation: ValidationReport; deckFacts: DeckFactReport }> {
-  // Guard: fix common LLM slot-naming mistakes — creates a corrected copy of the plan.
+  // Guard: fix LLM slot-naming mistakes. Uses /_\d+$/ (ASCII-only) — immune to
+  // Cyrillic/Latin lookalike homoglyphs that break direct string-key access.
   plan = {
     ...plan,
     slides: plan.slides.map(slide => {
       let composition = slide.composition
       const slots: Record<string, string> = { ...slide.slots }
 
-      if ((composition === 'three_columns' || composition === 'three_columns_num') && slots['КОЛОНКА_4']) {
-        console.warn(`[four-col-guard] ${composition} has КОЛОНКА_4 → columns_flex`)
-        composition = 'columns_flex'
+      // three_columns/three_columns_num: max 3 numeric-suffix slots allowed.
+      // Count all keys ending in _N regardless of prefix encoding.
+      if (composition === 'three_columns' || composition === 'three_columns_num') {
+        const numericKeyCount = Object.keys(slots).filter(k => /_\d+$/.test(k)).length
+        if (numericKeyCount > 3) {
+          console.warn(`[guard] ${composition}: ${numericKeyCount} numeric slots → columns_flex`)
+          composition = 'columns_flex'
+        }
       }
-      if (composition.startsWith('bento_right_') && slots['КОЛОНКА_1'] !== undefined) {
-        const n = [1, 2, 3, 4].filter(k => slots[`КОЛОНКА_${k}`] !== undefined).length
-        for (let k = 1; k <= 4; k++) {
-          if (slots[`КОЛОНКА_${k}`] !== undefined) {
-            slots[`КАРТКА_${k}`] = slots[`КОЛОНКА_${k}`]
-            delete slots[`КОЛОНКА_${k}`]
+
+      // bento_right_*: all _N keys must be КАРТКА_N (Cyrillic from source).
+      // Rename any _N key whose exact string !== the Cyrillic КАРТКА_N we'd create.
+      if (composition.startsWith('bento_right_')) {
+        const numKeys = Object.keys(slots).filter(k => /_\d+$/.test(k) && slots[k])
+        let renamed = false
+        for (const k of numKeys) {
+          const num = k.match(/_(\d+)$/)?.[1]
+          if (!num) continue
+          const correct = `КАРТКА_${num}`
+          if (k !== correct) {
+            slots[correct] = slots[k]
+            delete slots[k]
+            renamed = true
           }
         }
-        const fixed = n === 4 ? 'bento_right_2x2' : n === 2 ? 'bento_right_2' : 'bento_right_3'
-        console.warn(`[bento-right-guard] ${composition} → ${fixed} (${n} items)`)
-        composition = fixed
+        if (renamed) {
+          const n = Object.keys(slots).filter(k => /_\d+$/.test(k) && slots[k]).length
+          const fixed = n >= 4 ? 'bento_right_2x2' : n === 2 ? 'bento_right_2' : 'bento_right_3'
+          console.warn(`[guard] bento: renamed wrong keys → ${n} КАРТКА, ${fixed}`)
+          composition = fixed
+        }
       }
 
       return composition === slide.composition && slots === slide.slots

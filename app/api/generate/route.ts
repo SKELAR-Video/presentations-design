@@ -18,34 +18,39 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'План слайдів порожній' }, { status: 400 })
   }
 
-  // Guard: fix LLM slot naming errors. Pattern-based — independent of compositions.ts.
+  // Guard: encoding-agnostic fix for LLM slot-naming errors.
+  // Uses /_\d+$/ (ASCII underscore+digits only) — survives Cyrillic/Latin homoglyphs.
   const plan: SlidePlan = {
     ...body.plan,
     slides: body.plan.slides.map(slide => {
       let composition = slide.composition
       const slots: Record<string, string> = { ...slide.slots }
 
-      // three_columns / three_columns_num: КОЛОНКА_4 means 4 items → columns_flex
-      if (
-        (composition === 'three_columns' || composition === 'three_columns_num') &&
-        slots['КОЛОНКА_4']
-      ) {
-        console.warn(`[guard] ${composition} has КОЛОНКА_4 → columns_flex`)
-        composition = 'columns_flex'
+      // three_columns/three_columns_num: max 3 _N keys allowed
+      if (composition === 'three_columns' || composition === 'three_columns_num') {
+        const numericKeyCount = Object.keys(slots).filter(k => /_\d+$/.test(k)).length
+        if (numericKeyCount > 3) {
+          composition = 'columns_flex'
+        }
       }
 
-      // bento_right_*: slots must be КАРТКА_N, not КОЛОНКА_N — rename any КОЛОНКА_N found
+      // bento_right_*: rename any _N key that isn't already the Cyrillic КАРТКА_N
       if (composition.startsWith('bento_right_')) {
-        const colKeys = Object.keys(slots).filter(k => /^КОЛОНКА_\d+$/.test(k) && slots[k])
-        if (colKeys.length > 0) {
-          for (const k of colKeys) {
-            const num = k.replace(/\D/g, '')
-            slots[`КАРТКА_${num}`] = slots[k]
+        const numKeys = Object.keys(slots).filter(k => /_\d+$/.test(k) && slots[k])
+        let renamed = false
+        for (const k of numKeys) {
+          const num = k.match(/_(\d+)$/)?.[1]
+          if (!num) continue
+          const correct = `КАРТКА_${num}`
+          if (k !== correct) {
+            slots[correct] = slots[k]
             delete slots[k]
+            renamed = true
           }
-          const n = Object.keys(slots).filter(k => k.startsWith('КАРТКА_')).length
+        }
+        if (renamed) {
+          const n = Object.keys(slots).filter(k => /_\d+$/.test(k) && slots[k]).length
           composition = n >= 4 ? 'bento_right_2x2' : n === 2 ? 'bento_right_2' : 'bento_right_3'
-          console.warn(`[guard] bento: renamed ${colKeys.length} КОЛОНКА→КАРТКА, ${n} cards → ${composition}`)
         }
       }
 

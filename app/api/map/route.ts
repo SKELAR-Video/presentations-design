@@ -26,12 +26,12 @@ export async function POST(req: NextRequest) {
       let composition = slide.composition
       const slots: Record<string, string> = { ...slide.slots }
 
-      // three_columns / three_columns_num allow max 4 slots (1 header + 3 columns).
-      // If LLM stuffed 4 columns in, upgrade to columns_flex (supports 4).
+      // three_columns/three_columns_num: max 3 _N suffix keys allowed.
+      // Count by key suffix (encoding-agnostic) — immune to Cyrillic/Latin homoglyphs.
       if (composition === 'three_columns' || composition === 'three_columns_num') {
-        const nonEmpty = Object.values(slots).filter(v => v && v.trim()).length
-        if (nonEmpty > 4) {
-          console.warn(`[map-guard] ${composition} has ${nonEmpty} slots → columns_flex`)
+        const numericKeyCount = Object.keys(slots).filter(k => /_\d+$/.test(k)).length
+        if (numericKeyCount > 3) {
+          console.warn(`[map-guard] ${composition}: ${numericKeyCount} numeric slots → columns_flex`)
           composition = 'columns_flex'
         }
       }
