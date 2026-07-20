@@ -58,9 +58,17 @@ export async function POST(req: NextRequest) {
   }
   const title = body.title
 
+  // Snapshot slide compositions and slot key counts AFTER guard — for debugging.
+  const _planSnapshot = plan.slides.map((s, i) => ({
+    n: i + 1,
+    comp: s.composition,
+    slotKeys: Object.keys(s.slots),
+    nonEmpty: Object.values(s.slots).filter(v => v && v.trim()).length,
+  }))
+
   try {
     const { url, presentationId, validation, deckFacts } = await buildPresentation(accessToken, plan, title || 'SKELAR Presentation')
-    return NextResponse.json({ url, presentationId, validation, deckFacts })
+    return NextResponse.json({ url, presentationId, validation, deckFacts, _planSnapshot })
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e)
     console.error('[generate] error:', message)
