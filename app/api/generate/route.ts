@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { buildPresentation } from '@/lib/google'
-import { getComposition } from '@/lib/compositions'
 import type { SlidePlan } from '@/lib/types'
 
 export const maxDuration = 300
@@ -19,37 +18,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'План слайдів порожній' }, { status: 400 })
   }
 
-  // Fix common LLM slot errors: find slots not in composition definition and recover.
+  // Guard: fix LLM slot naming errors. Pattern-based — independent of compositions.ts.
   const plan: SlidePlan = {
     ...body.plan,
     slides: body.plan.slides.map(slide => {
       let composition = slide.composition
       const slots: Record<string, string> = { ...slide.slots }
 
-      const compDef = getComposition(composition)
-      const knownSlots = new Set(compDef?.slots.map(s => s.name) ?? [])
-      const extraKeys = Object.keys(slots).filter(k => !knownSlots.has(k) && slots[k])
+      // three_columns / three_columns_num: КОЛОНКА_4 means 4 items → columns_flex
+      if (
+        (composition === 'three_columns' || composition === 'three_columns_num') &&
+        slots['КОЛОНКА_4']
+      ) {
+        console.warn(`[guard] ${composition} has КОЛОНКА_4 → columns_flex`)
+        composition = 'columns_flex'
+      }
 
-      if (extraKeys.length > 0) {
-        console.warn(`[route-guard] slide "${slide.id}" (${composition}): extra slots ${JSON.stringify(extraKeys)}`)
-
-        // three_columns / three_columns_num with overflow columns → columns_flex
-        if (composition === 'three_columns' || composition === 'three_columns_num') {
-          composition = 'columns_flex'
-          console.warn(`[route-guard] → upgraded to columns_flex`)
-        }
-
-        // bento_right_N with КОЛОНКА instead of КАРТКА → rename + pick variant
-        if (composition.startsWith('bento_right_')) {
-          const allKeys = Object.keys(slots)
-          const colKeys = allKeys.filter(k => !knownSlots.has(k) && slots[k])
+      // bento_right_*: slots must be КАРТКА_N, not КОЛОНКА_N — rename any КОЛОНКА_N found
+      if (composition.startsWith('bento_right_')) {
+        const colKeys = Object.keys(slots).filter(k => /^КОЛОНКА_\d+$/.test(k) && slots[k])
+        if (colKeys.length > 0) {
           for (const k of colKeys) {
             const num = k.replace(/\D/g, '')
-            if (num) { slots[`КАРТКА_${num}`] = slots[k]; delete slots[k] }
+            slots[`КАРТКА_${num}`] = slots[k]
+            delete slots[k]
           }
           const n = Object.keys(slots).filter(k => k.startsWith('КАРТКА_')).length
           composition = n >= 4 ? 'bento_right_2x2' : n === 2 ? 'bento_right_2' : 'bento_right_3'
-          console.warn(`[route-guard] → bento renamed, ${n} cards → ${composition}`)
+          console.warn(`[guard] bento: renamed ${colKeys.length} КОЛОНКА→КАРТКА, ${n} cards → ${composition}`)
         }
       }
 

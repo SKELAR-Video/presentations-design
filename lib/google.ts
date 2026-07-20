@@ -2605,10 +2605,6 @@ export async function buildPresentation(
       if (!tokens) continue
       const filled = tokens.filter(t => !!slide.slots[t]).length
       if (filled >= tokens.length) continue
-      // Skip downgrade when extra non-BENTO slots exist (LLM used wrong slot names).
-      // Bento has at most 2 non-BENTO slots (header + body); more = displaced content, not empty.
-      const totalNonEmpty = Object.values(slide.slots).filter(v => v && (v as string).trim()).length
-      if (totalNonEmpty - filled > 2) continue
       const target = DOWNGRADE[slide.composition]?.[filled]
       if (target) slide.composition = target
     }
