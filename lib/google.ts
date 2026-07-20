@@ -2297,8 +2297,9 @@ function buildThreeColumnsNumRequests(pageId: string): object[] {
             },
             outline: { propertyState: 'NOT_RENDERED' },
             contentAlignment: 'MIDDLE',
+            autofit: { autofitType: 'NONE' },
           },
-          fields: 'shapeBackgroundFill,outline,contentAlignment',
+          fields: 'shapeBackgroundFill,outline,contentAlignment,autofit.autofitType',
         },
       },
       { insertText: { objectId: pillId, insertionIndex: 0, text: `${k + 1}` } },
@@ -2318,8 +2319,8 @@ function buildThreeColumnsNumRequests(pageId: string): object[] {
       {
         updateParagraphStyle: {
           objectId: pillId,
-          style: { alignment: 'CENTER', lineSpacing: 90 },
-          fields: 'alignment,lineSpacing',
+          style: { alignment: 'CENTER', lineSpacing: 90, spaceAbove: { magnitude: 0, unit: 'PT' }, spaceBelow: { magnitude: 0, unit: 'PT' } },
+          fields: 'alignment,lineSpacing,spaceAbove,spaceBelow',
           textRange: { type: 'ALL' },
         },
       },
@@ -2396,7 +2397,7 @@ function buildColumnsFlexRequests(
       },
     )
 
-    // Column text box in muted gray
+    // Column text box in white
     reqs.push(
       {
         createShape: {
@@ -2423,7 +2424,7 @@ function buildColumnsFlexRequests(
           style: {
             fontSize: { magnitude: 18, unit: 'PT' },
             bold: false,
-            foregroundColor: { opaqueColor: { rgbColor: _MUTED_CF } },
+            foregroundColor: { opaqueColor: { rgbColor: { red: 1, green: 1, blue: 1 } } },
             weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
           },
           fields: 'fontSize,bold,foregroundColor,weightedFontFamily',
@@ -2489,14 +2490,26 @@ function buildFlatColumnsRequests(
       const k = parseInt(m[1]) - 1
       const cx = _FLAT4_LEFT + k * (_FLAT4_CW + _FLAT4_GAP)
       reqs.push(makeElemTransform(el.objectId, cx - _INSET, _FLAT4_TEXT_Y - _INSET, _FLAT4_CW + 2 * _INSET, _FLAT4_TEXT_H + 2 * _INSET, sW, sH))
-      reqs.push({
-        updateParagraphStyle: {
-          objectId: el.objectId,
-          style: { lineSpacing: 90 },
-          fields: 'lineSpacing',
-          textRange: { type: 'ALL' },
+      reqs.push(
+        {
+          updateTextStyle: {
+            objectId: el.objectId,
+            style: {
+              foregroundColor: { opaqueColor: { rgbColor: { red: 1, green: 1, blue: 1 } } },
+            },
+            fields: 'foregroundColor',
+            textRange: { type: 'ALL' },
+          },
         },
-      })
+        {
+          updateParagraphStyle: {
+            objectId: el.objectId,
+            style: { lineSpacing: 90 },
+            fields: 'lineSpacing',
+            textRange: { type: 'ALL' },
+          },
+        },
+      )
     }
   }
 
@@ -2593,8 +2606,8 @@ function buildFlatColumnsRequests(
         {
           updateParagraphStyle: {
             objectId: bgId,
-            style: { alignment: 'CENTER', lineSpacing: 90 },
-            fields: 'alignment,lineSpacing',
+            style: { alignment: 'CENTER', lineSpacing: 90, spaceAbove: { magnitude: 0, unit: 'PT' }, spaceBelow: { magnitude: 0, unit: 'PT' } },
+            fields: 'alignment,lineSpacing,spaceAbove,spaceBelow',
             textRange: { type: 'ALL' },
           },
         },
@@ -3323,7 +3336,7 @@ export async function buildPresentation(
     const templateColIds: (string | undefined)[] = []
     for (let k = 1; k <= 4; k++) {
       const val = slots[`КОЛОНКА_${k}`]
-      if (val) colTexts.push(val)
+      if (val) colTexts.push(stripTrailingPeriod(val))
       templateColIds.push(slotObjectIds[i]?.[`КОЛОНКА_${k}`])
     }
     const n = colTexts.length
