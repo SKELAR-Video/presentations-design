@@ -74,6 +74,10 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
       { name: 'КАРТКА_2', type: 'text', max_chars: 120, style: 'body' },
       { name: 'КАРТКА_3', type: 'text', max_chars: 120, style: 'body' },
       { name: 'КАРТКА_4', type: 'text', max_chars: 120, style: 'body' },
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 120, style: 'body', optional: true },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 120, style: 'body', optional: true },
+      { name: 'КОЛОНКА_3', type: 'text', max_chars: 120, style: 'body', optional: true },
+      { name: 'КОЛОНКА_4', type: 'text', max_chars: 120, style: 'body', optional: true },
     ],
   },
   {
@@ -162,6 +166,10 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
       { name: 'ТЕКСТ', type: 'text', max_chars: 320, style: 'body', optional: true },
       { name: 'КАРТКА_1', type: 'text', max_chars: 200, style: 'body' },
       { name: 'КАРТКА_2', type: 'text', max_chars: 200, style: 'body' },
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 200, style: 'body', optional: true },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 200, style: 'body', optional: true },
+      { name: 'КОЛОНКА_3', type: 'text', max_chars: 200, style: 'body', optional: true },
+      { name: 'КОЛОНКА_4', type: 'text', max_chars: 200, style: 'body', optional: true },
     ],
   },
   {
@@ -193,6 +201,10 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
       { name: 'КАРТКА_2', type: 'text', max_chars: 140, style: 'body' },
       { name: 'КАРТКА_3', type: 'text', max_chars: 140, style: 'body' },
       { name: 'КАРТКА_4', type: 'text', max_chars: 140, style: 'body' },
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 140, style: 'body', optional: true },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 140, style: 'body', optional: true },
+      { name: 'КОЛОНКА_3', type: 'text', max_chars: 140, style: 'body', optional: true },
+      { name: 'КОЛОНКА_4', type: 'text', max_chars: 140, style: 'body', optional: true },
     ],
   },
   {
