@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { buildPresentation } from '@/lib/google'
+import { getComposition } from '@/lib/compositions'
 import type { SlidePlan } from '@/lib/types'
 
 export const maxDuration = 300
@@ -18,24 +19,40 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'План слайдів порожній' }, { status: 400 })
   }
 
-  // Fix common LLM slot errors before passing to buildPresentation or validator.
+  // Fix common LLM slot errors: find slots not in composition definition and recover.
   const plan: SlidePlan = {
     ...body.plan,
     slides: body.plan.slides.map(slide => {
       let composition = slide.composition
       const slots: Record<string, string> = { ...slide.slots }
-      if ((composition === 'three_columns' || composition === 'three_columns_num') && slots['КОЛОНКА_4']) {
-        composition = 'columns_flex'
-        console.warn(`[route-guard] slide "${slide.id}": ${slide.composition} + КОЛОНКА_4 → columns_flex`)
-      }
-      if (composition.startsWith('bento_right_') && slots['КОЛОНКА_1'] !== undefined) {
-        const n = [1,2,3,4].filter(k => slots[`КОЛОНКА_${k}`] !== undefined).length
-        for (let k = 1; k <= 4; k++) {
-          if (slots[`КОЛОНКА_${k}`] !== undefined) { slots[`КАРТКА_${k}`] = slots[`КОЛОНКА_${k}`]; delete slots[`КОЛОНКА_${k}`] }
+
+      const compDef = getComposition(composition)
+      const knownSlots = new Set(compDef?.slots.map(s => s.name) ?? [])
+      const extraKeys = Object.keys(slots).filter(k => !knownSlots.has(k) && slots[k])
+
+      if (extraKeys.length > 0) {
+        console.warn(`[route-guard] slide "${slide.id}" (${composition}): extra slots ${JSON.stringify(extraKeys)}`)
+
+        // three_columns / three_columns_num with overflow columns → columns_flex
+        if (composition === 'three_columns' || composition === 'three_columns_num') {
+          composition = 'columns_flex'
+          console.warn(`[route-guard] → upgraded to columns_flex`)
         }
-        composition = n === 4 ? 'bento_right_2x2' : n === 2 ? 'bento_right_2' : 'bento_right_3'
-        console.warn(`[route-guard] slide "${slide.id}": bento КОЛОНКА→КАРТКА, ${n} items → ${composition}`)
+
+        // bento_right_N with КОЛОНКА instead of КАРТКА → rename + pick variant
+        if (composition.startsWith('bento_right_')) {
+          const allKeys = Object.keys(slots)
+          const colKeys = allKeys.filter(k => !knownSlots.has(k) && slots[k])
+          for (const k of colKeys) {
+            const num = k.replace(/\D/g, '')
+            if (num) { slots[`КАРТКА_${num}`] = slots[k]; delete slots[k] }
+          }
+          const n = Object.keys(slots).filter(k => k.startsWith('КАРТКА_')).length
+          composition = n >= 4 ? 'bento_right_2x2' : n === 2 ? 'bento_right_2' : 'bento_right_3'
+          console.warn(`[route-guard] → bento renamed, ${n} cards → ${composition}`)
+        }
       }
+
       return { ...slide, composition, slots }
     }),
   }
