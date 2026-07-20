@@ -1367,8 +1367,8 @@ function makeBentoNumRequests(numId: string, pageId: string, cardIdx: number, ca
     {
       updateParagraphStyle: {
         objectId: numId,
-        style: { alignment: 'START' },
-        fields: 'alignment',
+        style: { alignment: 'START', lineSpacing: 90 },
+        fields: 'alignment,lineSpacing',
         textRange: { type: 'ALL' },
       },
     },
@@ -2318,8 +2318,8 @@ function buildThreeColumnsNumRequests(pageId: string): object[] {
       {
         updateParagraphStyle: {
           objectId: pillId,
-          style: { alignment: 'CENTER' },
-          fields: 'alignment',
+          style: { alignment: 'CENTER', lineSpacing: 90 },
+          fields: 'alignment,lineSpacing',
           textRange: { type: 'ALL' },
         },
       },
@@ -2433,7 +2433,7 @@ function buildColumnsFlexRequests(
       {
         updateParagraphStyle: {
           objectId: colId,
-          style: { lineSpacing: 118 },
+          style: { lineSpacing: 90 },
           fields: 'lineSpacing',
           textRange: { type: 'ALL' },
         },
@@ -2489,11 +2489,10 @@ function buildFlatColumnsRequests(
       const k = parseInt(m[1]) - 1
       const cx = _FLAT4_LEFT + k * (_FLAT4_CW + _FLAT4_GAP)
       reqs.push(makeElemTransform(el.objectId, cx - _INSET, _FLAT4_TEXT_Y - _INSET, _FLAT4_CW + 2 * _INSET, _FLAT4_TEXT_H + 2 * _INSET, sW, sH))
-      // Set 118% line spacing to match Figma flat-column design
       reqs.push({
         updateParagraphStyle: {
           objectId: el.objectId,
-          style: { lineSpacing: 118 },
+          style: { lineSpacing: 90 },
           fields: 'lineSpacing',
           textRange: { type: 'ALL' },
         },
@@ -2594,8 +2593,8 @@ function buildFlatColumnsRequests(
         {
           updateParagraphStyle: {
             objectId: bgId,
-            style: { alignment: 'CENTER' },
-            fields: 'alignment',
+            style: { alignment: 'CENTER', lineSpacing: 90 },
+            fields: 'alignment,lineSpacing',
             textRange: { type: 'ALL' },
           },
         },
@@ -2665,8 +2664,8 @@ function makeVariantPillRequests(pillId: string, pageId: string, variantIdx: num
     {
       updateParagraphStyle: {
         objectId: pillId,
-        style: { alignment: 'CENTER' },
-        fields: 'alignment',
+        style: { alignment: 'CENTER', lineSpacing: 90 },
+        fields: 'alignment,lineSpacing',
         textRange: { type: 'ALL' },
       },
     },
