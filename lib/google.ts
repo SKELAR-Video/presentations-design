@@ -65,6 +65,10 @@ function bentoDims(compId: string): { w: number; h: number } | null {
     const cw = Math.floor((_UW - 3 * _GAP) / 4)  // 407
     return { w: cw - 2 * _INN, h: _CH - 2 * _INN }  // {w: 347, h: 620}
   }
+  if (compId === 'four_columns_paren' || compId === 'four_columns_bubble') {
+    const cw = Math.floor((_UW - 3 * 50) / 4)  // 392 — flat style, gap=50, no card INN padding
+    return { w: cw, h: _H - _PAD - 540 }        // {w: 392, h: 440}
+  }
   return null
 }
 
@@ -74,7 +78,9 @@ const BENTO_TOKENS: Record<string, string[]> = {
   three_columns_num: ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3'],
   four_columns:      ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
   four_columns_num:  ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
-  bento_bottom_4:    ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
+  bento_bottom_4:       ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
+  four_columns_paren:   ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
+  four_columns_bubble:  ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
   bento_right_2:     ['КАРТКА_1', 'КАРТКА_2'],
   bento_right_3:     ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3'],
   bento_right_2x2:   ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
@@ -88,7 +94,9 @@ const BENTO_MAX_PT: Record<string, number> = {
   three_columns_num: 18,
   four_columns:      22,
   four_columns_num:  18,
-  bento_bottom_4:    22,
+  bento_bottom_4:      22,
+  four_columns_paren:  22,
+  four_columns_bubble: 22,
   bento_right_2:     36,
   bento_right_3:     22,
   bento_right_2x2:   22,
@@ -102,7 +110,9 @@ const BENTO_MIN_PT: Record<string, number> = {
   three_columns_num: 10,
   four_columns:      10,
   four_columns_num:  10,
-  bento_bottom_4:    10,
+  bento_bottom_4:      10,
+  four_columns_paren:  10,
+  four_columns_bubble: 10,
   bento_right_2:     18,
   bento_right_3:     14,
   bento_right_2x2:   14,
@@ -2154,7 +2164,7 @@ async function readDeckFacts(
 const VARIANT_GROUPS: readonly (readonly string[])[] = [
   ['two_columns', 'bento_right_2'],
   ['three_columns', 'bento_right_3', 'three_columns_num', 'columns_flex'],
-  ['four_columns', 'four_columns_num', 'bento_right_2x2'],
+  ['four_columns', 'four_columns_num', 'bento_right_2x2', 'four_columns_paren', 'four_columns_bubble'],
 ]
 
 function remapSlotsForVariant(
@@ -2174,8 +2184,12 @@ function remapSlotsForVariant(
     'four_columns:bento_bottom_4':      { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
     'four_columns_num:bento_right_2x2': { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
     'four_columns_num:bento_bottom_4':  { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
-    'bento_right_2x2:four_columns':     { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
-    'bento_right_2x2:four_columns_num': { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
+    'bento_right_2x2:four_columns':        { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
+    'bento_right_2x2:four_columns_num':    { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
+    'bento_right_2x2:four_columns_paren':  { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
+    'bento_right_2x2:four_columns_bubble': { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
+    'four_columns_paren:bento_right_2x2':  { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
+    'four_columns_bubble:bento_right_2x2': { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
     'bento_bottom_4:four_columns':      { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
     'bento_bottom_4:four_columns_num':  { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
   }
@@ -2428,6 +2442,168 @@ function buildColumnsFlexRequests(
         },
       },
     )
+  }
+
+  return reqs
+}
+
+// ─── Flat 4-column layouts: four_columns_paren / four_columns_bubble ────────
+// These reuse the bento_bottom_4 master (КАРТКА_1..4 tokens) but render WITHOUT
+// card background rectangles. Text boxes are repositioned to a wider flat grid
+// (gap=50px vs 30px) starting at y=540. Number indicators are created from scratch.
+const _FLAT4_LEFT    = 90    // left edge of first column (matches Figma)
+const _FLAT4_GAP     = 50    // wider gap for flat style
+const _FLAT4_CW      = Math.floor((_UW - 3 * _FLAT4_GAP) / 4)  // 392
+const _FLAT4_TEXT_Y  = 540   // top of text columns
+const _FLAT4_TEXT_H  = _H - _PAD - _FLAT4_TEXT_Y   // 440
+const _FLAT4_PAREN_Y = 451   // y of "(1)" labels
+const _FLAT4_BUBBLE_Y = 411  // y of circle tops
+const _FLAT4_BUBBLE_D = 75   // circle diameter (px)
+const _FLAT4_MUTED_RGB = { red: 162 / 255, green: 166 / 255, blue: 177 / 255 }  // #A2A6B1
+const _FLAT4_PINK_RGB  = { red: 0xFC / 255, green: 0xCA / 255, blue: 0xCA / 255 }  // #FCCACA
+
+function buildFlatColumnsRequests(
+  slide: slides_v1.Schema$Page,
+  compId: string,
+  processedSlots: Record<string, string>,
+  pageId: string,
+  slideIdx: number,
+): object[] {
+  const reqs: object[] = []
+  const TOL = 8
+
+  for (const el of slide.pageElements ?? []) {
+    if (!el.objectId || !el.transform || !el.size) continue
+    const sW  = el.size.width?.magnitude  ?? 0
+    const sH  = el.size.height?.magnitude ?? 0
+    const elY = Math.round((el.transform.translateY ?? 0) / _FPX)
+
+    // Delete card RECTANGLE / ELLIPSE backgrounds (they live in the card zone ≥ _CY)
+    if ((el.shape?.shapeType === 'RECTANGLE' || el.shape?.shapeType === 'ELLIPSE') && elY >= _CY - TOL) {
+      reqs.push({ deleteObject: { objectId: el.objectId } })
+      continue
+    }
+
+    // Reposition КАРТКА_N text boxes to flat layout
+    if (el.shape?.shapeType === 'TEXT_BOX') {
+      const raw = (el.shape?.text?.textElements ?? []).map(te => te.textRun?.content ?? '').join('')
+      const m = raw.match(/\{\{КАРТКА_(\d+)\}\}/)
+      if (!m) continue
+      const k = parseInt(m[1]) - 1
+      const cx = _FLAT4_LEFT + k * (_FLAT4_CW + _FLAT4_GAP)
+      reqs.push(makeElemTransform(el.objectId, cx - _INSET, _FLAT4_TEXT_Y - _INSET, _FLAT4_CW + 2 * _INSET, _FLAT4_TEXT_H + 2 * _INSET, sW, sH))
+      // Set 118% line spacing to match Figma flat-column design
+      reqs.push({
+        updateParagraphStyle: {
+          objectId: el.objectId,
+          style: { lineSpacing: 118 },
+          fields: 'lineSpacing',
+          textRange: { type: 'ALL' },
+        },
+      })
+    }
+  }
+
+  // Create number indicators for each filled column
+  for (let k = 0; k < 4; k++) {
+    const token = `КАРТКА_${k + 1}`
+    if (!(processedSlots[token] ?? '').trim()) continue
+    const cx = _FLAT4_LEFT + k * (_FLAT4_CW + _FLAT4_GAP)
+
+    if (compId === 'four_columns_paren') {
+      const numId = `flat_paren_${slideIdx}_${k}`
+      reqs.push(
+        {
+          createShape: {
+            objectId: numId,
+            shapeType: 'TEXT_BOX',
+            elementProperties: {
+              pageObjectId: pageId,
+              size: {
+                width:  { magnitude: _eL(120), unit: 'EMU' },
+                height: { magnitude: _eL(60),  unit: 'EMU' },
+              },
+              transform: { scaleX: 1, shearX: 0, translateX: _eL(cx), shearY: 0, scaleY: 1, translateY: _eL(_FLAT4_PAREN_Y), unit: 'EMU' },
+            },
+          },
+        },
+        { insertText: { objectId: numId, insertionIndex: 0, text: `(${k + 1})` } },
+        {
+          updateTextStyle: {
+            objectId: numId,
+            style: {
+              weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
+              foregroundColor: { opaqueColor: { rgbColor: _FLAT4_MUTED_RGB } },
+              fontSize: { magnitude: 18, unit: 'PT' },
+              bold: false,
+            },
+            fields: 'weightedFontFamily,foregroundColor,fontSize,bold',
+            textRange: { type: 'ALL' },
+          },
+        },
+        {
+          updateShapeProperties: {
+            objectId: numId,
+            shapeProperties: { autofit: { autofitType: 'NONE' } },
+            fields: 'autofit.autofitType',
+          },
+        },
+      )
+    }
+
+    if (compId === 'four_columns_bubble') {
+      const bgId = `flat_bubble_${slideIdx}_${k}`
+      reqs.push(
+        {
+          createShape: {
+            objectId: bgId,
+            shapeType: 'ELLIPSE',
+            elementProperties: {
+              pageObjectId: pageId,
+              size: {
+                width:  { magnitude: _eL(_FLAT4_BUBBLE_D), unit: 'EMU' },
+                height: { magnitude: _eL(_FLAT4_BUBBLE_D), unit: 'EMU' },
+              },
+              transform: { scaleX: 1, shearX: 0, translateX: _eL(cx), shearY: 0, scaleY: 1, translateY: _eL(_FLAT4_BUBBLE_Y), unit: 'EMU' },
+            },
+          },
+        },
+        {
+          updateShapeProperties: {
+            objectId: bgId,
+            shapeProperties: {
+              shapeBackgroundFill: { solidFill: { color: { rgbColor: _AG_RED_RGB } } },
+              outline: { propertyState: 'NOT_RENDERED' },
+              contentAlignment: 'MIDDLE',
+              autofit: { autofitType: 'NONE' },
+            },
+            fields: 'shapeBackgroundFill,outline,contentAlignment,autofit.autofitType',
+          },
+        },
+        { insertText: { objectId: bgId, insertionIndex: 0, text: String(k + 1) } },
+        {
+          updateTextStyle: {
+            objectId: bgId,
+            style: {
+              weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
+              foregroundColor: { opaqueColor: { rgbColor: _FLAT4_PINK_RGB } },
+              fontSize: { magnitude: 18, unit: 'PT' },
+              bold: false,
+            },
+            fields: 'weightedFontFamily,foregroundColor,fontSize,bold',
+            textRange: { type: 'ALL' },
+          },
+        },
+        {
+          updateParagraphStyle: {
+            objectId: bgId,
+            style: { alignment: 'CENTER' },
+            fields: 'alignment',
+            textRange: { type: 'ALL' },
+          },
+        },
+      )
+    }
   }
 
   return reqs
@@ -2810,9 +2986,11 @@ export async function buildPresentation(
   // IMPORTANT: compUsage must be keyed by effectiveCompId so that columns_flex and
   // three_columns_num compete for the same pool of template slides (avoiding duplicate pageIds).
   const TEMPLATE_ALIAS: Record<string, string> = {
-    columns_flex:     'three_columns_num',
-    four_columns:     'bento_bottom_4',
-    four_columns_num: 'bento_bottom_4',
+    columns_flex:          'three_columns_num',
+    four_columns:          'bento_bottom_4',
+    four_columns_num:      'bento_bottom_4',
+    four_columns_paren:    'bento_bottom_4',
+    four_columns_bubble:   'bento_bottom_4',
   }
 
   for (let i = 0; i < plan.slides.length; i++) {
@@ -2882,8 +3060,9 @@ export async function buildPresentation(
     const tokens = BENTO_TOKENS[compId]
     if (!tokens) continue
     const processed = { ...plan.slides[i].slots }
-    // four_columns/four_columns_num: LLM writes КОЛОНКА_N, template has {{КАРТКА_N}} (bento_bottom_4 alias)
-    if (compId === 'four_columns' || compId === 'four_columns_num') {
+    // four_columns/four_columns_num/four_columns_paren/four_columns_bubble: LLM writes КОЛОНКА_N, template has {{КАРТКА_N}} (bento_bottom_4 alias)
+    if (compId === 'four_columns' || compId === 'four_columns_num' ||
+        compId === 'four_columns_paren' || compId === 'four_columns_bubble') {
       for (let k = 1; k <= 4; k++) {
         if (processed[`КОЛОНКА_${k}`] !== undefined) {
           processed[`КАРТКА_${k}`] = processed[`КОЛОНКА_${k}`]
@@ -2919,8 +3098,9 @@ export async function buildPresentation(
       if (compId === 'badges' && slotName === 'ПУНКТИ') continue
       // agenda_6/8: ПУНКТ_N placeholders are deleted and recreated by buildAgendaRequests — skip replaceAllText
       if (compId.startsWith('agenda_') && slotName.startsWith('ПУНКТ_')) continue
-      // four_columns/four_columns_num: КОЛОНКА_N slots are remapped to КАРТКА_N in bentoProcessedSlots — handled below
-      if ((compId === 'four_columns' || compId === 'four_columns_num') && /^КОЛОНКА_\d+$/.test(slotName)) continue
+      // four_columns/four_columns_num/paren/bubble: КОЛОНКА_N slots are remapped to КАРТКА_N in bentoProcessedSlots — handled below
+      if ((compId === 'four_columns' || compId === 'four_columns_num' ||
+           compId === 'four_columns_paren' || compId === 'four_columns_bubble') && /^КОЛОНКА_\d+$/.test(slotName)) continue
       let replaceText = processedSlots?.[slotName] ?? slotValue
       if (slotName === 'ЗАГОЛОВОК' || BENTO_TOKENS[compId]?.includes(slotName)) {
         replaceText = stripTrailingPeriod(replaceText)
@@ -2977,9 +3157,10 @@ export async function buildPresentation(
       }
     }
 
-    // four_columns/four_columns_num: write remapped КАРТКА_N tokens into bento_bottom_4 template.
+    // four_columns/four_columns_num/paren/bubble: write remapped КАРТКА_N tokens into bento_bottom_4 template.
     // All 4 slots must be written (or cleared) because the template always has {{КАРТКА_1..4}}.
-    if (compId === 'four_columns' || compId === 'four_columns_num') {
+    if (compId === 'four_columns' || compId === 'four_columns_num' ||
+        compId === 'four_columns_paren' || compId === 'four_columns_bubble') {
       const pSlots = bentoProcessedSlots.get(i) ?? {}
       for (let k = 1; k <= 4; k++) {
         const val = pSlots[`КАРТКА_${k}`]
@@ -3155,6 +3336,18 @@ export async function buildPresentation(
     console.log(`[columns_flex] slide ${i + 1}: ${n} columns, colW=${Math.floor((1720 - (n - 1) * 50) / n)}px`)
   }
 
+  // ── four_columns_paren / four_columns_bubble: flat columns, delete card BGs, add number elements ──
+  for (let i = 0; i < plan.slides.length; i++) {
+    const compId = plan.slides[i].composition
+    if (compId !== 'four_columns_paren' && compId !== 'four_columns_bubble') continue
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    const slide = updatedSlides.find(s => s.objectId === pageId)
+    if (!slide) continue
+    const pSlots = bentoProcessedSlots.get(i) ?? plan.slides[i].slots
+    requests.push(...buildFlatColumnsRequests(slide, compId, pSlots, pageId, i))
+  }
+
   // ── Title logo-safe resize: clamp ЗАГОЛОВОК to _TITLE_W=1610 ────────────────────
   // Fixes old-master slides (title right=1820) without requiring master regeneration.
   // Cover / bento_right / section / closing / title_body: handled above by their float functions.
@@ -3188,6 +3381,8 @@ export async function buildPresentation(
   for (let i = 0; i < plan.slides.length; i++) {
     const compId = plan.slides[i].composition
     if (!BENTO_TOKENS[compId]) continue
+    // flat column styles have their own render loop below
+    if (compId === 'four_columns_paren' || compId === 'four_columns_bubble') continue
     const pageId = planPageIds[i]
     if (!pageId) continue
     const slide = updatedSlides.find(s => s.objectId === pageId)
