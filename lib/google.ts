@@ -61,7 +61,7 @@ function bentoDims(compId: string): { w: number; h: number } | null {
     const cw = Math.floor((_UW - 2 * 50) / 3)  // 540 — no card INN padding
     return { w: cw, h: _H - _PAD - 540 }        // {w: 540, h: 440}
   }
-  if (compId === 'bento_bottom_4') {
+  if (compId === 'bento_bottom_4' || compId === 'four_columns' || compId === 'four_columns_num') {
     const cw = Math.floor((_UW - 3 * _GAP) / 4)  // 407
     return { w: cw - 2 * _INN, h: _CH - 2 * _INN }  // {w: 347, h: 620}
   }
@@ -72,6 +72,8 @@ const BENTO_TOKENS: Record<string, string[]> = {
   two_columns:       ['КОЛОНКА_1', 'КОЛОНКА_2'],
   three_columns:     ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3'],
   three_columns_num: ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3'],
+  four_columns:      ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
+  four_columns_num:  ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
   bento_bottom_4:    ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
   bento_right_2:     ['КАРТКА_1', 'КАРТКА_2'],
   bento_right_3:     ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3'],
@@ -84,6 +86,8 @@ const BENTO_MAX_PT: Record<string, number> = {
   two_columns:       48,
   three_columns:     28,
   three_columns_num: 18,
+  four_columns:      22,
+  four_columns_num:  18,
   bento_bottom_4:    22,
   bento_right_2:     36,
   bento_right_3:     22,
@@ -96,6 +100,8 @@ const BENTO_MIN_PT: Record<string, number> = {
   two_columns:       18,
   three_columns:     14,
   three_columns_num: 10,
+  four_columns:      10,
+  four_columns_num:  10,
   bento_bottom_4:    10,
   bento_right_2:     18,
   bento_right_3:     14,
@@ -1377,8 +1383,9 @@ function buildBentoRowLayoutRequests(
   if (!tokens) return []
   const TOL = 8
 
-  // ── Horizontal row: two_columns / three_columns / bento_bottom_4 ──────────
-  if (compId === 'two_columns' || compId === 'three_columns' || compId === 'bento_bottom_4') {
+  // ── Horizontal row: two_columns / three_columns / bento_bottom_4 / four_columns / four_columns_num ──
+  if (compId === 'two_columns' || compId === 'three_columns' || compId === 'bento_bottom_4' ||
+      compId === 'four_columns' || compId === 'four_columns_num') {
     const n      = compId === 'two_columns' ? 2 : compId === 'three_columns' ? 3 : 4
     const cw     = Math.floor((_UW - (n - 1) * _GAP) / n)
     const innerW = cw - 2 * _INN
@@ -1401,7 +1408,12 @@ function buildBentoRowLayoutRequests(
     const rowY = Math.max(desiredRowY, _CY)   // _CY = 300 is the hard floor
     const cardH = _H - _PAD - rowY
 
-    const isNumbered = compId !== 'bento_bottom_4' && !!(pageId && slideIdx !== undefined && titleText && findCardinalInTitle(titleText) === n)
+    // four_columns_num: always numbered; four_columns/bento_bottom_4: never numbered;
+    // three_columns: numbered only when title contains the matching cardinal number.
+    const isNumbered = compId === 'four_columns_num' || (
+      compId !== 'bento_bottom_4' && compId !== 'four_columns' &&
+      !!(pageId && slideIdx !== undefined && titleText && findCardinalInTitle(titleText) === n)
+    )
     // Text Y offset depends on whether numbering is active
     const textTopOff = isNumbered ? _NUM_TEXT_TOP : (_INN - _INSET)
     const textH      = isNumbered ? (cardH - _NUM_TEXT_TOP - _NUM_PAD) : (cardH - 2 * _INN + 2 * _INSET)
@@ -2142,6 +2154,7 @@ async function readDeckFacts(
 const VARIANT_GROUPS: readonly (readonly string[])[] = [
   ['two_columns', 'bento_right_2'],
   ['three_columns', 'bento_right_3', 'three_columns_num', 'columns_flex'],
+  ['four_columns', 'four_columns_num'],
   ['bento_right_2x2', 'bento_bottom_4'],
 ]
 
@@ -2498,8 +2511,9 @@ export async function buildPresentation(
       if (composition === 'three_columns' || composition === 'three_columns_num') {
         const numericKeyCount = Object.keys(slots).filter(k => /_\d+$/.test(k)).length
         if (numericKeyCount > 3) {
-          console.warn(`[guard] ${composition}: ${numericKeyCount} numeric slots → columns_flex`)
-          composition = 'columns_flex'
+          const target = composition === 'three_columns_num' ? 'four_columns_num' : 'four_columns'
+          console.warn(`[guard] ${composition}: ${numericKeyCount} numeric slots → ${target}`)
+          composition = target
         }
       }
 
@@ -2616,6 +2630,18 @@ export async function buildPresentation(
       if (slide.composition !== 'columns_flex') continue
       const filled = ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3', 'КОЛОНКА_4'].filter(t => !!slide.slots[t]).length
       if (filled < 2) slide.composition = 'title_body'
+    }
+    // four_columns/four_columns_num: КОЛОНКА_N slots — downgrade if < 4 filled.
+    for (const slide of plan.slides) {
+      if (slide.composition !== 'four_columns' && slide.composition !== 'four_columns_num') continue
+      const filled = ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3', 'КОЛОНКА_4'].filter(t => !!slide.slots[t]).length
+      if (filled < 4) {
+        if (slide.composition === 'four_columns_num') {
+          slide.composition = filled >= 3 ? 'three_columns_num' : filled === 2 ? 'two_columns' : 'title_body'
+        } else {
+          slide.composition = filled >= 3 ? 'three_columns' : filled === 2 ? 'two_columns' : 'title_body'
+        }
+      }
     }
     for (const slide of plan.slides) {
       const tokens = BENTO_TOKENS[slide.composition]
@@ -2776,7 +2802,11 @@ export async function buildPresentation(
   // The custom rendering step deletes and recreates the column text boxes dynamically.
   // IMPORTANT: compUsage must be keyed by effectiveCompId so that columns_flex and
   // three_columns_num compete for the same pool of template slides (avoiding duplicate pageIds).
-  const TEMPLATE_ALIAS: Record<string, string> = { columns_flex: 'three_columns_num' }
+  const TEMPLATE_ALIAS: Record<string, string> = {
+    columns_flex:     'three_columns_num',
+    four_columns:     'bento_bottom_4',
+    four_columns_num: 'bento_bottom_4',
+  }
 
   for (let i = 0; i < plan.slides.length; i++) {
     const compId = plan.slides[i].composition
@@ -2841,9 +2871,19 @@ export async function buildPresentation(
   // Done BEFORE replaceAllText so font sizing also uses the converted text.
   const bentoProcessedSlots = new Map<number, Record<string, string>>()
   for (let i = 0; i < plan.slides.length; i++) {
-    const tokens = BENTO_TOKENS[plan.slides[i].composition]
+    const compId = plan.slides[i].composition
+    const tokens = BENTO_TOKENS[compId]
     if (!tokens) continue
     const processed = { ...plan.slides[i].slots }
+    // four_columns/four_columns_num: LLM writes КОЛОНКА_N, template has {{КАРТКА_N}} (bento_bottom_4 alias)
+    if (compId === 'four_columns' || compId === 'four_columns_num') {
+      for (let k = 1; k <= 4; k++) {
+        if (processed[`КОЛОНКА_${k}`] !== undefined) {
+          processed[`КАРТКА_${k}`] = processed[`КОЛОНКА_${k}`]
+          delete processed[`КОЛОНКА_${k}`]
+        }
+      }
+    }
     for (const tok of tokens) {
       if (processed[tok]) processed[tok] = preprocessBentoText(processed[tok])
     }
@@ -2872,6 +2912,8 @@ export async function buildPresentation(
       if (compId === 'badges' && slotName === 'ПУНКТИ') continue
       // agenda_6/8: ПУНКТ_N placeholders are deleted and recreated by buildAgendaRequests — skip replaceAllText
       if (compId.startsWith('agenda_') && slotName.startsWith('ПУНКТ_')) continue
+      // four_columns/four_columns_num: КОЛОНКА_N slots are remapped to КАРТКА_N in bentoProcessedSlots — handled below
+      if ((compId === 'four_columns' || compId === 'four_columns_num') && /^КОЛОНКА_\d+$/.test(slotName)) continue
       let replaceText = processedSlots?.[slotName] ?? slotValue
       if (slotName === 'ЗАГОЛОВОК' || BENTO_TOKENS[compId]?.includes(slotName)) {
         replaceText = stripTrailingPeriod(replaceText)
@@ -2925,6 +2967,22 @@ export async function buildPresentation(
             },
           })
         }
+      }
+    }
+
+    // four_columns/four_columns_num: write remapped КАРТКА_N tokens into bento_bottom_4 template.
+    // All 4 slots must be written (or cleared) because the template always has {{КАРТКА_1..4}}.
+    if (compId === 'four_columns' || compId === 'four_columns_num') {
+      const pSlots = bentoProcessedSlots.get(i) ?? {}
+      for (let k = 1; k <= 4; k++) {
+        const val = pSlots[`КАРТКА_${k}`]
+        requests.push({
+          replaceAllText: {
+            containsText: { text: `{{КАРТКА_${k}}}`, matchCase: true },
+            replaceText: val ? addNbsp(stripTrailingPeriod(val)) : '',
+            pageObjectIds: [pageId],
+          },
+        })
       }
     }
   }
@@ -3069,6 +3127,7 @@ export async function buildPresentation(
     if (!pageId) continue
     requests.push(...buildThreeColumnsNumRequests(pageId))
   }
+
 
   // ── columns_flex: delete template columns, build N dynamic white columns + gray "(N)" labels ──
   for (let i = 0; i < plan.slides.length; i++) {

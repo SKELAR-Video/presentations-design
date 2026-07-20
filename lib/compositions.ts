@@ -88,6 +88,32 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     ],
   },
   {
+    id: 'four_columns',
+    name: 'Чотири колонки',
+    when_to_use: '4 рівних пункти або кроки — картки без нумерації. СТРОГО 4 колонки.',
+    themes: ['dark'],
+    slots: [
+      { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 60, style: 'h2' },
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 120, style: 'body' },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 120, style: 'body' },
+      { name: 'КОЛОНКА_3', type: 'text', max_chars: 120, style: 'body' },
+      { name: 'КОЛОНКА_4', type: 'text', max_chars: 120, style: 'body' },
+    ],
+  },
+  {
+    id: 'four_columns_num',
+    name: 'Чотири колонки з нумерацією',
+    when_to_use: '4 послідовних кроки або категорії з акцентними номерами 01/02/03/04. СТРОГО 4 колонки.',
+    themes: ['dark'],
+    slots: [
+      { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 80, style: 'h2' },
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 120, style: 'body' },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 120, style: 'body' },
+      { name: 'КОЛОНКА_3', type: 'text', max_chars: 120, style: 'body' },
+      { name: 'КОЛОНКА_4', type: 'text', max_chars: 120, style: 'body' },
+    ],
+  },
+  {
     id: 'columns_flex',
     name: 'Гнучкі колонки (2–4)',
     when_to_use: '2–4 паралельних пункти або кроки — підходить коли контент природно ділиться на 2, 3 або 4 рівних частини. Ширина колонок підлаштовується автоматично. КОЛОНКА_3 і КОЛОНКА_4 — опціональні.',

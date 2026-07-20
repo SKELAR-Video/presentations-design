@@ -28,11 +28,13 @@ export async function POST(req: NextRequest) {
 
       // three_columns/three_columns_num: max 3 _N suffix keys allowed.
       // Count by key suffix (encoding-agnostic) — immune to Cyrillic/Latin homoglyphs.
+      // Redirect to proper 4-column compositions instead of text-only columns_flex.
       if (composition === 'three_columns' || composition === 'three_columns_num') {
         const numericKeyCount = Object.keys(slots).filter(k => /_\d+$/.test(k)).length
         if (numericKeyCount > 3) {
-          console.warn(`[map-guard] ${composition}: ${numericKeyCount} numeric slots → columns_flex`)
-          composition = 'columns_flex'
+          const target = composition === 'three_columns_num' ? 'four_columns_num' : 'four_columns'
+          console.warn(`[map-guard] ${composition}: ${numericKeyCount} numeric slots → ${target}`)
+          composition = target
         }
       }
 

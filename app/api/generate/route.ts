@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       if (composition === 'three_columns' || composition === 'three_columns_num') {
         const numericKeyCount = Object.keys(slots).filter(k => /_\d+$/.test(k)).length
         if (numericKeyCount > 3) {
-          composition = 'columns_flex'
+          composition = composition === 'three_columns_num' ? 'four_columns_num' : 'four_columns'
         }
       }
 
