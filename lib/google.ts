@@ -2260,7 +2260,7 @@ function buildThreeColumnsNumRequests(pageId: string): object[] {
   const _3CN_GAP    = 50
   const _3CN_COL_W  = Math.floor((_UW - 2 * _3CN_GAP) / 3)  // 540
   const _3CN_PILL_W = 75
-  const _3CN_PILL_H = 90
+  const _3CN_PILL_H = 75
   const _3CN_PILL_Y = 411
   const reqs: object[] = []
   for (let k = 0; k < 3; k++) {
@@ -2270,7 +2270,7 @@ function buildThreeColumnsNumRequests(pageId: string): object[] {
       {
         createShape: {
           objectId: pillId,
-          shapeType: 'ROUND_RECTANGLE',
+          shapeType: 'ELLIPSE',
           elementProperties: {
             pageObjectId: pageId,
             size: {
@@ -2340,8 +2340,8 @@ function buildColumnsFlexRequests(
   const _CF_GAP   = 50
   const _CF_X0    = _PAD        // 100
   const _CF_UW    = _UW         // 1720
-  const _CF_NUM_Y = 411         // matches three_columns_num pill Y
-  const _CF_NUM_H = 90
+  const _CF_NUM_Y = 451         // matches four_columns_paren label Y
+  const _CF_NUM_H = 60
   const _CF_COL_Y = 540
   const _CF_COL_H = _H_SLIDE - _PAD - _CF_COL_Y  // 440
 
@@ -2369,7 +2369,7 @@ function buildColumnsFlexRequests(
           elementProperties: {
             pageObjectId: pageId,
             size: {
-              width:  { magnitude: _eL(Math.min(colW, 200)), unit: 'EMU' },
+              width:  { magnitude: _eL(Math.min(colW, 120)), unit: 'EMU' },
               height: { magnitude: _eL(_CF_NUM_H), unit: 'EMU' },
             },
             transform: {
@@ -2396,7 +2396,7 @@ function buildColumnsFlexRequests(
       },
     )
 
-    // Column text box in white
+    // Column text box in muted gray
     reqs.push(
       {
         createShape: {
@@ -2423,7 +2423,7 @@ function buildColumnsFlexRequests(
           style: {
             fontSize: { magnitude: 18, unit: 'PT' },
             bold: false,
-            foregroundColor: { opaqueColor: { rgbColor: { red: 1, green: 1, blue: 1 } } },
+            foregroundColor: { opaqueColor: { rgbColor: _MUTED_CF } },
             weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
           },
           fields: 'fontSize,bold,foregroundColor,weightedFontFamily',
