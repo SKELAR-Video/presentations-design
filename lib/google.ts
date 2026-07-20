@@ -312,10 +312,9 @@ function getLogoUrl(): string {
   if (_logoUrlCache) return _logoUrlCache
   if (process.env.LOGO_URL) {
     _logoUrlCache = process.env.LOGO_URL
-  } else if (process.env.VERCEL_URL) {
-    _logoUrlCache = `https://${process.env.VERCEL_URL}/assets/SKELAR%20Symbol.png`
   } else {
-    _logoUrlCache = _GITHUB_LOGO
+    const host = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL
+    _logoUrlCache = host ? `https://${host}/assets/SKELAR%20Symbol.png` : _GITHUB_LOGO
   }
   return _logoUrlCache
 }
@@ -324,10 +323,9 @@ function getLogoRedUrl(): string {
   if (_logoRedUrlCache) return _logoRedUrlCache
   if (process.env.LOGO_RED_URL) {
     _logoRedUrlCache = process.env.LOGO_RED_URL
-  } else if (process.env.VERCEL_URL) {
-    _logoRedUrlCache = `https://${process.env.VERCEL_URL}/assets/SKELAR%20Symbol%20for%20red.png`
   } else {
-    _logoRedUrlCache = _GITHUB_LOGO_RED
+    const host = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL
+    _logoRedUrlCache = host ? `https://${host}/assets/SKELAR%20Symbol%20for%20red.png` : _GITHUB_LOGO_RED
   }
   return _logoRedUrlCache
 }
@@ -341,10 +339,9 @@ function getLogoWordmarkUrl(): string {
     // Derive from LOGO_URL — strip filename after last '/', append wordmark filename
     const base = process.env.LOGO_URL.replace(/[^/]+$/, '')
     _logoWordmarkUrlCache = `${base}SKELAR%20Logo.png`
-  } else if (process.env.VERCEL_URL) {
-    _logoWordmarkUrlCache = `https://${process.env.VERCEL_URL}/assets/SKELAR%20Logo.png`
   } else {
-    _logoWordmarkUrlCache = _GITHUB_LOGO_WORDMARK
+    const host = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL
+    _logoWordmarkUrlCache = host ? `https://${host}/assets/SKELAR%20Logo.png` : _GITHUB_LOGO_WORDMARK
   }
   return _logoWordmarkUrlCache
 }
@@ -3905,6 +3902,7 @@ export async function buildPresentation(
       }
     }
     if (symbolRequests.length > 0) {
+      console.log(`[logo] symbol URL: ${getLogoUrl()} (${symbolRequests.length} slides)`)
       try {
         await slidesApi.presentations.batchUpdate({
           presentationId,
@@ -3918,6 +3916,7 @@ export async function buildPresentation(
       }
     }
     if (wordmarkRequests.length > 0) {
+      console.log(`[logo] wordmark URL: ${getLogoWordmarkUrl()} (${wordmarkRequests.length} slides)`)
       try {
         await slidesApi.presentations.batchUpdate({
           presentationId,
