@@ -2154,7 +2154,7 @@ async function readDeckFacts(
 const VARIANT_GROUPS: readonly (readonly string[])[] = [
   ['two_columns', 'bento_right_2'],
   ['three_columns', 'bento_right_3', 'three_columns_num', 'columns_flex'],
-  ['four_columns', 'four_columns_num', 'bento_right_2x2', 'bento_bottom_4'],
+  ['four_columns', 'four_columns_num', 'bento_right_2x2'],
 ]
 
 function remapSlotsForVariant(
