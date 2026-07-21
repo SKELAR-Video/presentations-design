@@ -2175,39 +2175,40 @@ const VARIANT_GROUPS: readonly (readonly string[])[] = [
   ['four_columns', 'four_columns_num', 'bento_right_2x2', 'four_columns_paren', 'four_columns_bubble'],
 ]
 
+const VARIANT_SLOT_MAPS: Record<string, Record<string, string>> = {
+  'title_body:title_photo': {},   // ЗАГОЛОВОК+ТЕКСТ pass through; ПІДПИС dropped (filters via validTarget)
+  'title_photo:title_body': {},   // ЗАГОЛОВОК+ТЕКСТ pass through; ФОТО dropped
+  'two_columns:bento_right_2':         { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2' },
+  'bento_right_2:two_columns':         { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2' },
+  'two_columns_labeled:bento_right_2': { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2' },
+  'bento_right_2:two_columns_labeled': { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2' },
+  'two_columns_plain:bento_right_2':   { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2' },
+  'bento_right_2:two_columns_plain':   { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2' },
+  'three_columns:bento_right_3':     { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3' },
+  'bento_right_3:three_columns':     { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3' },
+  'bento_right_3:three_columns_num': { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3' },
+  'three_columns_num:bento_right_3': { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3' },
+  'four_columns:bento_right_2x2':     { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
+  'four_columns:bento_bottom_4':      { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
+  'four_columns_num:bento_right_2x2': { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
+  'four_columns_num:bento_bottom_4':  { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
+  'bento_right_2x2:four_columns':        { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
+  'bento_right_2x2:four_columns_num':    { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
+  'bento_right_2x2:four_columns_paren':  { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
+  'bento_right_2x2:four_columns_bubble': { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
+  'four_columns_paren:bento_right_2x2':  { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
+  'four_columns_bubble:bento_right_2x2': { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
+  'bento_bottom_4:four_columns':      { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
+  'bento_bottom_4:four_columns_num':  { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
+}
+
 function remapSlotsForVariant(
   slots: Record<string, string>,
   fromComp: string,
   toComp: string,
 ): Record<string, string> {
   if (fromComp === toComp) return { ...slots }
-  const MAPS: Record<string, Record<string, string>> = {
-    'title_body:title_photo': {},   // ЗАГОЛОВОК+ТЕКСТ pass through; ПІДПИС dropped (filters via validTarget)
-    'title_photo:title_body': {},   // ЗАГОЛОВОК+ТЕКСТ pass through; ФОТО dropped
-    'two_columns:bento_right_2':         { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2' },
-    'bento_right_2:two_columns':         { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2' },
-    'two_columns_labeled:bento_right_2': { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2' },
-    'bento_right_2:two_columns_labeled': { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2' },
-    'two_columns_plain:bento_right_2':   { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2' },
-    'bento_right_2:two_columns_plain':   { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2' },
-    'three_columns:bento_right_3':     { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3' },
-    'bento_right_3:three_columns':     { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3' },
-    'bento_right_3:three_columns_num': { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3' },
-    'three_columns_num:bento_right_3': { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3' },
-    'four_columns:bento_right_2x2':     { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
-    'four_columns:bento_bottom_4':      { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
-    'four_columns_num:bento_right_2x2': { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
-    'four_columns_num:bento_bottom_4':  { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
-    'bento_right_2x2:four_columns':        { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
-    'bento_right_2x2:four_columns_num':    { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
-    'bento_right_2x2:four_columns_paren':  { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
-    'bento_right_2x2:four_columns_bubble': { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
-    'four_columns_paren:bento_right_2x2':  { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
-    'four_columns_bubble:bento_right_2x2': { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
-    'bento_bottom_4:four_columns':      { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
-    'bento_bottom_4:four_columns_num':  { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3', 'КАРТКА_4': 'КОЛОНКА_4' },
-  }
-  const map = MAPS[`${fromComp}:${toComp}`]
+  const map = VARIANT_SLOT_MAPS[`${fromComp}:${toComp}`]
   if (!map) return { ...slots }
   const targetComp = getComposition(toComp)
   const validTarget = new Set(targetComp?.slots.map(s => s.name) ?? [])
@@ -2255,20 +2256,25 @@ function expandPlanWithVariants(plan: SlidePlan): {
     }
 
     // Only include variants that preserve ALL non-empty content from the original.
-    // If a target composition drops a non-empty slot (e.g. ТЕКСТ lost when bento_right_2 → two_columns),
-    // skip that variant — don't sacrifice real content for a layout alternative.
+    // Slots that are structurally absent from the target composition (e.g. ТЕКСТ when going to
+    // two_columns) are intentional layout differences — those drops are allowed.
     const validVariants = group.filter(varComp => {
       if (varComp === slide.composition) return true  // original always valid
       const remapped = remapSlotsForVariant(slide.slots, slide.composition, varComp)
       const remappedVals = new Set(Object.values(remapped).filter(v => (v ?? '').trim()))
-      // Check 1: all non-empty values from original are preserved in remapped
+      const targetComp = getComposition(varComp)
+      const targetSlotNames = new Set(targetComp?.slots.map(s => s.name) ?? [])
+      const transitionMap = VARIANT_SLOT_MAPS[`${slide.composition}:${varComp}`] ?? {}
+      // Check 1: non-empty values from explicitly mapped (or same-named) slots must be preserved.
+      // Slots whose mapped name doesn't exist in the target are structural drops → allowed.
       if (Object.entries(slide.slots).some(([slot, val]) => {
         if (!(val ?? '').trim()) return false
         if (slot.startsWith('ЗОБРАЖЕННЯ_')) return false
+        const mappedName = transitionMap[slot] ?? slot
+        if (!targetSlotNames.has(mappedName)) return false  // structural drop → OK
         return !remappedVals.has(val)
       })) return false
       // Check 2: all required (non-optional) slots of the target composition are non-empty
-      const targetComp = getComposition(varComp)
       if (targetComp) {
         for (const s of targetComp.slots) {
           if (!s.optional && !(remapped[s.name] ?? '').trim()) return false
