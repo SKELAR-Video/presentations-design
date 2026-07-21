@@ -41,13 +41,37 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
   },
   {
     id: 'two_columns',
-    name: 'Дві колонки',
-    when_to_use: 'дві паралельні тези',
+    name: 'Дві колонки (картки)',
+    when_to_use: 'дві паралельні тези у картках',
     themes: ['dark', 'red'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 70, style: 'h2', optional: true },
       { name: 'КОЛОНКА_1', type: 'text', max_chars: 180, style: 'body' },
       { name: 'КОЛОНКА_2', type: 'text', max_chars: 180, style: 'body' },
+    ],
+  },
+  {
+    id: 'two_columns_labeled',
+    name: 'Дві колонки з підписами',
+    when_to_use: 'два великих блоки тексту, кожен з назвою категорії — ПІДПИС_1/ПІДПИС_2 необовʼязкові',
+    themes: ['dark'],
+    slots: [
+      { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 200, style: 'h1' },
+      { name: 'ПІДПИС_1', type: 'text', max_chars: 40, style: 'caption', optional: true },
+      { name: 'ПІДПИС_2', type: 'text', max_chars: 40, style: 'caption', optional: true },
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 200, style: 'body' },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 200, style: 'body' },
+    ],
+  },
+  {
+    id: 'two_columns_plain',
+    name: 'Дві колонки (плоский)',
+    when_to_use: 'два великих блоки тексту без заголовків колонок',
+    themes: ['dark'],
+    slots: [
+      { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 200, style: 'h1' },
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 200, style: 'body' },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 200, style: 'body' },
     ],
   },
   {

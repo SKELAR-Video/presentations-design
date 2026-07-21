@@ -40,6 +40,10 @@ function bentoDims(compId: string): { w: number; h: number } | null {
     const cw = Math.floor((_UW - _GAP) / 2)
     return { w: cw - 2 * _INN, h: _CH - 2 * _INN }
   }
+  if (compId === 'two_columns_labeled' || compId === 'two_columns_plain') {
+    const cw = Math.floor((_UW - 50) / 2)  // 50px gap, no INN (flat layout)
+    return { w: cw, h: _H - _PAD - 540 }   // content area y=540→980
+  }
   if (compId === 'three_columns') {
     const cw = Math.floor((_UW - 2 * _GAP) / 3)
     return { w: cw - 2 * _INN, h: _CH - 2 * _INN }
@@ -73,7 +77,9 @@ function bentoDims(compId: string): { w: number; h: number } | null {
 }
 
 const BENTO_TOKENS: Record<string, string[]> = {
-  two_columns:       ['КОЛОНКА_1', 'КОЛОНКА_2'],
+  two_columns:         ['КОЛОНКА_1', 'КОЛОНКА_2'],
+  two_columns_labeled: ['КОЛОНКА_1', 'КОЛОНКА_2'],
+  two_columns_plain:   ['КОЛОНКА_1', 'КОЛОНКА_2'],
   three_columns:     ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3'],
   three_columns_num: ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3'],
   four_columns:      ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
@@ -89,7 +95,9 @@ const BENTO_TOKENS: Record<string, string[]> = {
 // Role-max font size per composition (start here; shrink only if text overflows).
 // Values from Figma: 2-card → 48pt possible for short text, 3-card → 28pt ceiling.
 const BENTO_MAX_PT: Record<string, number> = {
-  two_columns:       48,
+  two_columns:         48,
+  two_columns_labeled: 36,
+  two_columns_plain:   36,
   three_columns:     28,
   three_columns_num: 18,
   four_columns:      22,
@@ -105,7 +113,9 @@ const BENTO_MAX_PT: Record<string, number> = {
 // Floor: chosen pt is never smaller than this value.
 // If even floor pt overflows → log ⚠ TEXT_TOO_LONG (content is too long for this card type).
 const BENTO_MIN_PT: Record<string, number> = {
-  two_columns:       18,
+  two_columns:         18,
+  two_columns_labeled: 14,
+  two_columns_plain:   14,
   three_columns:     14,
   three_columns_num: 10,
   four_columns:      10,
@@ -2160,7 +2170,7 @@ async function readDeckFacts(
 
 const VARIANT_GROUPS: readonly (readonly string[])[] = [
   ['title_body', 'title_photo'],
-  ['two_columns', 'bento_right_2'],
+  ['two_columns', 'two_columns_labeled', 'two_columns_plain', 'bento_right_2'],
   ['three_columns', 'bento_right_3', 'three_columns_num', 'columns_flex'],
   ['four_columns', 'four_columns_num', 'bento_right_2x2', 'four_columns_paren', 'four_columns_bubble'],
 ]
@@ -2174,8 +2184,12 @@ function remapSlotsForVariant(
   const MAPS: Record<string, Record<string, string>> = {
     'title_body:title_photo': {},   // ЗАГОЛОВОК+ТЕКСТ pass through; ПІДПИС dropped (filters via validTarget)
     'title_photo:title_body': {},   // ЗАГОЛОВОК+ТЕКСТ pass through; ФОТО dropped
-    'two_columns:bento_right_2':   { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2' },
-    'bento_right_2:two_columns':   { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2' },
+    'two_columns:bento_right_2':         { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2' },
+    'bento_right_2:two_columns':         { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2' },
+    'two_columns_labeled:bento_right_2': { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2' },
+    'bento_right_2:two_columns_labeled': { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2' },
+    'two_columns_plain:bento_right_2':   { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2' },
+    'bento_right_2:two_columns_plain':   { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2' },
     'three_columns:bento_right_3':     { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3' },
     'bento_right_3:three_columns':     { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3' },
     'bento_right_3:three_columns_num': { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3' },
@@ -2216,10 +2230,12 @@ function expandPlanWithVariants(plan: SlidePlan): {
   const variantMap = new Map<number, VariantInfo>()
 
   for (const slide of plan.slides) {
-    // Drop two_columns with no ЗАГОЛОВОК whose column values already appear in other slides.
+    // Drop two-column slides with no ЗАГОЛОВОК whose column values already appear in other slides.
     // This removes AI-generated fragments that duplicate content from a bento_bottom_4 slide.
     if (
-      slide.composition === 'two_columns' &&
+      (slide.composition === 'two_columns' ||
+       slide.composition === 'two_columns_labeled' ||
+       slide.composition === 'two_columns_plain') &&
       !(slide.slots['ЗАГОЛОВОК'] ?? '').trim()
     ) {
       const colVals = ['КОЛОНКА_1', 'КОЛОНКА_2']

@@ -209,6 +209,33 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
       break
     }
 
+    case 'two_columns_labeled': {
+      // Flat 2-col layout: big h1 title + optional column labels + body columns (no cards)
+      const COL_GAP = 50
+      const colW = Math.floor((UW - COL_GAP) / 2)  // 835
+      push(tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, TITLE_W, 245, 44))
+      for (let k = 0; k < 2; k++) {
+        const cx = PAD + k * (colW + COL_GAP)
+        push(
+          tb(mk(), slideId, `ПІДПИС_${k + 1}`, cx, 451, colW, 50, 22, MUTED),
+          tb(mk(), slideId, `КОЛОНКА_${k + 1}`, cx, 540, colW, H - PAD - 540, 22),
+        )
+      }
+      break
+    }
+
+    case 'two_columns_plain': {
+      // Flat 2-col layout: big h1 title + body columns (no cards, no labels)
+      const COL_GAP = 50
+      const colW = Math.floor((UW - COL_GAP) / 2)  // 835
+      push(tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, TITLE_W, 245, 44))
+      for (let k = 0; k < 2; k++) {
+        const cx = PAD + k * (colW + COL_GAP)
+        push(tb(mk(), slideId, `КОЛОНКА_${k + 1}`, cx, 540, colW, H - PAD - 540, 22))
+      }
+      break
+    }
+
     case 'three_columns': {
       const cw = Math.floor((UW - 2 * GAP) / 3)
       push(tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, TITLE_W, TH, 28))
