@@ -2262,10 +2262,14 @@ function buildThreeColumnsNumRequests(pageId: string): object[] {
   const _3CN_BUBBLE_D = 75
   const _3CN_BUBBLE_Y = 411
   const reqs: object[] = []
+  const _3CN_NUM_H = 52  // one line of 18pt at lineSpacing:90 in slide px; TEXT_BOX has ~0 default inset
+  const _3CN_NUM_Y = _3CN_BUBBLE_Y + Math.floor((_3CN_BUBBLE_D - _3CN_NUM_H) / 2)  // 422
   for (let k = 0; k < 3; k++) {
-    const cx   = _PAD + k * (_3CN_COL_W + _3CN_GAP)
-    const bgId = `${pageId}_3cnBubble_${k}`
+    const cx    = _PAD + k * (_3CN_COL_W + _3CN_GAP)
+    const bgId  = `${pageId}_3cnBubble_${k}`
+    const numId = `${pageId}_3cnNum_${k}`
     reqs.push(
+      // Red circle (no text — ELLIPSE inset=19px makes text area too small for 18pt)
       {
         createShape: {
           objectId: bgId,
@@ -2292,15 +2296,44 @@ function buildThreeColumnsNumRequests(pageId: string): object[] {
               solidFill: { color: { rgbColor: { red: 0xFD / 255, green: 0x34 / 255, blue: 0x33 / 255 } }, alpha: 1 },
             },
             outline: { propertyState: 'NOT_RENDERED' },
-            contentAlignment: 'MIDDLE',
           },
-          fields: 'shapeBackgroundFill,outline,contentAlignment',
+          fields: 'shapeBackgroundFill,outline',
         },
       },
-      { insertText: { objectId: bgId, insertionIndex: 0, text: `${k + 1}` } },
+      // Number overlay: TEXT_BOX (0 inset) centered vertically on the circle
+      {
+        createShape: {
+          objectId: numId,
+          shapeType: 'TEXT_BOX',
+          elementProperties: {
+            pageObjectId: pageId,
+            size: {
+              width:  { magnitude: _eL(_3CN_BUBBLE_D), unit: 'EMU' },
+              height: { magnitude: _eL(_3CN_NUM_H), unit: 'EMU' },
+            },
+            transform: {
+              scaleX: 1, shearX: 0, translateX: _eL(cx),
+              shearY: 0, scaleY: 1, translateY: _eL(_3CN_NUM_Y),
+              unit: 'EMU',
+            },
+          },
+        },
+      },
+      {
+        updateShapeProperties: {
+          objectId: numId,
+          shapeProperties: {
+            shapeBackgroundFill: { propertyState: 'NOT_RENDERED' },
+            outline: { propertyState: 'NOT_RENDERED' },
+            autofit: { autofitType: 'NONE' },
+          },
+          fields: 'shapeBackgroundFill,outline,autofit.autofitType',
+        },
+      },
+      { insertText: { objectId: numId, insertionIndex: 0, text: `${k + 1}` } },
       {
         updateTextStyle: {
-          objectId: bgId,
+          objectId: numId,
           style: {
             fontSize: { magnitude: 18, unit: 'PT' },
             bold: false,
@@ -2313,7 +2346,7 @@ function buildThreeColumnsNumRequests(pageId: string): object[] {
       },
       {
         updateParagraphStyle: {
-          objectId: bgId,
+          objectId: numId,
           style: { alignment: 'CENTER', lineSpacing: 90, spaceAbove: { magnitude: 0, unit: 'PT' }, spaceBelow: { magnitude: 0, unit: 'PT' } },
           fields: 'alignment,lineSpacing,spaceAbove,spaceBelow',
           textRange: { type: 'ALL' },
@@ -2556,8 +2589,12 @@ function buildFlatColumnsRequests(
     }
 
     if (compId === 'four_columns_bubble') {
-      const bgId = `flat_bubble_${slideIdx}_${k}`
+      const _F4_NUM_H = 52
+      const _F4_NUM_Y = _FLAT4_BUBBLE_Y + Math.floor((_FLAT4_BUBBLE_D - _F4_NUM_H) / 2)  // 422
+      const bgId  = `flat_bubble_${slideIdx}_${k}`
+      const numId = `flat_bubble_num_${slideIdx}_${k}`
       reqs.push(
+        // Red circle (no text)
         {
           createShape: {
             objectId: bgId,
@@ -2578,15 +2615,40 @@ function buildFlatColumnsRequests(
             shapeProperties: {
               shapeBackgroundFill: { solidFill: { color: { rgbColor: _AG_RED_RGB } } },
               outline: { propertyState: 'NOT_RENDERED' },
-              contentAlignment: 'MIDDLE',
             },
-            fields: 'shapeBackgroundFill,outline,contentAlignment',
+            fields: 'shapeBackgroundFill,outline',
           },
         },
-        { insertText: { objectId: bgId, insertionIndex: 0, text: String(k + 1) } },
+        // Number overlay: TEXT_BOX centered on circle
+        {
+          createShape: {
+            objectId: numId,
+            shapeType: 'TEXT_BOX',
+            elementProperties: {
+              pageObjectId: pageId,
+              size: {
+                width:  { magnitude: _eL(_FLAT4_BUBBLE_D), unit: 'EMU' },
+                height: { magnitude: _eL(_F4_NUM_H), unit: 'EMU' },
+              },
+              transform: { scaleX: 1, shearX: 0, translateX: _eL(cx), shearY: 0, scaleY: 1, translateY: _eL(_F4_NUM_Y), unit: 'EMU' },
+            },
+          },
+        },
+        {
+          updateShapeProperties: {
+            objectId: numId,
+            shapeProperties: {
+              shapeBackgroundFill: { propertyState: 'NOT_RENDERED' },
+              outline: { propertyState: 'NOT_RENDERED' },
+              autofit: { autofitType: 'NONE' },
+            },
+            fields: 'shapeBackgroundFill,outline,autofit.autofitType',
+          },
+        },
+        { insertText: { objectId: numId, insertionIndex: 0, text: String(k + 1) } },
         {
           updateTextStyle: {
-            objectId: bgId,
+            objectId: numId,
             style: {
               weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
               foregroundColor: { opaqueColor: { rgbColor: _FLAT4_PINK_RGB } },
@@ -2599,7 +2661,7 @@ function buildFlatColumnsRequests(
         },
         {
           updateParagraphStyle: {
-            objectId: bgId,
+            objectId: numId,
             style: { alignment: 'CENTER', lineSpacing: 90, spaceAbove: { magnitude: 0, unit: 'PT' }, spaceBelow: { magnitude: 0, unit: 'PT' } },
             fields: 'alignment,lineSpacing,spaceAbove,spaceBelow',
             textRange: { type: 'ALL' },
