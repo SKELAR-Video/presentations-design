@@ -2229,11 +2229,20 @@ function expandPlanWithVariants(plan: SlidePlan): {
       if (varComp === slide.composition) return true  // original always valid
       const remapped = remapSlotsForVariant(slide.slots, slide.composition, varComp)
       const remappedVals = new Set(Object.values(remapped).filter(v => (v ?? '').trim()))
-      return !Object.entries(slide.slots).some(([slot, val]) => {
+      // Check 1: all non-empty values from original are preserved in remapped
+      if (Object.entries(slide.slots).some(([slot, val]) => {
         if (!(val ?? '').trim()) return false
         if (slot.startsWith('ЗОБРАЖЕННЯ_')) return false
-        return !remappedVals.has(val)  // non-empty value not in remapped → content lost
-      })
+        return !remappedVals.has(val)
+      })) return false
+      // Check 2: all required (non-optional) slots of the target composition are non-empty
+      const targetComp = getComposition(varComp)
+      if (targetComp) {
+        for (const s of targetComp.slots) {
+          if (!s.optional && !(remapped[s.name] ?? '').trim()) return false
+        }
+      }
+      return true
     })
 
     if (validVariants.length <= 1) {
