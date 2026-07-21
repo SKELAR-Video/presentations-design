@@ -198,13 +198,14 @@ function checkContentIntegrity(
 }
 
 function checkBadge(slide: slides_v1.Schema$Page, compId: string, slots: Record<string, string>): CheckResult {
-  // bento_right_*: logo bottom-left (100, 890)
+  // bento_right_* + title_photo: logo bottom-left (100, 890)
   // cover_title_only + title-only closing: wordmark logo top-right at (1463, 99)
   // default: symbol logo top-right (1730, 100)
   const isBentoRight = compId.startsWith('bento_right_')
   const isCoverTitleStyle = compId === 'cover_title_only' || compId === 'closing'
-  const BADGE_X   = isBentoRight ? 100 : isCoverTitleStyle ? 1463 : 1730
-  const BADGE_Y   = isBentoRight ? 890 : isCoverTitleStyle ? 99   : 100
+  const isBottomLeft  = isBentoRight || compId === 'title_photo'
+  const BADGE_X   = isBottomLeft ? 100 : isCoverTitleStyle ? 1463 : 1730
+  const BADGE_Y   = isBottomLeft ? 890 : isCoverTitleStyle ? 99   : 100
   const BADGE_TOL = 25
   for (const el of slide.pageElements ?? []) {
     if (!el.transform) continue
