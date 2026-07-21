@@ -245,7 +245,7 @@ const _DATE_FIXED   = 70   // 18pt cover date: 1-line comfortable capacity
 
 // bento_right_* layouts occupy the top-right area — logo goes bottom-left instead
 function _logoPos(compId: string): { x: number; y: number } {
-  if (compId.startsWith('bento_right_')) {
+  if (compId.startsWith('bento_right_') || compId === 'title_photo') {
     return { x: _PAD, y: _H_SLIDE - _PAD - _LOGO_H }
   }
   return { x: _W - _PAD - _LOGO_W, y: _PAD }
