@@ -2159,6 +2159,7 @@ async function readDeckFacts(
 // so the user can pick their preferred layout and delete the rest.
 
 const VARIANT_GROUPS: readonly (readonly string[])[] = [
+  ['title_body', 'title_photo'],
   ['two_columns', 'bento_right_2'],
   ['three_columns', 'bento_right_3', 'three_columns_num', 'columns_flex'],
   ['four_columns', 'four_columns_num', 'bento_right_2x2', 'four_columns_paren', 'four_columns_bubble'],
@@ -2171,6 +2172,8 @@ function remapSlotsForVariant(
 ): Record<string, string> {
   if (fromComp === toComp) return { ...slots }
   const MAPS: Record<string, Record<string, string>> = {
+    'title_body:title_photo': {},   // ЗАГОЛОВОК+ТЕКСТ pass through; ПІДПИС dropped (filters via validTarget)
+    'title_photo:title_body': {},   // ЗАГОЛОВОК+ТЕКСТ pass through; ФОТО dropped
     'two_columns:bento_right_2':   { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2' },
     'bento_right_2:two_columns':   { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2' },
     'three_columns:bento_right_3':     { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3' },
