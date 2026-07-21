@@ -2216,6 +2216,22 @@ function expandPlanWithVariants(plan: SlidePlan): {
   const variantMap = new Map<number, VariantInfo>()
 
   for (const slide of plan.slides) {
+    // Drop two_columns with no ЗАГОЛОВОК whose column values already appear in other slides.
+    // This removes AI-generated fragments that duplicate content from a bento_bottom_4 slide.
+    if (
+      slide.composition === 'two_columns' &&
+      !(slide.slots['ЗАГОЛОВОК'] ?? '').trim()
+    ) {
+      const colVals = ['КОЛОНКА_1', 'КОЛОНКА_2']
+        .map(k => (slide.slots[k] ?? '').trim())
+        .filter(Boolean)
+      const allCoveredElsewhere = colVals.length > 0 && colVals.every(val =>
+        plan.slides.some(other => other !== slide &&
+          Object.values(other.slots).some(v => (v ?? '').trim() === val))
+      )
+      if (allCoveredElsewhere) continue
+    }
+
     const group = VARIANT_GROUPS.find(g => g.includes(slide.composition))
     if (!group) {
       expandedSlides.push(slide)
