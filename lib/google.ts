@@ -2263,11 +2263,9 @@ function buildThreeColumnsNumRequests(pageId: string): object[] {
   const _3CN_BUBBLE_Y = 411
   const reqs: object[] = []
   for (let k = 0; k < 3; k++) {
-    const cx    = _PAD + k * (_3CN_COL_W + _3CN_GAP)
-    const bgId  = `${pageId}_3cnBubble_${k}`
-    const numId = `${pageId}_3cnNum_${k}`
+    const cx   = _PAD + k * (_3CN_COL_W + _3CN_GAP)
+    const bgId = `${pageId}_3cnBubble_${k}`
     reqs.push(
-      // Background circle (no text — ELLIPSE text centering is unreliable in Slides API)
       {
         createShape: {
           objectId: bgId,
@@ -2294,44 +2292,15 @@ function buildThreeColumnsNumRequests(pageId: string): object[] {
               solidFill: { color: { rgbColor: { red: 0xFD / 255, green: 0x34 / 255, blue: 0x33 / 255 } }, alpha: 1 },
             },
             outline: { propertyState: 'NOT_RENDERED' },
+            contentAlignment: 'MIDDLE',
           },
-          fields: 'shapeBackgroundFill,outline',
+          fields: 'shapeBackgroundFill,outline,contentAlignment',
         },
       },
-      // Number text overlay (TEXT_BOX for reliable centering)
-      {
-        createShape: {
-          objectId: numId,
-          shapeType: 'TEXT_BOX',
-          elementProperties: {
-            pageObjectId: pageId,
-            size: {
-              width:  { magnitude: _eL(_3CN_BUBBLE_D), unit: 'EMU' },
-              height: { magnitude: _eL(_3CN_BUBBLE_D), unit: 'EMU' },
-            },
-            transform: {
-              scaleX: 1, shearX: 0, translateX: _eL(cx),
-              shearY: 0, scaleY: 1, translateY: _eL(_3CN_BUBBLE_Y),
-              unit: 'EMU',
-            },
-          },
-        },
-      },
-      {
-        updateShapeProperties: {
-          objectId: numId,
-          shapeProperties: {
-            shapeBackgroundFill: { propertyState: 'NOT_RENDERED' },
-            outline: { propertyState: 'NOT_RENDERED' },
-            autofit: { autofitType: 'NONE' },
-          },
-          fields: 'shapeBackgroundFill,outline,autofit.autofitType',
-        },
-      },
-      { insertText: { objectId: numId, insertionIndex: 0, text: `${k + 1}` } },
+      { insertText: { objectId: bgId, insertionIndex: 0, text: `${k + 1}` } },
       {
         updateTextStyle: {
-          objectId: numId,
+          objectId: bgId,
           style: {
             fontSize: { magnitude: 18, unit: 'PT' },
             bold: false,
@@ -2344,8 +2313,8 @@ function buildThreeColumnsNumRequests(pageId: string): object[] {
       },
       {
         updateParagraphStyle: {
-          objectId: numId,
-          style: { alignment: 'CENTER', lineSpacing: 90, spaceAbove: { magnitude: 20, unit: 'PT' }, spaceBelow: { magnitude: 0, unit: 'PT' } },
+          objectId: bgId,
+          style: { alignment: 'CENTER', lineSpacing: 90, spaceAbove: { magnitude: 0, unit: 'PT' }, spaceBelow: { magnitude: 0, unit: 'PT' } },
           fields: 'alignment,lineSpacing,spaceAbove,spaceBelow',
           textRange: { type: 'ALL' },
         },
@@ -2587,10 +2556,8 @@ function buildFlatColumnsRequests(
     }
 
     if (compId === 'four_columns_bubble') {
-      const bgId  = `flat_bubble_${slideIdx}_${k}`
-      const numId = `flat_bubble_num_${slideIdx}_${k}`
+      const bgId = `flat_bubble_${slideIdx}_${k}`
       reqs.push(
-        // Background circle (no text)
         {
           createShape: {
             objectId: bgId,
@@ -2611,40 +2578,15 @@ function buildFlatColumnsRequests(
             shapeProperties: {
               shapeBackgroundFill: { solidFill: { color: { rgbColor: _AG_RED_RGB } } },
               outline: { propertyState: 'NOT_RENDERED' },
+              contentAlignment: 'MIDDLE',
             },
-            fields: 'shapeBackgroundFill,outline',
+            fields: 'shapeBackgroundFill,outline,contentAlignment',
           },
         },
-        // Number text overlay (TEXT_BOX for reliable centering)
-        {
-          createShape: {
-            objectId: numId,
-            shapeType: 'TEXT_BOX',
-            elementProperties: {
-              pageObjectId: pageId,
-              size: {
-                width:  { magnitude: _eL(_FLAT4_BUBBLE_D), unit: 'EMU' },
-                height: { magnitude: _eL(_FLAT4_BUBBLE_D), unit: 'EMU' },
-              },
-              transform: { scaleX: 1, shearX: 0, translateX: _eL(cx), shearY: 0, scaleY: 1, translateY: _eL(_FLAT4_BUBBLE_Y), unit: 'EMU' },
-            },
-          },
-        },
-        {
-          updateShapeProperties: {
-            objectId: numId,
-            shapeProperties: {
-              shapeBackgroundFill: { propertyState: 'NOT_RENDERED' },
-              outline: { propertyState: 'NOT_RENDERED' },
-              autofit: { autofitType: 'NONE' },
-            },
-            fields: 'shapeBackgroundFill,outline,autofit.autofitType',
-          },
-        },
-        { insertText: { objectId: numId, insertionIndex: 0, text: String(k + 1) } },
+        { insertText: { objectId: bgId, insertionIndex: 0, text: String(k + 1) } },
         {
           updateTextStyle: {
-            objectId: numId,
+            objectId: bgId,
             style: {
               weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
               foregroundColor: { opaqueColor: { rgbColor: _FLAT4_PINK_RGB } },
@@ -2657,8 +2599,8 @@ function buildFlatColumnsRequests(
         },
         {
           updateParagraphStyle: {
-            objectId: numId,
-            style: { alignment: 'CENTER', lineSpacing: 90, spaceAbove: { magnitude: 20, unit: 'PT' }, spaceBelow: { magnitude: 0, unit: 'PT' } },
+            objectId: bgId,
+            style: { alignment: 'CENTER', lineSpacing: 90, spaceAbove: { magnitude: 0, unit: 'PT' }, spaceBelow: { magnitude: 0, unit: 'PT' } },
             fields: 'alignment,lineSpacing,spaceAbove,spaceBelow',
             textRange: { type: 'ALL' },
           },
