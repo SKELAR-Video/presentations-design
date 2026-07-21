@@ -3902,6 +3902,15 @@ export async function buildPresentation(
           },
         },
       })
+      // Bring variant pill to front — photo is inserted last and would cover it otherwise
+      if (variantMap.has(i)) {
+        photoRequests.push({
+          updatePageElementsZOrder: {
+            pageElementObjectIds: [`vpill_${i}`],
+            operation: 'BRING_TO_FRONT',
+          },
+        })
+      }
     }
     if (photoRequests.length > 0) {
       try {
