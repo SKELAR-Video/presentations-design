@@ -3320,19 +3320,22 @@ export async function buildPresentation(
           fields: 'pageBackgroundFill',
         },
       })
-      // Red bg → ПІДЗАГОЛОВОК must be FCCACA (secondary on red, per color hierarchy rule)
-      for (const el of slide.pageElements ?? []) {
-        if (el.shape?.shapeType !== 'TEXT_BOX' || !el.objectId) continue
-        const raw = (el.shape?.text?.textElements ?? []).map(te => te.textRun?.content ?? '').join('')
-        if (!raw.includes('{{ПІДЗАГОЛОВОК}}')) continue
-        requests.push({
-          updateTextStyle: {
-            objectId: el.objectId,
-            style: { foregroundColor: { opaqueColor: { rgbColor: { red: 0xFC / 255, green: 0xCA / 255, blue: 0xCA / 255 } } } },
-            fields: 'foregroundColor',
-            textRange: { type: 'ALL' },
-          },
-        })
+      // Red bg → ПІДЗАГОЛОВОК must be FCCACA — only when slot is non-empty
+      // (updateTextStyle on an element with no text causes API error)
+      if ((plan.slides[i].slots['ПІДЗАГОЛОВОК'] ?? '').trim()) {
+        for (const el of slide.pageElements ?? []) {
+          if (el.shape?.shapeType !== 'TEXT_BOX' || !el.objectId) continue
+          const raw = (el.shape?.text?.textElements ?? []).map(te => te.textRun?.content ?? '').join('')
+          if (!raw.includes('{{ПІДЗАГОЛОВОК}}')) continue
+          requests.push({
+            updateTextStyle: {
+              objectId: el.objectId,
+              style: { foregroundColor: { opaqueColor: { rgbColor: { red: 0xFC / 255, green: 0xCA / 255, blue: 0xCA / 255 } } } },
+              fields: 'foregroundColor',
+              textRange: { type: 'ALL' },
+            },
+          })
+        }
       }
     }
   }
