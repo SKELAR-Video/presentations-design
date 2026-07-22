@@ -66,7 +66,7 @@ function bentoDims(compId: string): { w: number; h: number } | null {
     return { w: cw, h: _H - _PAD - 540 }        // {w: 540, h: 440}
   }
   if (compId === 'three_columns_timeline') {
-    return { w: 374, h: _H - _PAD - 472 }       // {w: 374, h: 508}
+    return { w: 560, h: _H - _PAD - 509 }       // {w: 560, h: 471} — full zone width, text below dot
   }
   if (compId === 'two_columns_timeline') {
     return { w: 623, h: _H - _PAD - 472 }       // narrower col 2 width; {w: 623, h: 508}
@@ -2452,9 +2452,10 @@ function buildThreeColumnsNumRequests(pageId: string): object[] {
 // Text boxes (КОЛОНКА_N) stay in master, filled by replaceAllText.
 function buildTimelineRequests(pageId: string, slideIdx: number, colXs: readonly number[]): object[] {
   const reqs: object[] = []
-  const TCL_DOT_Y  = 521
-  const TCL_LINE_Y = TCL_DOT_Y + _AG_DOT_SZ              // 575
-  const TCL_LINE_H = 1080 - TCL_LINE_Y                   // 505
+  // three_columns_timeline: dots centred above text zones (y=435); two_columns_timeline: dots beside text (y=521)
+  const TCL_DOT_Y  = colXs.length === 3 ? 435 : 521
+  const TCL_LINE_Y = TCL_DOT_Y + _AG_DOT_SZ
+  const TCL_LINE_H = 1080 - TCL_LINE_Y
   for (let k = 0; k < colXs.length; k++) {
     const cx      = colXs[k]
     const centerX = cx + _AG_DOT_SZ / 2                  // circle center x
@@ -3607,7 +3608,7 @@ export async function buildPresentation(
   // ── *_timeline: create red circles + vertical lines ──────────────────────────
   for (let i = 0; i < plan.slides.length; i++) {
     const compId = plan.slides[i].composition
-    const colXs = compId === 'three_columns_timeline' ? [90, 687, 1284]
+    const colXs = compId === 'three_columns_timeline' ? [353, 933, 1513]
                 : compId === 'two_columns_timeline'   ? [90, 960]
                 : null
     if (!colXs) continue

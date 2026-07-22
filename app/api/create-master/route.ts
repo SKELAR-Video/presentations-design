@@ -274,12 +274,15 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
 
     case 'three_columns_timeline': {
       // Large H1 title top-left + 3 items (text only in master; dots+lines added dynamically)
+      // Layout: 3 equal zones of 560px each with 20px gaps: [100..660], [680..1240], [1260..1820]
+      // Dots are centred above each zone (buildTimelineRequests colXs=[353,933,1513], dotY=435)
       push(tb(mk(), slideId, 'ЗАГОЛОВОК', 90, 99, 827, 300, 66))
-      const TCL3_TEXT_X = [175, 772, 1369] as const
-      const TCL_TEXT_Y  = 472
-      const TCL_TEXT_H  = H - PAD - TCL_TEXT_Y  // 508
+      const TCL3_ZONE_X = [100, 680, 1260] as const
+      const TCL3_ZONE_W = 560
+      const TCL3_TEXT_Y = 509  // dot bottom (435+54) + 20px gap
+      const TCL3_TEXT_H = H - PAD - TCL3_TEXT_Y  // 471
       for (let k = 0; k < 3; k++) {
-        push(tb(mk(), slideId, `КОЛОНКА_${k + 1}`, TCL3_TEXT_X[k], TCL_TEXT_Y, 374, TCL_TEXT_H, 22))
+        push(tb(mk(), slideId, `КОЛОНКА_${k + 1}`, TCL3_ZONE_X[k], TCL3_TEXT_Y, TCL3_ZONE_W, TCL3_TEXT_H, 18))
       }
       break
     }
