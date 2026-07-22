@@ -66,10 +66,12 @@ function bentoDims(compId: string): { w: number; h: number } | null {
     return { w: cw, h: _H - _PAD - 540 }        // {w: 540, h: 440}
   }
   if (compId === 'three_columns_timeline') {
-    return { w: 560, h: _H - _PAD - 509 }       // {w: 560, h: 471} — full zone width, text below dot
+    // conservative: max title=300px → dotsY=478 → textY=552 → h=428
+    return { w: 560, h: 428 }
   }
   if (compId === 'two_columns_timeline') {
-    return { w: 623, h: _H - _PAD - 472 }       // narrower col 2 width; {w: 623, h: 508}
+    // conservative: max title=300px → dotsY=textY=478 → h=502
+    return { w: 623, h: 502 }
   }
   if (compId === 'bento_bottom_4' || compId === 'four_columns' || compId === 'four_columns_num') {
     const cw = Math.floor((_UW - 3 * _GAP) / 4)  // 407
@@ -2448,12 +2450,86 @@ function buildThreeColumnsNumRequests(pageId: string): object[] {
   return reqs
 }
 
-// three_columns_timeline / two_columns_timeline: create red circles + vertical lines.
-// Text boxes (КОЛОНКА_N) stay in master, filled by replaceAllText.
-function buildTimelineRequests(pageId: string, slideIdx: number, colXs: readonly number[]): object[] {
+// Resize ЗАГОЛОВОК + reposition КОЛОНКА_N text boxes for timeline compositions.
+// Returns layout requests + computed dotsY so buildTimelineRequests can place dots correctly.
+// Title uses 44pt (narrower than bento 66pt) with full TITLE_W width → fewer lines → less overflow risk.
+const TCL_TITLE_PT       = 44
+const TCL_TITLE_HMAX     = 300   // cap in px; prevents dots from being pushed off-slide
+const TCL_TITLE_GAP      = 60   // gap: title content bottom → dot top
+const TCL_DOT_TEXT_GAP   = 20   // gap: dot bottom → text top (three_columns_timeline only)
+const TCL_ZONE_X_THREE   = [100, 680, 1260] as const
+const TCL_ZONE_W_THREE   = 560
+const TCL_TEXT_X_TWO     = [175, 1045] as const
+const TCL_TEXT_W_TWO     = [674, 623] as const
+
+function buildTimelineLayoutRequests(
+  slide: slides_v1.Schema$Page,
+  compId: string,
+  pSlots: Record<string, string>,
+): { requests: object[]; dotsY: number } {
+  const titleText = (pSlots['ЗАГОЛОВОК'] ?? '').trim()
+  const titleLines  = titleText ? estimateLineCount(titleText, _TITLE_W, TCL_TITLE_PT) : 1
+  const titleContentH = Math.min(
+    Math.max(Math.ceil(titleLines * lineH(TCL_TITLE_PT)), Math.ceil(lineH(TCL_TITLE_PT))),
+    TCL_TITLE_HMAX,
+  )
+
+  // Title box at y=99 (master) → content starts at y=99+_INSET=118
+  const titleContentY = _PAD - 1 + _INSET  // 118
+  const dotsY = titleContentY + titleContentH + TCL_TITLE_GAP
+
+  const isThree = compId === 'three_columns_timeline'
+  const textY   = isThree ? dotsY + _AG_DOT_SZ + TCL_DOT_TEXT_GAP : dotsY
+  const textH   = _H - _PAD - textY
+
+  const bentoTokens = BENTO_TOKENS[compId] ?? []
   const reqs: object[] = []
-  // three_columns_timeline: dots centred above text zones (y=435); two_columns_timeline: dots beside text (y=521)
-  const TCL_DOT_Y  = colXs.length === 3 ? 435 : 521
+
+  for (const el of slide.pageElements ?? []) {
+    if (!el.objectId || !el.transform || !el.size) continue
+    const sW = el.size.width?.magnitude ?? 0
+    const sH = el.size.height?.magnitude ?? 0
+    const elX = Math.round((el.transform.translateX ?? 0) / _FPX)
+    const elY = Math.round((el.transform.translateY ?? 0) / _FPX)
+
+    const elText = (el.shape?.text?.textElements ?? [])
+      .map(te => te.textRun?.content ?? '').join('')
+
+    if (elText.includes('{{ЗАГОЛОВОК}}')) {
+      reqs.push(makeElemTransform(el.objectId,
+        elX, elY,
+        _TITLE_W + 2 * _INSET, titleContentH + 2 * _INSET,
+        sW, sH,
+      ))
+      continue
+    }
+
+    const tokenIdx = bentoTokens.findIndex(t => elText.includes(`{{${t}}}`))
+    if (tokenIdx < 0) continue
+
+    if (isThree) {
+      reqs.push(makeElemTransform(el.objectId,
+        TCL_ZONE_X_THREE[tokenIdx] - _INSET, textY - _INSET,
+        TCL_ZONE_W_THREE + 2 * _INSET, textH + 2 * _INSET,
+        sW, sH,
+      ))
+    } else {
+      reqs.push(makeElemTransform(el.objectId,
+        TCL_TEXT_X_TWO[tokenIdx] - _INSET, textY - _INSET,
+        TCL_TEXT_W_TWO[tokenIdx] + 2 * _INSET, textH + 2 * _INSET,
+        sW, sH,
+      ))
+    }
+  }
+
+  return { requests: reqs, dotsY }
+}
+
+// three_columns_timeline / two_columns_timeline: create red circles + vertical lines.
+// dotsY is computed by buildTimelineLayoutRequests (dynamic, title-height-aware).
+function buildTimelineRequests(pageId: string, slideIdx: number, colXs: readonly number[], dotsY: number): object[] {
+  const reqs: object[] = []
+  const TCL_DOT_Y  = dotsY
   const TCL_LINE_Y = TCL_DOT_Y + _AG_DOT_SZ
   const TCL_LINE_H = 1080 - TCL_LINE_Y
   for (let k = 0; k < colXs.length; k++) {
@@ -3605,7 +3681,7 @@ export async function buildPresentation(
     requests.push(...buildFlatColumnsRequests(slide, compId, pSlots, pageId, i))
   }
 
-  // ── *_timeline: create red circles + vertical lines ──────────────────────────
+  // ── *_timeline: resize title + reposition text boxes + create circles + lines ─
   for (let i = 0; i < plan.slides.length; i++) {
     const compId = plan.slides[i].composition
     const colXs = compId === 'three_columns_timeline' ? [353, 933, 1513]
@@ -3614,7 +3690,12 @@ export async function buildPresentation(
     if (!colXs) continue
     const pageId = planPageIds[i]
     if (!pageId) continue
-    requests.push(...buildTimelineRequests(pageId, i, colXs))
+    const slide = updatedSlides.find(s => s.objectId === pageId)
+    if (!slide) continue
+    const pSlots = bentoProcessedSlots.get(i) ?? plan.slides[i].slots
+    const { requests: layoutReqs, dotsY } = buildTimelineLayoutRequests(slide, compId, pSlots)
+    requests.push(...layoutReqs)
+    requests.push(...buildTimelineRequests(pageId, i, colXs, dotsY))
   }
 
   // ── Title logo-safe resize: clamp ЗАГОЛОВОК to _TITLE_W=1610 ────────────────────

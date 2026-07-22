@@ -273,10 +273,9 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
     }
 
     case 'three_columns_timeline': {
-      // Large H1 title top-left + 3 items (text only in master; dots+lines added dynamically)
-      // Layout: 3 equal zones of 560px each with 20px gaps: [100..660], [680..1240], [1260..1820]
-      // Dots are centred above each zone (buildTimelineRequests colXs=[353,933,1513], dotY=435)
-      push(tb(mk(), slideId, 'ЗАГОЛОВОК', 90, 99, 827, 300, 66))
+      // Layout: 3 equal zones of 560px each; dots above text zones (dynamic y via buildTimelineLayoutRequests)
+      // Title 44pt full-width; positions are overridden dynamically — master just provides placeholders.
+      push(tb(mk(), slideId, 'ЗАГОЛОВОК', 90, 99, 1610, 300, 44))
       const TCL3_ZONE_X = [100, 680, 1260] as const
       const TCL3_ZONE_W = 560
       const TCL3_TEXT_Y = 509  // dot bottom (435+54) + 20px gap
@@ -288,8 +287,8 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
     }
 
     case 'two_columns_timeline': {
-      // Large H1 title top-left + 2 items (text only in master; dots+lines added dynamically)
-      push(tb(mk(), slideId, 'ЗАГОЛОВОК', 90, 99, 827, 300, 66))
+      // Dots + title positioned dynamically (buildTimelineLayoutRequests) — master provides placeholders only.
+      push(tb(mk(), slideId, 'ЗАГОЛОВОК', 90, 99, 1610, 300, 44))
       const TCL_TEXT_Y2  = 472
       const TCL_TEXT_H2  = H - PAD - TCL_TEXT_Y2  // 508
       push(
