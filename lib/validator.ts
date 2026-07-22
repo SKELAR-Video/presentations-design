@@ -184,7 +184,10 @@ function checkContentIntegrity(
       const isColumnPlainBody = compId === 'two_columns_plain' && /^КОЛОНКА_\d+$/.test(name)
       const capitalizedOk = (isKpiLabel || isColumnPlainBody) && normalized.length > 0 &&
         sourceText.includes(normalized.charAt(0).toLowerCase() + normalized.slice(1))
-      if (!verbatimOk && !compactOk && !capitalizedOk) {
+      // Allow colon→em-dash normalization applied to two_columns / bento_right_* slots
+      const colonNormalizedOk = normalized.includes(' — ') &&
+        sourceText.includes(normalized.replace(/ — /g, ': '))
+      if (!verbatimOk && !compactOk && !capitalizedOk && !colonNormalizedOk) {
         const preview = line.length > 60 ? line.slice(0, 60) + '…' : line
         fails.push(`${name}: non-verbatim line — "${preview}"`)
         break  // one report per slot is enough

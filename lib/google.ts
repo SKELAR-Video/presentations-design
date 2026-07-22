@@ -95,7 +95,7 @@ const BENTO_TOKENS: Record<string, string[]> = {
 // Role-max font size per composition (start here; shrink only if text overflows).
 // Values from Figma: 2-card → 48pt possible for short text, 3-card → 28pt ceiling.
 const BENTO_MAX_PT: Record<string, number> = {
-  two_columns:         48,
+  two_columns:         28,
   two_columns_labeled: 36,
   two_columns_plain:   36,
   three_columns:     28,
@@ -3120,19 +3120,38 @@ export async function buildPresentation(
   // For "Label — Body" or "Label: Body" content in КОЛОНКА_N:
   //   two_columns_labeled → ПІДПИС_N = label (gray box), КОЛОНКА_N = capitalized body
   //   two_columns_plain   → КОЛОНКА_N = "label\nbody" for per-paragraph grey styling
+  //   two_columns / bento_right_* → normalize "Label: Body" → "Label — Body" only
+  const _hasLetter = /[a-zA-Zа-яА-ЯіІїЇєЄ'ʼ]/
   for (const slide of plan.slides) {
     const comp = slide.composition
-    if (comp !== 'two_columns_labeled' && comp !== 'two_columns_plain') continue
-    for (const k of [1, 2]) {
-      const col = (slide.slots[`КОЛОНКА_${k}`] ?? '').trim()
-      if (!col) continue
-      const split = extractColumnLabel(col)
-      if (!split) continue
-      if (comp === 'two_columns_labeled' && !(slide.slots[`ПІДПИС_${k}`] ?? '').trim()) {
-        slide.slots[`ПІДПИС_${k}`] = split.label
-        slide.slots[`КОЛОНКА_${k}`] = split.body
-      } else if (comp === 'two_columns_plain') {
-        slide.slots[`КОЛОНКА_${k}`] = `${split.label}\n${split.body}`
+    if (comp === 'two_columns_labeled' || comp === 'two_columns_plain') {
+      for (const k of [1, 2]) {
+        const col = (slide.slots[`КОЛОНКА_${k}`] ?? '').trim()
+        if (!col) continue
+        const split = extractColumnLabel(col)
+        if (!split) continue
+        if (comp === 'two_columns_labeled' && !(slide.slots[`ПІДПИС_${k}`] ?? '').trim()) {
+          slide.slots[`ПІДПИС_${k}`] = split.label
+          slide.slots[`КОЛОНКА_${k}`] = split.body
+        } else if (comp === 'two_columns_plain') {
+          slide.slots[`КОЛОНКА_${k}`] = `${split.label}\n${split.body}`
+        }
+      }
+    } else if (comp === 'two_columns' || comp.startsWith('bento_right_')) {
+      // For these compositions: colon→em-dash normalization only (no gray-label rendering)
+      const slotNames = comp === 'two_columns'
+        ? ['КОЛОНКА_1', 'КОЛОНКА_2']
+        : ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4']
+      for (const slotName of slotNames) {
+        const val = (slide.slots[slotName] ?? '').trim()
+        if (!val) continue
+        const colonIdx = val.indexOf(': ')
+        if (colonIdx <= 0 || colonIdx > 60) continue
+        const label = val.slice(0, colonIdx).trim()
+        if (!_hasLetter.test(label)) continue
+        const body = val.slice(colonIdx + 2).trim()
+        if (!body) continue
+        slide.slots[slotName] = `${label} — ${body}`
       }
     }
   }
@@ -3232,7 +3251,10 @@ export async function buildPresentation(
       }
     }
     for (const tok of tokens) {
-      if (processed[tok]) processed[tok] = preprocessBentoText(processed[tok])
+      if (!processed[tok]) continue
+      // two_columns_plain/labeled: КОЛОНКА body uses label\nbody pattern — no bullet conversion
+      if (compId === 'two_columns_plain' || compId === 'two_columns_labeled') continue
+      processed[tok] = preprocessBentoText(processed[tok])
     }
     bentoProcessedSlots.set(i, processed)
   }
