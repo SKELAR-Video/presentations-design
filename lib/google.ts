@@ -359,6 +359,24 @@ function getLogoWordmarkUrl(): string {
 // Value+label split: if card text is "ЧИСЛО\nПідпис" or "ЧИСЛО: Підпис",
 // returns split point so value gets large font and label gets small font.
 // Only triggers when the first part contains a digit (metric/number indicator).
+// Detects "Label — Body" or "Label: Body" in flat two-column content.
+// Used to auto-populate ПІДПИС (gray) + trim КОЛОНКА (white) at generation time.
+function extractColumnLabel(text: string): { label: string; body: string } | null {
+  const emDash = text.search(/ [—–] /)  // em dash or en dash surrounded by spaces
+  if (emDash > 0 && emDash <= 60) {
+    const label = text.slice(0, emDash).trim()
+    const body  = text.slice(emDash + 3).trim()
+    if (label && body) return { label, body: body.charAt(0).toUpperCase() + body.slice(1) }
+  }
+  const colon = text.indexOf(': ')
+  if (colon > 0 && colon <= 60) {
+    const label = text.slice(0, colon).trim()
+    const body  = text.slice(colon + 2).trim()
+    if (label && body) return { label, body: body.charAt(0).toUpperCase() + body.slice(1) }
+  }
+  return null
+}
+
 function splitValueLabel(text: string): { valueEnd: number; labelStart: number } | null {
   const nlIdx = text.indexOf('\n')
   if (nlIdx > 0 && nlIdx <= 12 && /^\s*[\d$€£±~≈<>]/.test(text.slice(0, nlIdx))) {
@@ -3096,6 +3114,27 @@ export async function buildPresentation(
   const { expanded: _expandedPlan, variantMap } = expandPlanWithVariants(plan)
   plan = _expandedPlan
 
+  // Step 2.9: Auto-extract column labels for two_columns_labeled / two_columns_plain.
+  // For "Label — Body" or "Label: Body" content in КОЛОНКА_N:
+  //   two_columns_labeled → ПІДПИС_N = label (gray box), КОЛОНКА_N = capitalized body
+  //   two_columns_plain   → КОЛОНКА_N = "label\nbody" for per-paragraph grey styling
+  for (const slide of plan.slides) {
+    const comp = slide.composition
+    if (comp !== 'two_columns_labeled' && comp !== 'two_columns_plain') continue
+    for (const k of [1, 2]) {
+      const col = (slide.slots[`КОЛОНКА_${k}`] ?? '').trim()
+      if (!col) continue
+      const split = extractColumnLabel(col)
+      if (!split) continue
+      if (comp === 'two_columns_labeled' && !(slide.slots[`ПІДПИС_${k}`] ?? '').trim()) {
+        slide.slots[`ПІДПИС_${k}`] = split.label
+        slide.slots[`КОЛОНКА_${k}`] = split.body
+      } else if (comp === 'two_columns_plain') {
+        slide.slots[`КОЛОНКА_${k}`] = `${split.label}\n${split.body}`
+      }
+    }
+  }
+
   // Step 3: Assign one real pageId to each plan slide; track what needs duplication
   const planPageIds: string[] = []
   const compUsage: Record<string, number> = {}
@@ -3891,6 +3930,28 @@ export async function buildPresentation(
       presentationId,
       requestBody: { requests },
     })
+  }
+
+  // ── two_columns_plain: grey label on first line when label\nbody pattern was applied in Step 2.9 ──
+  for (let i = 0; i < plan.slides.length; i++) {
+    if (plan.slides[i].composition !== 'two_columns_plain') continue
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    for (const k of [1, 2]) {
+      const colText = (plan.slides[i].slots[`КОЛОНКА_${k}`] ?? '').trim()
+      const nlIdx = colText.indexOf('\n')
+      if (nlIdx <= 0) continue
+      const objId = slotObjectIds[i]?.[`КОЛОНКА_${k}`]
+      if (!objId) continue
+      fixedRangeStyleRequests.push({
+        updateTextStyle: {
+          objectId: objId,
+          style: { foregroundColor: { opaqueColor: { rgbColor: _AG_MUTED_RGB } } },
+          fields: 'foregroundColor',
+          textRange: { type: 'FIXED_RANGE', startIndex: 0, endIndex: nlIdx },
+        },
+      })
+    }
   }
 
   // FIXED_RANGE colon-split colouring — separate batch so a bad endIndex never aborts text replacement.
