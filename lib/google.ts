@@ -65,6 +65,12 @@ function bentoDims(compId: string): { w: number; h: number } | null {
     const cw = Math.floor((_UW - 2 * 50) / 3)  // 540 — no card INN padding
     return { w: cw, h: _H - _PAD - 540 }        // {w: 540, h: 440}
   }
+  if (compId === 'three_columns_timeline') {
+    return { w: 374, h: _H - _PAD - 472 }       // {w: 374, h: 508}
+  }
+  if (compId === 'two_columns_timeline') {
+    return { w: 623, h: _H - _PAD - 472 }       // narrower col 2 width; {w: 623, h: 508}
+  }
   if (compId === 'bento_bottom_4' || compId === 'four_columns' || compId === 'four_columns_num') {
     const cw = Math.floor((_UW - 3 * _GAP) / 4)  // 407
     return { w: cw - 2 * _INN, h: _CH - 2 * _INN }  // {w: 347, h: 620}
@@ -80,8 +86,10 @@ const BENTO_TOKENS: Record<string, string[]> = {
   two_columns:         ['КОЛОНКА_1', 'КОЛОНКА_2'],
   two_columns_labeled: ['КОЛОНКА_1', 'КОЛОНКА_2'],
   two_columns_plain:   ['КОЛОНКА_1', 'КОЛОНКА_2'],
-  three_columns:     ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3'],
-  three_columns_num: ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3'],
+  three_columns:          ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3'],
+  three_columns_num:      ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3'],
+  three_columns_timeline: ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3'],
+  two_columns_timeline:   ['КОЛОНКА_1', 'КОЛОНКА_2'],
   four_columns:      ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
   four_columns_num:  ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
   bento_bottom_4:       ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
@@ -98,8 +106,10 @@ const BENTO_MAX_PT: Record<string, number> = {
   two_columns:         28,
   two_columns_labeled: 36,
   two_columns_plain:   36,
-  three_columns:     28,
-  three_columns_num: 18,
+  three_columns:          28,
+  three_columns_num:      18,
+  three_columns_timeline: 28,
+  two_columns_timeline:   28,
   four_columns:      22,
   four_columns_num:  18,
   bento_bottom_4:      22,
@@ -116,8 +126,10 @@ const BENTO_MIN_PT: Record<string, number> = {
   two_columns:         18,
   two_columns_labeled: 14,
   two_columns_plain:   14,
-  three_columns:     14,
-  three_columns_num: 10,
+  three_columns:          14,
+  three_columns_num:      10,
+  three_columns_timeline: 14,
+  two_columns_timeline:   14,
   four_columns:      10,
   four_columns_num:  10,
   bento_bottom_4:      10,
@@ -2190,8 +2202,8 @@ async function readDeckFacts(
 
 const VARIANT_GROUPS: readonly (readonly string[])[] = [
   ['title_body', 'title_photo'],
-  ['two_columns', 'two_columns_labeled', 'two_columns_plain', 'bento_right_2'],
-  ['three_columns', 'bento_right_3', 'three_columns_num', 'columns_flex'],
+  ['two_columns', 'two_columns_labeled', 'two_columns_plain', 'bento_right_2', 'two_columns_timeline'],
+  ['three_columns', 'bento_right_3', 'three_columns_num', 'columns_flex', 'three_columns_timeline'],
   ['four_columns', 'four_columns_num', 'bento_right_2x2', 'four_columns_paren', 'four_columns_bubble'],
 ]
 
@@ -2208,6 +2220,10 @@ const VARIANT_SLOT_MAPS: Record<string, Record<string, string>> = {
   'bento_right_3:three_columns':     { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3' },
   'bento_right_3:three_columns_num': { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3' },
   'three_columns_num:bento_right_3': { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3' },
+  'three_columns_timeline:bento_right_3': { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3' },
+  'bento_right_3:three_columns_timeline': { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2', 'КАРТКА_3': 'КОЛОНКА_3' },
+  'two_columns_timeline:bento_right_2':   { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2' },
+  'bento_right_2:two_columns_timeline':   { 'КАРТКА_1': 'КОЛОНКА_1', 'КАРТКА_2': 'КОЛОНКА_2' },
   'four_columns:bento_right_2x2':     { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
   'four_columns:bento_bottom_4':      { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
   'four_columns_num:bento_right_2x2': { 'КОЛОНКА_1': 'КАРТКА_1', 'КОЛОНКА_2': 'КАРТКА_2', 'КОЛОНКА_3': 'КАРТКА_3', 'КОЛОНКА_4': 'КАРТКА_4' },
@@ -2427,6 +2443,46 @@ function buildThreeColumnsNumRequests(pageId: string): object[] {
           textRange: { type: 'ALL' },
         },
       },
+    )
+  }
+  return reqs
+}
+
+// three_columns_timeline / two_columns_timeline: create red circles + vertical lines.
+// Text boxes (КОЛОНКА_N) stay in master, filled by replaceAllText.
+function buildTimelineRequests(pageId: string, slideIdx: number, colXs: readonly number[]): object[] {
+  const reqs: object[] = []
+  const TCL_DOT_Y  = 521
+  const TCL_LINE_Y = TCL_DOT_Y + _AG_DOT_SZ              // 575
+  const TCL_LINE_H = 1080 - TCL_LINE_Y                   // 505
+  for (let k = 0; k < colXs.length; k++) {
+    const cx      = colXs[k]
+    const centerX = cx + _AG_DOT_SZ / 2                  // circle center x
+    const dotId   = `tcl_dot_${slideIdx}_${k}`
+    const lineId  = `tcl_line_${slideIdx}_${k}`
+    reqs.push(
+      { createShape: { objectId: dotId, shapeType: 'ELLIPSE', elementProperties: {
+        pageObjectId: pageId,
+        size: { width:  { magnitude: _eL(_AG_DOT_SZ), unit: 'EMU' },
+                height: { magnitude: _eL(_AG_DOT_SZ), unit: 'EMU' } },
+        transform: { scaleX: 1, shearX: 0, translateX: _eL(cx),
+                     shearY: 0, scaleY: 1, translateY: _eL(TCL_DOT_Y), unit: 'EMU' },
+      } } },
+      { updateShapeProperties: { objectId: dotId, shapeProperties: {
+        shapeBackgroundFill: { solidFill: { color: { rgbColor: _AG_RED_RGB } } },
+        outline: { propertyState: 'NOT_RENDERED' },
+      }, fields: 'shapeBackgroundFill,outline' } },
+      { createShape: { objectId: lineId, shapeType: 'RECTANGLE', elementProperties: {
+        pageObjectId: pageId,
+        size: { width:  { magnitude: _eL(_AG_LINE_H), unit: 'EMU' },
+                height: { magnitude: _eL(TCL_LINE_H), unit: 'EMU' } },
+        transform: { scaleX: 1, shearX: 0, translateX: _eL(centerX - _AG_LINE_H / 2),
+                     shearY: 0, scaleY: 1, translateY: _eL(TCL_LINE_Y), unit: 'EMU' },
+      } } },
+      { updateShapeProperties: { objectId: lineId, shapeProperties: {
+        shapeBackgroundFill: { solidFill: { color: { rgbColor: _AG_RED_RGB } } },
+        outline: { propertyState: 'NOT_RENDERED' },
+      }, fields: 'shapeBackgroundFill,outline' } },
     )
   }
   return reqs
@@ -3546,6 +3602,18 @@ export async function buildPresentation(
     if (!slide) continue
     const pSlots = bentoProcessedSlots.get(i) ?? plan.slides[i].slots
     requests.push(...buildFlatColumnsRequests(slide, compId, pSlots, pageId, i))
+  }
+
+  // ── *_timeline: create red circles + vertical lines ──────────────────────────
+  for (let i = 0; i < plan.slides.length; i++) {
+    const compId = plan.slides[i].composition
+    const colXs = compId === 'three_columns_timeline' ? [90, 687, 1284]
+                : compId === 'two_columns_timeline'   ? [90, 960]
+                : null
+    if (!colXs) continue
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    requests.push(...buildTimelineRequests(pageId, i, colXs))
   }
 
   // ── Title logo-safe resize: clamp ЗАГОЛОВОК to _TITLE_W=1610 ────────────────────

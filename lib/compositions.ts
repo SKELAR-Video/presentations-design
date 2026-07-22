@@ -112,6 +112,29 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     ],
   },
   {
+    id: 'three_columns_timeline',
+    name: 'Три колонки + великий заголовок (timeline)',
+    when_to_use: 'ключова теза або риторичне запитання як ВЕЛИКИЙ заголовок (половина екрану) + 3 пункти підтримки. Заголовок тут — головний акцент (h1 крупний), 3 КОЛОНКИ — деталізація. Обирай замість three_columns коли заголовок — центральна думка слайда.',
+    themes: ['dark'],
+    slots: [
+      { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 120, style: 'h1' },
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 140, style: 'body' },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 140, style: 'body' },
+      { name: 'КОЛОНКА_3', type: 'text', max_chars: 140, style: 'body' },
+    ],
+  },
+  {
+    id: 'two_columns_timeline',
+    name: 'Дві колонки + великий заголовок (timeline)',
+    when_to_use: 'ключова теза або риторичне запитання як ВЕЛИКИЙ заголовок (половина екрану) + 2 пункти підтримки. Обирай замість two_columns_plain коли заголовок — центральна думка слайда.',
+    themes: ['dark'],
+    slots: [
+      { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 120, style: 'h1' },
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 180, style: 'body' },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 180, style: 'body' },
+    ],
+  },
+  {
     id: 'four_columns',
     name: 'Чотири колонки',
     when_to_use: '4 рівних пункти або кроки — картки без нумерації. СТРОГО 4 колонки.',

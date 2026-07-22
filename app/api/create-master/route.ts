@@ -272,6 +272,30 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
       break
     }
 
+    case 'three_columns_timeline': {
+      // Large H1 title top-left + 3 items (text only in master; dots+lines added dynamically)
+      push(tb(mk(), slideId, 'ЗАГОЛОВОК', 90, 99, 827, 300, 66))
+      const TCL3_TEXT_X = [175, 772, 1369] as const
+      const TCL_TEXT_Y  = 472
+      const TCL_TEXT_H  = H - PAD - TCL_TEXT_Y  // 508
+      for (let k = 0; k < 3; k++) {
+        push(tb(mk(), slideId, `КОЛОНКА_${k + 1}`, TCL3_TEXT_X[k], TCL_TEXT_Y, 374, TCL_TEXT_H, 22))
+      }
+      break
+    }
+
+    case 'two_columns_timeline': {
+      // Large H1 title top-left + 2 items (text only in master; dots+lines added dynamically)
+      push(tb(mk(), slideId, 'ЗАГОЛОВОК', 90, 99, 827, 300, 66))
+      const TCL_TEXT_Y2  = 472
+      const TCL_TEXT_H2  = H - PAD - TCL_TEXT_Y2  // 508
+      push(
+        tb(mk(), slideId, 'КОЛОНКА_1', 175,  TCL_TEXT_Y2, 674, TCL_TEXT_H2, 22),
+        tb(mk(), slideId, 'КОЛОНКА_2', 1045, TCL_TEXT_Y2, 623, TCL_TEXT_H2, 22),
+      )
+      break
+    }
+
     case 'kpi_cards': {
       const subH  = 56
       const kCY   = PAD + TH + subH + TG
