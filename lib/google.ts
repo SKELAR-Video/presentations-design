@@ -2280,6 +2280,11 @@ function expandPlanWithVariants(plan: SlidePlan): {
           if (!s.optional && !(remapped[s.name] ?? '').trim()) return false
         }
       }
+      // Check 3: skip variants that are visually identical to a simpler variant in the same group.
+      // two_columns_labeled with no ПІДПИС renders identically to two_columns_plain.
+      if (varComp === 'two_columns_labeled' && group.includes('two_columns_plain')) {
+        if (!(remapped['ПІДПИС_1'] ?? '').trim() && !(remapped['ПІДПИС_2'] ?? '').trim()) return false
+      }
       return true
     })
 

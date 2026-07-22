@@ -74,7 +74,7 @@ function readDocContent(content: docs_v1.Schema$StructuralElement[]): string {
       }
       const text = elements
         .filter(pe => !pe.pageBreak)
-        .map(pe => pe.textRun?.content ?? '')
+        .map(pe => (pe.textRun?.content ?? '').replace(/[\u00AD\u200B\u200C\u200D\uFEFF]/g, ''))
         .join('')
 
       // 2. pageBreakBefore — Google Docs sets this on first paragraph of each new page
