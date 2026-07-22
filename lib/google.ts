@@ -362,17 +362,19 @@ function getLogoWordmarkUrl(): string {
 // Detects "Label — Body" or "Label: Body" in flat two-column content.
 // Used to auto-populate ПІДПИС (gray) + trim КОЛОНКА (white) at generation time.
 function extractColumnLabel(text: string): { label: string; body: string } | null {
+  const hasLetter = /[a-zA-Zа-яА-ЯіІїЇєЄ'ʼ]/
   const emDash = text.search(/ [—–] /)  // em dash or en dash surrounded by spaces
   if (emDash > 0 && emDash <= 60) {
     const label = text.slice(0, emDash).trim()
     const body  = text.slice(emDash + 3).trim()
-    if (label && body) return { label, body: body.charAt(0).toUpperCase() + body.slice(1) }
+    // skip when label is a numeric metric — it's a value, not a category name
+    if (label && body && hasLetter.test(label)) return { label, body: body.charAt(0).toUpperCase() + body.slice(1) }
   }
   const colon = text.indexOf(': ')
   if (colon > 0 && colon <= 60) {
     const label = text.slice(0, colon).trim()
     const body  = text.slice(colon + 2).trim()
-    if (label && body) return { label, body: body.charAt(0).toUpperCase() + body.slice(1) }
+    if (label && body && hasLetter.test(label)) return { label, body: body.charAt(0).toUpperCase() + body.slice(1) }
   }
   return null
 }
