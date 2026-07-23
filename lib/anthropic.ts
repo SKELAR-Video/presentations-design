@@ -105,8 +105,47 @@ type SlideAssignment = {
   assignment: Record<string, number | number[] | null>
 }
 
+// Max characters per column/card slot at which text still fits at minimum font size.
+// Derived from: CPL * maxLines where CPL = innerW / (minPt * 2.667 * 0.65), maxLines = cardH / lineH(minPt).
+// Exceeding this → even the minimum font overflows → must fall back to title_body.
+const COMP_SLOT_MAX_CHARS: Record<string, number> = {
+  columns_flex:        500,  // best case: 2 cols, 10pt, innerW≈797 → CPL≈46, maxLines≈11 → 506
+  two_columns:         400,  // 2 cols, 18pt, innerW≈797 → CPL≈25, maxLines≈6 → 150; real-world headroom ×2.5
+  two_columns_labeled: 400,
+  two_columns_plain:   400,
+  two_columns_timeline: 400,
+  bento_right_2:       400,
+  three_columns:       300,  // 3 cols, 14pt, innerW≈502 → CPL≈20, maxLines≈8 → 160; ×2 headroom
+  three_columns_num:   300,
+  three_columns_timeline: 300,
+  bento_right_3:       300,
+  bento_right_2x2:     250,
+  four_columns:        250,  // 4 cols, 10pt, innerW≈354 → CPL≈20, maxLines≈11 → 220; ×1.1
+  four_columns_num:    250,
+  bento_bottom_4:      250,
+  four_columns_paren:  200,
+  four_columns_bubble: 200,
+}
+
+const COL_SLOT_KEYS = ['КОЛОНКА_1','КОЛОНКА_2','КОЛОНКА_3','КОЛОНКА_4',
+                       'КАРТКА_1','КАРТКА_2','КАРТКА_3','КАРТКА_4']
+
 // Corrects common LLM slot-naming mistakes — runs in both 1to1 and free-form paths.
 function applyMappingGuards(composition: string, slots: Record<string, string>, slideNum: number): string {
+  // Long-text guard: if any column/card slot exceeds the composition char limit → title_body.
+  // Runs first so downstream guards don't operate on a composition that will be overridden anyway.
+  const slotMax = COMP_SLOT_MAX_CHARS[composition]
+  if (slotMax !== undefined) {
+    const longestSlot = COL_SLOT_KEYS.reduce((max, k) => Math.max(max, (slots[k] ?? '').length), 0)
+    if (longestSlot > slotMax) {
+      const parts = COL_SLOT_KEYS.map(k => slots[k]).filter(Boolean)
+      for (const k of COL_SLOT_KEYS) delete slots[k]
+      slots['ТЕКСТ'] = parts.join('\n')
+      console.warn(`[long-text-guard] slide ${slideNum}: ${composition} slot too long (${longestSlot}>${slotMax}) → title_body`)
+      return 'title_body'
+    }
+  }
+
   // columns_flex uses КОЛОНКА_N — if LLM put КАРТКА_N, rename.
   if (composition === 'columns_flex') {
     for (let n = 1; n <= 4; n++) {
