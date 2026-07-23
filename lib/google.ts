@@ -66,8 +66,8 @@ function bentoDims(compId: string): { w: number; h: number } | null {
     return { w: cw, h: _H - _PAD - 540 }        // {w: 540, h: 440}
   }
   if (compId === 'three_columns_timeline') {
-    // conservative: max title=300px → dotsY=478 → textY=552 → h=428
-    return { w: 560, h: 428 }
+    // conservative: max title=300px → dotsY=478 → textY=552 → h=428; w=zone_w-dot-gap=496
+    return { w: 496, h: 428 }
   }
   if (compId === 'two_columns_timeline') {
     // conservative: max title=300px → dotsY=textY=478 → h=502
@@ -2508,9 +2508,11 @@ function buildTimelineLayoutRequests(
     if (tokenIdx < 0) continue
 
     if (isThree) {
+      const txtX = TCL_ZONE_X_THREE[tokenIdx] + _AG_DOT_SZ + 10  // after dot (54px) + 10px gap
+      const txtW = TCL_ZONE_W_THREE - _AG_DOT_SZ - 10             // zone_w - dot - gap = 496
       reqs.push(makeElemTransform(el.objectId,
-        TCL_ZONE_X_THREE[tokenIdx] - _INSET, textY - _INSET,
-        TCL_ZONE_W_THREE + 2 * _INSET, textH + 2 * _INSET,
+        txtX - _INSET, textY - _INSET,
+        txtW + 2 * _INSET, textH + 2 * _INSET,
         sW, sH,
       ))
     } else {
