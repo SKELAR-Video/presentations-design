@@ -126,31 +126,24 @@ const COMP_SLOT_MAX_CHARS: Record<string, number> = {
   four_columns_bubble:    110,
 }
 
-// If merged content > this, title_body becomes a wall of text — keep original composition instead.
-const MAX_TITLE_BODY_MERGE = 500
-
 const COL_SLOT_KEYS = ['КОЛОНКА_1','КОЛОНКА_2','КОЛОНКА_3','КОЛОНКА_4',
                        'КАРТКА_1','КАРТКА_2','КАРТКА_3','КАРТКА_4']
 
 // Corrects common LLM slot-naming mistakes — runs in both 1to1 and free-form paths.
 function applyMappingGuards(composition: string, slots: Record<string, string>, slideNum: number): string {
   // Long-text guard: if any column/card slot exceeds the composition char limit → title_body.
-  // Exception: if the merged total > MAX_TITLE_BODY_MERGE, keep original composition —
-  // split columns with overflow look better than a single unreadable wall of text.
+  // Merges all column/card values into ТЕКСТ (paragraph-separated).
+  // No upper bound on merged length: title_body at min font always fits more than any column layout.
   const slotMax = COMP_SLOT_MAX_CHARS[composition]
   if (slotMax !== undefined) {
     const longestSlot = COL_SLOT_KEYS.reduce((max, k) => Math.max(max, (slots[k] ?? '').length), 0)
     if (longestSlot > slotMax) {
       const parts = COL_SLOT_KEYS.map(k => slots[k]).filter(Boolean)
       const merged = parts.join('\n\n')
-      if (merged.length <= MAX_TITLE_BODY_MERGE) {
-        for (const k of COL_SLOT_KEYS) delete slots[k]
-        slots['ТЕКСТ'] = merged
-        console.warn(`[long-text-guard] slide ${slideNum}: ${composition}→title_body (longest=${longestSlot}, merged=${merged.length})`)
-        return 'title_body'
-      } else {
-        console.warn(`[long-text-guard] slide ${slideNum}: ${composition} slot too long (${longestSlot}>${slotMax}) but merged=${merged.length}>${MAX_TITLE_BODY_MERGE} — keeping original`)
-      }
+      for (const k of COL_SLOT_KEYS) delete slots[k]
+      slots['ТЕКСТ'] = merged
+      console.warn(`[long-text-guard] slide ${slideNum}: ${composition}→title_body (longest=${longestSlot}>${slotMax}, merged=${merged.length})`)
+      return 'title_body'
     }
   }
 
