@@ -57,8 +57,8 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 200, style: 'h1' },
-      { name: 'ПІДПИС_1', type: 'text', max_chars: 40, style: 'caption', optional: true },
-      { name: 'ПІДПИС_2', type: 'text', max_chars: 40, style: 'caption', optional: true },
+      { name: 'ПІДПИС_1', type: 'text', max_chars: 90, style: 'caption', optional: true },
+      { name: 'ПІДПИС_2', type: 'text', max_chars: 90, style: 'caption', optional: true },
       { name: 'КОЛОНКА_1', type: 'text', max_chars: 200, style: 'body' },
       { name: 'КОЛОНКА_2', type: 'text', max_chars: 200, style: 'body' },
     ],

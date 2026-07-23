@@ -240,11 +240,14 @@ function bentoRightTextAvailH(titleText: string): number {
 function pickTextPt(compId: string, text: string, availH?: number): number | null {
   if (!compId.startsWith('bento_right_') || !text.trim()) return null
   const h     = availH ?? (_H_SLIDE - _PAD - _LOGO_H - 20 - (_PAD + _H1_FIXED_44 + TITLE_GAP))
-  const steps = FONT_STEPS.filter(s => s <= 22)  // 22pt default for ТЕКСТ
+  // Floor matches the card floor for this composition — this ТЕКСТ sits beside the
+  // same cards, so it must never end up smaller than they're allowed to be.
+  const floor = BENTO_MIN_PT[compId] ?? 10
+  const steps = FONT_STEPS.filter(s => s <= 22 && s >= floor)  // 22pt default for ТЕКСТ
   for (const pt of steps) {
     if (textFits(text, _LTW, h, pt)) return pt
   }
-  return steps[steps.length - 1]
+  return steps[steps.length - 1] ?? floor
 }
 
 // ─── Logo ────────────────────────────────────────────────────────────────────
@@ -2281,10 +2284,25 @@ function remapSlotsForVariant(
   const targetComp = getComposition(toComp)
   const validTarget = new Set(targetComp?.slots.map(s => s.name) ?? [])
   const result: Record<string, string> = {}
+  const orphanCaptions: Record<string, string> = {}  // N → label text with no home slot in target
   for (const [slot, value] of Object.entries(slots)) {
     const targetSlot = map[slot] ?? slot
-    if (validTarget.has(targetSlot)) result[targetSlot] = value
+    if (validTarget.has(targetSlot)) {
+      result[targetSlot] = value
+      continue
+    }
+    const capMatch = slot.match(/^ПІДПИС_(\d)$/)
+    if (capMatch && value.trim()) {
+      orphanCaptions[capMatch[1]] = value.trim()
+      continue
+    }
     // else: slot absent in target composition → drop (e.g. ТЕКСТ when going to two_columns)
+  }
+  // ПІДПИС_N has no dedicated slot in the target composition (only two_columns_labeled
+  // has one) — fuse it into the matching КОЛОНКА_N/КАРТКА_N body instead of losing it.
+  for (const [n, label] of Object.entries(orphanCaptions)) {
+    const bodyKey = [`КОЛОНКА_${n}`, `КАРТКА_${n}`].find(k => k in result)
+    if (bodyKey) result[bodyKey] = `${label} — ${result[bodyKey]}`
   }
   return result
 }
@@ -2352,6 +2370,16 @@ function expandPlanWithVariants(plan: SlidePlan): {
       // two_columns_labeled with no ПІДПИС renders identically to two_columns_plain.
       if (varComp === 'two_columns_labeled' && group.includes('two_columns_plain')) {
         if (!(remapped['ПІДПИС_1'] ?? '').trim() && !(remapped['ПІДПИС_2'] ?? '').trim()) return false
+      }
+      // Check 4: skip variants that physically cannot hold their remapped content —
+      // each slot's own max_chars is already calibrated to what fits at minimum font.
+      // Prevents e.g. offering title_photo when title_body's ТЕКСТ is too long for the
+      // half-width photo layout, or bento_right_2 when a merged "Label — Body" overflows a card.
+      if (targetComp) {
+        for (const s of targetComp.slots) {
+          if (s.type !== 'text' || !s.max_chars) continue
+          if ((remapped[s.name] ?? '').trim().length > s.max_chars) return false
+        }
       }
       return true
     })
@@ -4085,10 +4113,14 @@ export async function buildPresentation(
       // All master elements are created with _INSET compensation: element = content + 2*_INSET.
       // Subtract 2*_INSET to get the actual text content area.
       const elW = Math.round((el.size.width?.magnitude  ?? 0) * (el.transform?.scaleX ?? 1) / _FPX)
-      const elH = Math.round((el.size.height?.magnitude ?? 0) * (el.transform?.scaleY ?? 1) / _FPX)
+      let   elH = Math.round((el.size.height?.magnitude ?? 0) * (el.transform?.scaleY ?? 1) / _FPX)
+      // two_columns_labeled ПІДПИС_N master box is a nominal 50px tag, not the real
+      // available height — the label actually has the full gap down to where КОЛОНКА_N
+      // starts (y=451→540=89px) before it visually collides with the body text below.
+      if (compId === 'two_columns_labeled' && /^ПІДПИС_\d$/.test(slotName)) elH = 89
       if (!elW || !elH) continue
       const innerW = Math.max(1, elW - 2 * _INSET)
-      const innerH = Math.max(1, elH - 2 * _INSET)
+      const innerH = compId === 'two_columns_labeled' && /^ПІДПИС_\d$/.test(slotName) ? elH : Math.max(1, elH - 2 * _INSET)
 
       // Read default pt from template element's text style
       const defaultPt = (el.shape?.text?.textElements ?? [])

@@ -131,6 +131,23 @@ const COL_SLOT_KEYS = ['КОЛОНКА_1','КОЛОНКА_2','КОЛОНКА_3',
 
 // Corrects common LLM slot-naming mistakes — runs in both 1to1 and free-form paths.
 function applyMappingGuards(composition: string, slots: Record<string, string>, slideNum: number): string {
+  // Caption-guard: title_body's caption slot is named ПІДПИС (no suffix). The LLM
+  // sometimes still emits ПІДПИС_1/ПІДПИС_2 (pattern-matched from two_columns_labeled) —
+  // that key doesn't exist on title_body, so it would silently vanish. Reattach it.
+  if (composition === 'title_body') {
+    for (const key of ['ПІДПИС_1', 'ПІДПИС_2']) {
+      const val = (slots[key] ?? '').trim()
+      if (!val) continue
+      if (!(slots['ПІДПИС'] ?? '').trim()) {
+        slots['ПІДПИС'] = val
+      } else {
+        slots['ТЕКСТ'] = [slots['ТЕКСТ'], val].filter(Boolean).join('\n')
+      }
+      delete slots[key]
+      console.warn(`[caption-guard] slide ${slideNum}: title_body ${key} → ПІДПИС`)
+    }
+  }
+
   // Long-text guard: if any column/card slot exceeds the composition char limit → title_body.
   // Merges all column/card values into ТЕКСТ (paragraph-separated).
   // No upper bound on merged length: title_body at min font always fits more than any column layout.
