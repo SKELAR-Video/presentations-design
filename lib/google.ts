@@ -1168,7 +1168,7 @@ function buildSectionFloatRequests(
 // ЗАГОЛОВОК fixed height = _H1_FIXED_36 (220px). ТЕКСТ always at fixed y=380 (PAD+220+60).
 // textMaxH = 518px (fixed: H-PAD-52-GAP-380).
 
-const _TB_BODY_STEPS: number[] = [22, 18, 14, 10]
+const _TB_BODY_STEPS: number[] = [48, 36, 28, 22, 18, 14, 10]
 
 function buildTitleBodyFloatRequests(
   slide: slides_v1.Schema$Page,

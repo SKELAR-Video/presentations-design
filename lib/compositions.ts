@@ -35,7 +35,7 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark', 'red'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 80, style: 'h1' },
-      { name: 'ТЕКСТ', type: 'text', max_chars: 1500, style: 'body', float_after: 'ЗАГОЛОВОК', float_gap: 60 },
+      { name: 'ТЕКСТ', type: 'text', max_chars: 1742, style: 'body', float_after: 'ЗАГОЛОВОК', float_gap: 60 },
       { name: 'ПІДПИС', type: 'text', max_chars: 160, style: 'caption', optional: true },
     ],
   },
@@ -393,7 +393,7 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 80, style: 'h1' },
-      { name: 'ТЕКСТ', type: 'text', max_chars: 800, style: 'body', optional: true },
+      { name: 'ТЕКСТ', type: 'text', max_chars: 768, style: 'body', optional: true },
       { name: 'ФОТО', type: 'text', max_chars: 300, style: 'body', optional: true },
     ],
   },
