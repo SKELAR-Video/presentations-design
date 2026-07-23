@@ -27,6 +27,27 @@ function getSlideNotes(slide: slides_v1.Schema$Page): string {
     .join('')
 }
 
+function normalizeText(s: string): string {
+  return s
+    .replace(/ /g, ' ')   // NBSP → space
+    .replace(/’/g, "'")   // curly apostrophe
+    .replace(/\.$/,    '')     // trailing period
+    .trim()
+    .toLowerCase()
+}
+
+type SlotCheck = {
+  name: string
+  expected: string
+  status: 'found' | 'missing' | 'empty'
+}
+
+type ContentCheck = {
+  composition: string
+  slots: SlotCheck[]
+  pass: boolean
+}
+
 type ShapeInfo = {
   objectId: string
   shapeType: string
@@ -35,9 +56,7 @@ type ShapeInfo = {
   w: number
   h: number
   text: string
-  // fontSize of the first non-empty textRun, in pt
   fontSize_pt: number | null
-  // all distinct fontSizes found (covers multi-run shapes)
   all_fontSizes_pt: number[]
   paragraphs: string[]
 }
@@ -48,6 +67,38 @@ type SlideInfo = {
   notes: string
   shapeCount: number
   textBoxes: ShapeInfo[]
+  content_check: ContentCheck | null
+}
+
+function parseSlotPlan(notes: string): { composition: string; slots: Record<string, string> } | null {
+  const marker = '##SLOTS##\n'
+  const idx = notes.indexOf(marker)
+  if (idx < 0) return null
+  const jsonStart = idx + marker.length
+  const jsonEnd = notes.indexOf('\n', jsonStart)
+  const raw = jsonEnd >= 0 ? notes.slice(jsonStart, jsonEnd) : notes.slice(jsonStart)
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+function buildContentCheck(
+  plan: { composition: string; slots: Record<string, string> },
+  textBoxes: ShapeInfo[],
+): ContentCheck {
+  const allText = textBoxes.map(tb => normalizeText(tb.text)).join('\n')
+
+  const slots: SlotCheck[] = Object.entries(plan.slots).map(([name, expected]) => {
+    if (!expected || !expected.trim()) return { name, expected, status: 'empty' as const }
+    const norm = normalizeText(expected)
+    const found = norm.length > 0 && allText.includes(norm)
+    return { name, expected, status: found ? 'found' as const : 'missing' as const }
+  })
+
+  const pass = slots.every(s => s.status !== 'missing')
+  return { composition: plan.composition, slots, pass }
 }
 
 export async function GET(request: NextRequest) {
@@ -111,19 +162,33 @@ export async function GET(request: NextRequest) {
       })
     }
 
+    const plan = parseSlotPlan(notes)
+    const content_check = plan ? buildContentCheck(plan, textBoxes) : null
+
     return {
       slideIndex,
       pageObjectId: slide.objectId ?? '',
       notes,
       shapeCount: (slide.pageElements ?? []).length,
       textBoxes,
+      content_check,
     }
   })
+
+  const totalSlots   = result.flatMap(s => s.content_check?.slots ?? []).filter(s => s.status !== 'empty')
+  const missingSlots = totalSlots.filter(s => s.status === 'missing')
 
   return NextResponse.json({
     presentationId,
     title: pres.data.title ?? '',
     slideCount: slides.length,
+    content_summary: {
+      total_slots: totalSlots.length,
+      found: totalSlots.filter(s => s.status === 'found').length,
+      missing: missingSlots.length,
+      pass: missingSlots.length === 0,
+      missing_detail: missingSlots.map(s => s.expected),
+    },
     slides: result,
   })
 }

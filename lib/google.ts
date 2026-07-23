@@ -4084,6 +4084,18 @@ export async function buildPresentation(
   }
 
 
+  // Speaker notes: store processed slots JSON for content verification via inspect-deck.
+  for (let i = 0; i < plan.slides.length; i++) {
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    const slide = updatedSlides.find(s => s.objectId === pageId)
+    const notesObjId = slide?.slideProperties?.notesPage?.notesProperties?.speakerNotesObjectId
+    if (!notesObjId) continue
+    const slots = bentoProcessedSlots.get(i) ?? plan.slides[i].slots
+    const payload = JSON.stringify({ composition: plan.slides[i].composition, slots })
+    requests.push({ insertText: { objectId: notesObjId, insertionIndex: 0, text: `##SLOTS##\n${payload}\n` } })
+  }
+
   // Variant pill + speaker notes for every variant slide.
   for (const [slideIdx, varInfo] of variantMap.entries()) {
     const pageId = planPageIds[slideIdx]
