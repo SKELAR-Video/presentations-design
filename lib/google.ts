@@ -3684,7 +3684,7 @@ export async function buildPresentation(
   // ── *_timeline: resize title + reposition text boxes + create circles + lines ─
   for (let i = 0; i < plan.slides.length; i++) {
     const compId = plan.slides[i].composition
-    const colXs = compId === 'three_columns_timeline' ? [353, 933, 1513]
+    const colXs = compId === 'three_columns_timeline' ? [100, 680, 1260]
                 : compId === 'two_columns_timeline'   ? [90, 960]
                 : null
     if (!colXs) continue
