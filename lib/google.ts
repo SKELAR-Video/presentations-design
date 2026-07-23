@@ -1168,6 +1168,8 @@ function buildSectionFloatRequests(
 // ЗАГОЛОВОК fixed height = _H1_FIXED_36 (220px). ТЕКСТ always at fixed y=380 (PAD+220+60).
 // textMaxH = 518px (fixed: H-PAD-52-GAP-380).
 
+const _TB_BODY_STEPS: number[] = [22, 18, 14, 10]
+
 function buildTitleBodyFloatRequests(
   slide: slides_v1.Schema$Page,
   slots: Record<string, string>,
@@ -1178,7 +1180,16 @@ function buildTitleBodyFloatRequests(
 
   const titleH   = _H1_FIXED_36
   const textY    = _PAD + titleH + TITLE_GAP  // 380 (fixed)
-  const textMaxH = Math.max(1, _H_SLIDE - _PAD - 52 - _GAP - textY)  // 518 (fixed)
+  const textMaxH = Math.max(1, _H_SLIDE - _PAD - 52 - _GAP - textY)  // 488px
+
+  // Auto-shrink ТЕКСТ: largest pt at which body text fits in the available box.
+  let bodyPt = _TB_BODY_STEPS[0]
+  if (bodyText) {
+    for (const pt of _TB_BODY_STEPS) {
+      if (textFitsParagraphs(bodyText, _UW, textMaxH, pt)) { bodyPt = pt; break }
+    }
+  }
+  console.log(`[title-body-fit] bodyLen=${bodyText.length} | chosen_font=${bodyPt}`)
 
   const reqs: object[] = []
   for (const el of slide.pageElements ?? []) {
@@ -1191,6 +1202,16 @@ function buildTitleBodyFloatRequests(
     }
     if (raw.includes('{{ТЕКСТ}}')) {
       reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, textY - _INSET, _UW + 2 * _INSET, (bodyText ? textMaxH : 1) + 2 * _INSET, sW, sH))
+      if (bodyText) {
+        reqs.push({
+          updateTextStyle: {
+            objectId: el.objectId,
+            style: { fontSize: { magnitude: bodyPt, unit: 'PT' }, bold: false },
+            fields: 'fontSize,bold',
+            textRange: { type: 'ALL' },
+          },
+        })
+      }
     }
   }
   return reqs
@@ -3872,29 +3893,53 @@ export async function buildPresentation(
     }
   }
 
-  // ── title_photo: title auto-shrink ──────────────────────────────────────────
+  // ── title_photo: title + body ТЕКСТ auto-shrink ─────────────────────────────
+  // Left half: _LTW=830px wide. Title zone h=_TP_TITLE_H=341px. Body zone below.
+  // Body textY ≈ _PAD + _TP_TITLE_H + TITLE_GAP = 100+341+60 = 501; textMaxH ≈ 1080-100-501 = 479px.
+  const _TP_BODY_MAX_H = _H_SLIDE - _PAD - (_PAD + _TP_TITLE_H + TITLE_GAP)  // ~479px
   for (let i = 0; i < plan.slides.length; i++) {
     if (plan.slides[i].composition !== 'title_photo') continue
     const pageId = planPageIds[i]
     if (!pageId) continue
     const slide = updatedSlides.find(s => s.objectId === pageId)
     if (!slide) continue
-    const title = plan.slides[i].slots['ЗАГОЛОВОК'] ?? ''
-    const pt = pickTitlePhotoPt(title)
-    if (pt >= 33) continue
+    const title    = plan.slides[i].slots['ЗАГОЛОВОК'] ?? ''
+    const bodyText = (plan.slides[i].slots['ТЕКСТ'] ?? '').trim()
+    const titlePt  = pickTitlePhotoPt(title)
+
+    // Body font auto-shrink (same steps as title_body)
+    let bodyPt = _TB_BODY_STEPS[0]
+    if (bodyText) {
+      for (const pt of _TB_BODY_STEPS) {
+        if (textFitsParagraphs(bodyText, _LTW, _TP_BODY_MAX_H, pt)) { bodyPt = pt; break }
+      }
+      console.log(`[title-photo-fit] bodyLen=${bodyText.length} | chosen_font=${bodyPt}`)
+    }
+
     for (const el of slide.pageElements ?? []) {
       if (!el.objectId) continue
       const elText = (el.shape?.text?.textElements ?? [])
         .map(te => te.textRun?.content ?? '').join('')
-      if (!elText.includes('{{ЗАГОЛОВОК}}')) continue
-      requests.push({
-        updateTextStyle: {
-          objectId: el.objectId,
-          style: { fontSize: { magnitude: pt, unit: 'PT' }, bold: false },
-          fields: 'fontSize,bold',
-          textRange: { type: 'ALL' },
-        },
-      })
+      if (elText.includes('{{ЗАГОЛОВОК}}') && titlePt < 33) {
+        requests.push({
+          updateTextStyle: {
+            objectId: el.objectId,
+            style: { fontSize: { magnitude: titlePt, unit: 'PT' }, bold: false },
+            fields: 'fontSize,bold',
+            textRange: { type: 'ALL' },
+          },
+        })
+      }
+      if (elText.includes('{{ТЕКСТ}}') && bodyText) {
+        requests.push({
+          updateTextStyle: {
+            objectId: el.objectId,
+            style: { fontSize: { magnitude: bodyPt, unit: 'PT' }, bold: false },
+            fields: 'fontSize,bold',
+            textRange: { type: 'ALL' },
+          },
+        })
+      }
     }
   }
 
