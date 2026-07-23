@@ -1169,6 +1169,7 @@ function buildSectionFloatRequests(
 // textMaxH = 518px (fixed: H-PAD-52-GAP-380).
 
 const _TB_BODY_STEPS: number[] = [48, 36, 28, 22, 18, 14, 10]
+const _TB_TITLE_PT = 36  // ЗАГОЛОВОК pt fixed in title_body master template
 
 function buildTitleBodyFloatRequests(
   slide: slides_v1.Schema$Page,
@@ -1187,6 +1188,14 @@ function buildTitleBodyFloatRequests(
   if (bodyText) {
     for (const pt of _TB_BODY_STEPS) {
       if (textFitsParagraphs(bodyText, _UW, textMaxH, pt)) { bodyPt = pt; break }
+    }
+  }
+  // Typography hierarchy guard: ТЕКСТ must be strictly smaller than ЗАГОЛОВОК (fixed 36pt).
+  if (bodyPt >= _TB_TITLE_PT) {
+    const lower = _TB_BODY_STEPS.find(pt => pt < _TB_TITLE_PT)
+    if (lower !== undefined) {
+      console.log(`[title-body-hierarchy] bodyPt ${bodyPt} → ${lower} (title fixed=${_TB_TITLE_PT}pt)`)
+      bodyPt = lower
     }
   }
   console.log(`[title-body-fit] bodyLen=${bodyText.length} | chosen_font=${bodyPt}`)
@@ -3780,6 +3789,24 @@ export async function buildPresentation(
     const pSlots  = bentoProcessedSlots.get(i) ?? plan.slides[i].slots
     const cardPts = pickBentoCardPts(compId, pSlots)
     if (cardPts === null) continue
+    // Typography hierarchy guard for bento_right_2: title shrinks to min 28pt but
+    // cards can reach 36pt — enforce card pt strictly less than actual title pt.
+    if (compId === 'bento_right_2') {
+      const tText = (pSlots['ЗАГОЛОВОК'] ?? '').trim()
+      if (tText) {
+        const titlePt = pickTitlePt(tText, _LTW)
+        const brScale = (BENTO_SCALE as readonly number[]).filter(s => s <= (BENTO_MAX_PT[compId] ?? 36))
+        for (const key of Object.keys(cardPts)) {
+          if (cardPts[key] >= titlePt) {
+            const lower = brScale.find(s => s < titlePt)
+            if (lower !== undefined) {
+              console.log(`[bento-right-hierarchy] card ${key}: ${cardPts[key]} → ${lower} (title=${titlePt}pt)`)
+              cardPts[key] = lower
+            }
+          }
+        }
+      }
+    }
     expectedCardPts.set(i, cardPts)
 
     const slide = updatedSlides.find(s => s.objectId === pageId)
@@ -3912,6 +3939,14 @@ export async function buildPresentation(
     if (bodyText) {
       for (const pt of _TB_BODY_STEPS) {
         if (textFitsParagraphs(bodyText, _LTW, _TP_BODY_MAX_H, pt)) { bodyPt = pt; break }
+      }
+      // Typography hierarchy guard: ТЕКСТ must be strictly smaller than ЗАГОЛОВОК.
+      if (bodyPt >= titlePt) {
+        const lower = _TB_BODY_STEPS.find(pt => pt < titlePt)
+        if (lower !== undefined) {
+          console.log(`[title-photo-hierarchy] bodyPt ${bodyPt} → ${lower} (title=${titlePt}pt)`)
+          bodyPt = lower
+        }
       }
       console.log(`[title-photo-fit] bodyLen=${bodyText.length} | chosen_font=${bodyPt}`)
     }
