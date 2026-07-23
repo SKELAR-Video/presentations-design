@@ -66,8 +66,8 @@ function bentoDims(compId: string): { w: number; h: number } | null {
     return { w: cw, h: _H - _PAD - 540 }        // {w: 540, h: 440}
   }
   if (compId === 'three_columns_timeline') {
-    // conservative: max title=300px → dotsY=478 → textY=552 → h=428; w=zone_w-dot-gap=496
-    return { w: 496, h: 428 }
+    // conservative: max title=300px → dotsY=textY=478 → h=502; w=zone_w-dot-gap=496
+    return { w: 496, h: 502 }
   }
   if (compId === 'two_columns_timeline') {
     // conservative: max title=300px → dotsY=textY=478 → h=502
@@ -2479,7 +2479,7 @@ function buildTimelineLayoutRequests(
   const dotsY = titleContentY + titleContentH + TCL_TITLE_GAP
 
   const isThree = compId === 'three_columns_timeline'
-  const textY   = isThree ? dotsY + _AG_DOT_SZ + TCL_DOT_TEXT_GAP : dotsY
+  const textY   = dotsY  // text top aligned with dot top for both compositions
   const textH   = _H - _PAD - textY
 
   const bentoTokens = BENTO_TOKENS[compId] ?? []
