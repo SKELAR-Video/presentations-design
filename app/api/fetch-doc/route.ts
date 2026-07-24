@@ -27,9 +27,16 @@ function getOAuth2Client(accessToken: string) {
   return oauth2
 }
 
-export type SourceSlide = { index: number; texts: string[] }
+// texts[i] / columns[i] are parallel arrays (same order as the source pageElements,
+// empty ones filtered out together) — texts stays pure verbatim text (unchanged
+// contract: mapSlides1to1 copies source.texts[idx] verbatim into slots), columns is
+// a side-channel hint for the LLM about which fragments sit visually side-by-side.
+export type SourceSlide = { index: number; texts: string[]; columns: (number | null)[] }
 
-// Recursively extract text from page elements, including grouped elements
+// Recursively extract text from page elements, including grouped elements.
+// Bulleted paragraphs get a "• " (nested: "  • ") prefix from paragraphMarker.bullet —
+// otherwise a shape with a header line + bullet lines flattens into indistinguishable
+// plain text and the LLM can't tell "group heading + its bullets" from a plain list.
 function extractElementText(el: slides_v1.Schema$PageElement): string {
   if (el.elementGroup?.children?.length) {
     return el.elementGroup.children
@@ -37,10 +44,62 @@ function extractElementText(el: slides_v1.Schema$PageElement): string {
       .filter(Boolean)
       .join('\n')
   }
-  return (el.shape?.text?.textElements ?? [])
-    .map(te => te.textRun?.content ?? '')
-    .join('')
-    .trim()
+  const textElements = el.shape?.text?.textElements ?? []
+  const paragraphs: string[] = []
+  let current = ''
+  let bulletLevel: number | null = null
+  const flush = () => {
+    const trimmed = current.replace(/\n+$/, '')
+    if (trimmed) {
+      paragraphs.push(bulletLevel !== null ? `${'  '.repeat(bulletLevel)}• ${trimmed}` : trimmed)
+    }
+    current = ''
+    bulletLevel = null
+  }
+  for (const te of textElements) {
+    if (te.paragraphMarker) {
+      flush()
+      bulletLevel = te.paragraphMarker.bullet?.nestingLevel ?? null
+      continue
+    }
+    if (te.textRun?.content) current += te.textRun.content
+  }
+  flush()
+  return paragraphs.join('\n').trim()
+}
+
+// Groups page elements by horizontal position so the LLM can see "these boxes sit
+// side-by-side = columns" instead of guessing from text alone. Elements spanning most
+// of the slide width (titles, full-width bodies) are excluded from clustering — their
+// wide, centered bounding box would otherwise land "between" real columns when sorted
+// by x and falsely split a clean 2-column layout into three groups.
+// Returns one column index (or null = no clear column signal) per input element, same order.
+function assignColumns(elements: slides_v1.Schema$PageElement[], slideWidthEmu: number): (number | null)[] {
+  type Item = { idx: number; x: number; w: number }
+  const items: Item[] = elements.map((el, idx) => {
+    const w = (el.size?.width?.magnitude ?? 0) * (el.transform?.scaleX ?? 1)
+    const x = (el.transform?.translateX ?? 0) + w / 2
+    return { idx, x, w }
+  })
+  const WIDE_THRESHOLD = slideWidthEmu * 0.6
+  const candidates = items.filter(it => it.w > 0 && it.w <= WIDE_THRESHOLD)
+  if (candidates.length < 2) return elements.map(() => null)
+
+  const sorted = [...candidates].sort((a, b) => a.x - b.x)
+  const groups: Item[][] = [[sorted[0]]]
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1]
+    const cur = sorted[i]
+    const gap = cur.x - prev.x
+    const threshold = Math.min(prev.w, cur.w) * 0.6  // real gutter is wider than this
+    if (gap > threshold) groups.push([cur])
+    else groups[groups.length - 1].push(cur)
+  }
+  if (groups.length < 2) return elements.map(() => null)  // single flow, nothing to tag
+
+  const colByIdx = new Map<number, number>()
+  groups.forEach((g, colIdx) => g.forEach(it => colByIdx.set(it.idx, colIdx)))
+  return elements.map((_, idx) => colByIdx.get(idx) ?? null)
 }
 
 async function extractSlides(
@@ -49,12 +108,20 @@ async function extractSlides(
 ): Promise<SourceSlide[]> {
   const slidesApi = google.slides({ version: 'v1', auth: auth2 })
   const res = await slidesApi.presentations.get({ presentationId: id })
-  return (res.data.slides ?? []).map((slide, i) => ({
-    index: i,
-    texts: (slide.pageElements ?? [])
-      .map(extractElementText)
-      .filter(Boolean),
-  }))
+  const slideWidthEmu = res.data.pageSize?.width?.magnitude ?? 9144000
+  return (res.data.slides ?? []).map((slide, i) => {
+    const elements = slide.pageElements ?? []
+    const columnByEl = assignColumns(elements, slideWidthEmu)
+    const texts: string[] = []
+    const columns: (number | null)[] = []
+    elements.forEach((el, ei) => {
+      const text = extractElementText(el)
+      if (!text) return
+      texts.push(text)
+      columns.push(columnByEl[ei])
+    })
+    return { index: i, texts, columns }
+  })
 }
 
 // Extract plain text from a Google Docs structural element tree.
