@@ -33,26 +33,30 @@ function getOAuth2Client(accessToken: string) {
 // a side-channel hint for the LLM about which fragments sit visually side-by-side.
 export type SourceSlide = { index: number; texts: string[]; columns: (number | null)[] }
 
-// Recursively extract text from page elements, including grouped elements.
-// Bulleted paragraphs get a "• " (nested: "  • ") prefix from paragraphMarker.bullet —
-// otherwise a shape with a header line + bullet lines flattens into indistinguishable
-// plain text and the LLM can't tell "group heading + its bullets" from a plain list.
-function extractElementText(el: slides_v1.Schema$PageElement): string {
+// Recursively extracts a shape's text as one or more BLOCKS. Bulleted paragraphs get a
+// "• " (nested: "  • ") prefix from paragraphMarker.bullet — otherwise a header line +
+// bullet lines flattens into indistinguishable plain text and the LLM can't tell "group
+// heading + its bullets" from a plain list.
+//
+// A blank paragraph inside the shape (an empty line the author typed to visually
+// separate two named groups within ONE text box — e.g. "Залучення талантів\n...\n\n
+// Репутація\n...") splits the shape into multiple blocks. mapSlides1to1 assigns whole
+// fragments to slots, so without this split a two-group single-shape slide could only
+// ever become one flat title_body ТЕКСТ — there was no way to hand КОЛОНКА_1/КОЛОНКА_2
+// two DIFFERENT fragments when they both lived inside one shape. A single leading/
+// trailing blank line (common Slides artifact) does not produce an extra empty block.
+function extractElementBlocks(el: slides_v1.Schema$PageElement): string[] {
   if (el.elementGroup?.children?.length) {
-    return el.elementGroup.children
-      .map(extractElementText)
-      .filter(Boolean)
-      .join('\n')
+    const merged = el.elementGroup.children.flatMap(extractElementBlocks).filter(Boolean)
+    return merged.length ? [merged.join('\n')] : []
   }
   const textElements = el.shape?.text?.textElements ?? []
-  const paragraphs: string[] = []
+  const lines: (string | null)[] = []  // null = blank paragraph (block separator)
   let current = ''
   let bulletLevel: number | null = null
   const flush = () => {
     const trimmed = current.replace(/\n+$/, '')
-    if (trimmed) {
-      paragraphs.push(bulletLevel !== null ? `${'  '.repeat(bulletLevel)}• ${trimmed}` : trimmed)
-    }
+    lines.push(trimmed ? (bulletLevel !== null ? `${'  '.repeat(bulletLevel)}• ${trimmed}` : trimmed) : null)
     current = ''
     bulletLevel = null
   }
@@ -65,7 +69,18 @@ function extractElementText(el: slides_v1.Schema$PageElement): string {
     if (te.textRun?.content) current += te.textRun.content
   }
   flush()
-  return paragraphs.join('\n').trim()
+
+  const blocks: string[] = []
+  let block: string[] = []
+  for (const line of lines) {
+    if (line === null) {
+      if (block.length) { blocks.push(block.join('\n')); block = [] }
+    } else {
+      block.push(line)
+    }
+  }
+  if (block.length) blocks.push(block.join('\n'))
+  return blocks
 }
 
 // Groups page elements by horizontal position so the LLM can see "these boxes sit
@@ -115,10 +130,20 @@ async function extractSlides(
     const texts: string[] = []
     const columns: (number | null)[] = []
     elements.forEach((el, ei) => {
-      const text = extractElementText(el)
-      if (!text) return
-      texts.push(text)
-      columns.push(columnByEl[ei])
+      const blocks = extractElementBlocks(el).filter(Boolean)
+      if (!blocks.length) return
+      if (blocks.length === 1) {
+        texts.push(blocks[0])
+        columns.push(columnByEl[ei])
+        return
+      }
+      // One shape, multiple blank-line-separated blocks (e.g. two named categories
+      // typed into a single text box) — expose each block as its own fragment, tagged
+      // like columns so the LLM can map them to separate slots instead of one flat blob.
+      blocks.forEach((block, bi) => {
+        texts.push(block)
+        columns.push(bi)
+      })
     })
     return { index: i, texts, columns }
   })
