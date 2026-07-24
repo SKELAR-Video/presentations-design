@@ -485,7 +485,10 @@ function checkBentoLayout(compId: string, slots: Record<string, string>): CheckR
   }
 
   const fails: string[] = []
-  if (uniformPt < 12) fails.push(`font too small (${uniformPt}pt)`)
+  // 10pt is the intentional universal floor (lib/google.ts BENTO_MIN_PT) — content is
+  // never dropped/shortened, it shrinks instead. Below that would mean the floor itself
+  // was violated somewhere, which is the real bug worth catching.
+  if (uniformPt < 10) fails.push(`font too small (${uniformPt}pt)`)
 
   const cardHInfo: string[] = []
   for (const tok of tokens) {

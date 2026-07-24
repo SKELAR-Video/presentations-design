@@ -46,8 +46,8 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark', 'red'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 70, style: 'h2', optional: true },
-      { name: 'КОЛОНКА_1', type: 'text', max_chars: 180, style: 'body' },
-      { name: 'КОЛОНКА_2', type: 'text', max_chars: 180, style: 'body' },
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 450, style: 'body' },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 450, style: 'body' },
     ],
   },
   {
@@ -59,8 +59,8 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 200, style: 'h1' },
       { name: 'ПІДПИС_1', type: 'text', max_chars: 90, style: 'caption', optional: true },
       { name: 'ПІДПИС_2', type: 'text', max_chars: 90, style: 'caption', optional: true },
-      { name: 'КОЛОНКА_1', type: 'text', max_chars: 200, style: 'body' },
-      { name: 'КОЛОНКА_2', type: 'text', max_chars: 200, style: 'body' },
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 350, style: 'body' },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 350, style: 'body' },
     ],
   },
   {
@@ -70,8 +70,8 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 200, style: 'h1' },
-      { name: 'КОЛОНКА_1', type: 'text', max_chars: 200, style: 'body' },
-      { name: 'КОЛОНКА_2', type: 'text', max_chars: 200, style: 'body' },
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 350, style: 'body' },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 350, style: 'body' },
     ],
   },
   {
@@ -81,9 +81,9 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark', 'red'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 60, style: 'h2' },
-      { name: 'КОЛОНКА_1', type: 'text', max_chars: 140, style: 'body' },
-      { name: 'КОЛОНКА_2', type: 'text', max_chars: 140, style: 'body' },
-      { name: 'КОЛОНКА_3', type: 'text', max_chars: 140, style: 'body' },
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 300, style: 'body' },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 300, style: 'body' },
+      { name: 'КОЛОНКА_3', type: 'text', max_chars: 300, style: 'body' },
     ],
   },
   {
@@ -93,10 +93,10 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 60, style: 'h2' },
-      { name: 'КАРТКА_1', type: 'text', max_chars: 120, style: 'body' },
-      { name: 'КАРТКА_2', type: 'text', max_chars: 120, style: 'body' },
-      { name: 'КАРТКА_3', type: 'text', max_chars: 120, style: 'body' },
-      { name: 'КАРТКА_4', type: 'text', max_chars: 120, style: 'body' },
+      { name: 'КАРТКА_1', type: 'text', max_chars: 200, style: 'body' },
+      { name: 'КАРТКА_2', type: 'text', max_chars: 200, style: 'body' },
+      { name: 'КАРТКА_3', type: 'text', max_chars: 200, style: 'body' },
+      { name: 'КАРТКА_4', type: 'text', max_chars: 200, style: 'body' },
     ],
   },
   {
@@ -106,9 +106,9 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 80, style: 'h2' },
-      { name: 'КОЛОНКА_1', type: 'text', max_chars: 180, style: 'body' },
-      { name: 'КОЛОНКА_2', type: 'text', max_chars: 180, style: 'body' },
-      { name: 'КОЛОНКА_3', type: 'text', max_chars: 180, style: 'body' },
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 220, style: 'body' },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 220, style: 'body' },
+      { name: 'КОЛОНКА_3', type: 'text', max_chars: 220, style: 'body' },
     ],
   },
   {
@@ -118,9 +118,9 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 120, style: 'h1' },
-      { name: 'КОЛОНКА_1', type: 'text', max_chars: 140, style: 'body' },
-      { name: 'КОЛОНКА_2', type: 'text', max_chars: 140, style: 'body' },
-      { name: 'КОЛОНКА_3', type: 'text', max_chars: 140, style: 'body' },
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 220, style: 'body' },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 220, style: 'body' },
+      { name: 'КОЛОНКА_3', type: 'text', max_chars: 220, style: 'body' },
     ],
   },
   {
@@ -130,8 +130,8 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 120, style: 'h1' },
-      { name: 'КОЛОНКА_1', type: 'text', max_chars: 180, style: 'body' },
-      { name: 'КОЛОНКА_2', type: 'text', max_chars: 180, style: 'body' },
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 300, style: 'body' },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 300, style: 'body' },
     ],
   },
   {
@@ -141,10 +141,10 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 60, style: 'h2' },
-      { name: 'КОЛОНКА_1', type: 'text', max_chars: 120, style: 'body' },
-      { name: 'КОЛОНКА_2', type: 'text', max_chars: 120, style: 'body' },
-      { name: 'КОЛОНКА_3', type: 'text', max_chars: 120, style: 'body' },
-      { name: 'КОЛОНКА_4', type: 'text', max_chars: 120, style: 'body' },
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 200, style: 'body' },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 200, style: 'body' },
+      { name: 'КОЛОНКА_3', type: 'text', max_chars: 200, style: 'body' },
+      { name: 'КОЛОНКА_4', type: 'text', max_chars: 200, style: 'body' },
     ],
   },
   {
@@ -154,10 +154,10 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 80, style: 'h2' },
-      { name: 'КОЛОНКА_1', type: 'text', max_chars: 120, style: 'body' },
-      { name: 'КОЛОНКА_2', type: 'text', max_chars: 120, style: 'body' },
-      { name: 'КОЛОНКА_3', type: 'text', max_chars: 120, style: 'body' },
-      { name: 'КОЛОНКА_4', type: 'text', max_chars: 120, style: 'body' },
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 200, style: 'body' },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 200, style: 'body' },
+      { name: 'КОЛОНКА_3', type: 'text', max_chars: 200, style: 'body' },
+      { name: 'КОЛОНКА_4', type: 'text', max_chars: 200, style: 'body' },
     ],
   },
   {
@@ -167,10 +167,10 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 60, style: 'h2' },
-      { name: 'КОЛОНКА_1', type: 'text', max_chars: 120, style: 'body' },
-      { name: 'КОЛОНКА_2', type: 'text', max_chars: 120, style: 'body' },
-      { name: 'КОЛОНКА_3', type: 'text', max_chars: 120, style: 'body' },
-      { name: 'КОЛОНКА_4', type: 'text', max_chars: 120, style: 'body' },
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 150, style: 'body' },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 150, style: 'body' },
+      { name: 'КОЛОНКА_3', type: 'text', max_chars: 150, style: 'body' },
+      { name: 'КОЛОНКА_4', type: 'text', max_chars: 150, style: 'body' },
     ],
   },
   {
@@ -180,10 +180,10 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 60, style: 'h2' },
-      { name: 'КОЛОНКА_1', type: 'text', max_chars: 120, style: 'body' },
-      { name: 'КОЛОНКА_2', type: 'text', max_chars: 120, style: 'body' },
-      { name: 'КОЛОНКА_3', type: 'text', max_chars: 120, style: 'body' },
-      { name: 'КОЛОНКА_4', type: 'text', max_chars: 120, style: 'body' },
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 150, style: 'body' },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 150, style: 'body' },
+      { name: 'КОЛОНКА_3', type: 'text', max_chars: 150, style: 'body' },
+      { name: 'КОЛОНКА_4', type: 'text', max_chars: 150, style: 'body' },
     ],
   },
   {
@@ -257,8 +257,8 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 80, style: 'h1' },
       { name: 'ТЕКСТ', type: 'text', max_chars: 320, style: 'body', optional: true },
-      { name: 'КАРТКА_1', type: 'text', max_chars: 200, style: 'body' },
-      { name: 'КАРТКА_2', type: 'text', max_chars: 200, style: 'body' },
+      { name: 'КАРТКА_1', type: 'text', max_chars: 250, style: 'body' },
+      { name: 'КАРТКА_2', type: 'text', max_chars: 250, style: 'body' },
     ],
   },
   {
@@ -269,9 +269,9 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 80, style: 'h1' },
       { name: 'ТЕКСТ', type: 'text', max_chars: 320, style: 'body', optional: true },
-      { name: 'КАРТКА_1', type: 'text', max_chars: 140, style: 'body' },
-      { name: 'КАРТКА_2', type: 'text', max_chars: 140, style: 'body' },
-      { name: 'КАРТКА_3', type: 'text', max_chars: 140, style: 'body' },
+      { name: 'КАРТКА_1', type: 'text', max_chars: 150, style: 'body' },
+      { name: 'КАРТКА_2', type: 'text', max_chars: 150, style: 'body' },
+      { name: 'КАРТКА_3', type: 'text', max_chars: 150, style: 'body' },
     ],
   },
   {
@@ -282,10 +282,10 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 80, style: 'h1' },
       { name: 'ТЕКСТ', type: 'text', max_chars: 320, style: 'body', optional: true },
-      { name: 'КАРТКА_1', type: 'text', max_chars: 140, style: 'body' },
-      { name: 'КАРТКА_2', type: 'text', max_chars: 140, style: 'body' },
-      { name: 'КАРТКА_3', type: 'text', max_chars: 140, style: 'body' },
-      { name: 'КАРТКА_4', type: 'text', max_chars: 140, style: 'body' },
+      { name: 'КАРТКА_1', type: 'text', max_chars: 120, style: 'body' },
+      { name: 'КАРТКА_2', type: 'text', max_chars: 120, style: 'body' },
+      { name: 'КАРТКА_3', type: 'text', max_chars: 120, style: 'body' },
+      { name: 'КАРТКА_4', type: 'text', max_chars: 120, style: 'body' },
     ],
   },
   {
