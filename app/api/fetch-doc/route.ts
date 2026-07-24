@@ -140,7 +140,6 @@ async function extractSlides(
       // One shape, multiple blank-line-separated blocks (e.g. two named categories
       // typed into a single text box) — expose each block as its own fragment, tagged
       // like columns so the LLM can map them to separate slots instead of one flat blob.
-      console.log(`[extract-blocks] slide ${i} shape ${el.objectId}: split into ${blocks.length} blocks — ${JSON.stringify(blocks.map(b => b.slice(0, 40)))}`)
       blocks.forEach((block, bi) => {
         texts.push(block)
         columns.push(bi)
