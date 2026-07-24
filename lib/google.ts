@@ -1382,6 +1382,66 @@ function preprocessBentoText(text: string): string {
   return text
 }
 
+// Detects a short lead-in "header"/label line before a bullet list within ONE card's
+// text — e.g. "Залучення талантів" + 3 longer bullets, or "Що даємо:" + a list. Real
+// source content often gives the header line the SAME bullet formatting as the rest
+// (Slides has no "list header" role), so the only signal is: the line is either much
+// shorter than what follows, or explicitly ends with ":". Runs AFTER preprocessBentoText
+// (input lines may already carry "• "/"-" markers, stripped here for comparison).
+function splitCardHeader(text: string): { header: string; bodyLines: string[] } | null {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  if (lines.length < 2) return null
+  const stripBullet = (l: string) => l.replace(/^[•\-–]\s*/, '').trim()
+  const first = stripBullet(lines[0])
+  const rest = lines.slice(1).map(stripBullet).filter(Boolean)
+  if (!first || rest.length < 1) return null
+  const endsWithColon = /[:：]\s*$/.test(first)
+  const avgRestLen = rest.reduce((s, l) => s + l.length, 0) / rest.length
+  const isShort = first.length <= 40 && first.length <= avgRestLen * 0.6
+  if (!endsWithColon && !isShort) return null
+  const header = first.replace(/[:：]\s*$/, '').trim()
+  if (!header) return null
+  return { header, bodyLines: rest.map(l => `• ${l}`) }
+}
+
+// Word-wrapped line count for a (possibly multi-paragraph) body at a given pt — same
+// 0.65 char-width factor as textFitsParagraphs, so it stays consistent with whatever
+// pt that function already verified fits.
+function countWrappedLines(text: string, wPx: number, pt: number): number {
+  const cpl = Math.max(1, Math.floor(wPx / (pt * 2.667 * 0.65)))
+  const paras = text.split('\n').filter(p => p.trim())
+  return paras.reduce((sum, p) => {
+    const words = p.split(/\s+/).filter(Boolean)
+    let lines = 1, cur = 0
+    for (const w of words) {
+      if (!cur) cur = w.length
+      else if (cur + 1 + w.length <= cpl) cur += 1 + w.length
+      else { lines++; cur = w.length }
+    }
+    return sum + lines
+  }, 0)
+}
+
+// If `text`'s first line is a header (no bullet) followed by a bulleted body — see
+// splitCardHeader, applied earlier during preprocessing — try pt values above groupPt
+// for JUST that header line, keeping the body at groupPt. Returns groupPt unchanged
+// (no bump — the header still gets a WHITE color-only distinction at the call site)
+// when there isn't enough slack in the card to raise the header without overflowing.
+function computeHeaderPt(text: string, dims: { w: number; h: number }, groupPt: number, maxPt: number): number {
+  const lines = text.split('\n')
+  if (lines.length < 2) return groupPt
+  const headerLine = lines[0].trim()
+  const secondLine = lines[1].trim()
+  if (!headerLine || headerLine.startsWith('•') || !secondLine.startsWith('•')) return groupPt
+  const bodyLines = countWrappedLines(lines.slice(1).join('\n'), dims.w, groupPt)
+  for (let pt = Math.min(groupPt + 8, maxPt); pt > groupPt; pt--) {
+    if (longestWordPx(headerLine, pt) * 1.1 > dims.w) continue
+    const totalH = bodyLines * lineH(groupPt) + lineH(pt)
+    if (totalH <= dims.h) return pt
+  }
+  return groupPt
+}
+
 // ─── Auto-numbering helpers ───────────────────────────────────────────────────
 // Returns the cardinal number found in a slide title (1–10), or null.
 // Matches digits ("3", "топ-3") and Ukrainian word numerals (case-insensitive).
@@ -3467,6 +3527,13 @@ export async function buildPresentation(
       // two_columns_plain/labeled: КОЛОНКА body uses label\nbody pattern — no bullet conversion
       if (compId === 'two_columns_plain' || compId === 'two_columns_labeled') continue
       processed[tok] = preprocessBentoText(processed[tok])
+      // Pull a short lead-in line (e.g. "Залучення талантів") out of the bulleted list
+      // so it can be styled as a header (white + bigger, see the FIXED_RANGE requests
+      // below) instead of looking like just another bullet point.
+      const headerSplit = splitCardHeader(processed[tok])
+      if (headerSplit) {
+        processed[tok] = [headerSplit.header, ...headerSplit.bodyLines].join('\n')
+      }
     }
     bentoProcessedSlots.set(i, processed)
   }
@@ -3919,6 +3986,36 @@ export async function buildPresentation(
             textRange: { type: 'ALL' },
           },
         })
+        // Header line (splitCardHeader, applied during preprocessing): no bullet on
+        // line 1 while line 2+ are bulleted. Always WHITE; bigger only if it fits
+        // without pushing the bulleted body into overflow (computeHeaderPt checks).
+        const headerLines = slotValue.split('\n')
+        const hasHeader = headerLines.length >= 2 &&
+          !headerLines[0].trim().startsWith('•') && headerLines[1].trim().startsWith('•')
+        if (hasHeader) {
+          const headerLen = Math.min(headerLines[0].length, actualLen)
+          if (headerLen > 0) {
+            const hDims  = bentoDims(compId)
+            const hMaxPt = BENTO_MAX_PT[compId] ?? pt
+            const headerPt = hDims ? computeHeaderPt(slotValue, hDims, pt, hMaxPt) : pt
+            const style: { foregroundColor: object; fontSize?: object } = {
+              foregroundColor: { opaqueColor: { rgbColor: _WHITE } },
+            }
+            let fields = 'foregroundColor'
+            if (headerPt > pt) {
+              style.fontSize = { magnitude: headerPt, unit: 'PT' }
+              fields += ',fontSize'
+            }
+            fixedRangeStyleRequests.push({
+              updateTextStyle: {
+                objectId: el.objectId,
+                style,
+                fields,
+                textRange: { type: 'FIXED_RANGE', startIndex: 0, endIndex: headerLen },
+              },
+            })
+          }
+        }
         // Plain colon-split: prefix up to and including ":" → WHITE
         const colonIdx = slotValue.indexOf(':')
         const safeColonEnd = Math.min(colonIdx + 1, actualLen)
