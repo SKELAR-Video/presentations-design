@@ -125,21 +125,21 @@ const BENTO_MAX_PT: Record<string, number> = {
 // Floor: chosen pt is never smaller than this value.
 // If even floor pt overflows → log ⚠ TEXT_TOO_LONG (content is too long for this card type).
 const BENTO_MIN_PT: Record<string, number> = {
-  two_columns:         18,
-  two_columns_labeled: 14,
-  two_columns_plain:   14,
-  three_columns:          14,
+  two_columns:         10,
+  two_columns_labeled: 10,
+  two_columns_plain:   10,
+  three_columns:          10,
   three_columns_num:      10,
-  three_columns_timeline: 14,
-  two_columns_timeline:   14,
+  three_columns_timeline: 10,
+  two_columns_timeline:   10,
   four_columns:      10,
   four_columns_num:  10,
   bento_bottom_4:      10,
   four_columns_paren:  10,
   four_columns_bubble: 10,
-  bento_right_2:     18,
-  bento_right_3:     14,
-  bento_right_2x2:   14,
+  bento_right_2:     10,
+  bento_right_3:     10,
+  bento_right_2x2:   10,
 }
 
 const FONT_STEPS = [22, 18, 14, 10] as const

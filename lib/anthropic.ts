@@ -180,15 +180,11 @@ function fitDims(compId: string): { w: number; h: number } | null {
   return null
 }
 
-// Smallest font each composition is allowed to shrink to — mirrors BENTO_MIN_PT in
-// lib/google.ts. Below this, text is considered genuinely too long, not just "long".
-const FIT_FLOOR_PT: Record<string, number> = {
-  two_columns: 18, two_columns_labeled: 14, two_columns_plain: 14, two_columns_timeline: 14,
-  three_columns: 14, three_columns_num: 10, three_columns_timeline: 14,
-  bento_right_2: 18, bento_right_3: 14, bento_right_2x2: 14,
-  four_columns: 10, four_columns_num: 10, four_columns_paren: 10, four_columns_bubble: 10,
-  bento_bottom_4: 10,
-}
+// Smallest font any composition is allowed to shrink to — mirrors BENTO_MIN_PT in
+// lib/google.ts (all compositions floor at 10pt: content is never dropped/shortened,
+// it just gets small — a visible taste call for the human, not a silent code decision).
+// Below this, text is considered genuinely too long, not just "long".
+const FIT_FLOOR_PT = 10
 
 function lineHpx(pt: number): number { return pt * 2.667 * 1.4 }
 
@@ -261,16 +257,15 @@ function applyMappingGuards(composition: string, slots: Record<string, string>, 
   // column layout. Never truncates — everything that CAN physically fit is kept as-is.
   if (LONG_TEXT_GUARD_COMPOSITIONS.has(composition)) {
     const dims = fitDims(composition)
-    const floorPt = FIT_FLOOR_PT[composition] ?? 10
     const overflowKey = dims
-      ? COL_SLOT_KEYS.find(k => !fitsAtFloor(slots[k] ?? '', dims.w, dims.h, floorPt))
+      ? COL_SLOT_KEYS.find(k => !fitsAtFloor(slots[k] ?? '', dims.w, dims.h, FIT_FLOOR_PT))
       : undefined
     if (overflowKey) {
       const parts = COL_SLOT_KEYS.map(k => slots[k]).filter(Boolean)
       const merged = parts.join('\n\n')
       for (const k of COL_SLOT_KEYS) delete slots[k]
       slots['ТЕКСТ'] = merged
-      console.warn(`[long-text-guard] slide ${slideNum}: ${composition}→title_body (${overflowKey} doesn't fit at ${floorPt}pt in ${dims!.w}×${dims!.h}, merged=${merged.length})`)
+      console.warn(`[long-text-guard] slide ${slideNum}: ${composition}→title_body (${overflowKey} doesn't fit at ${FIT_FLOOR_PT}pt in ${dims!.w}×${dims!.h}, merged=${merged.length})`)
       composition = 'title_body'
     }
   }
