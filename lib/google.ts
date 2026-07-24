@@ -2279,8 +2279,11 @@ function remapSlotsForVariant(
   toComp: string,
 ): Record<string, string> {
   if (fromComp === toComp) return { ...slots }
-  const map = VARIANT_SLOT_MAPS[`${fromComp}:${toComp}`]
-  if (!map) return { ...slots }
+  // NOTE: no `if (!map) return {...slots}` early exit here — most same-shape column
+  // transitions (two_columns_labeled↔two_columns/two_columns_plain/two_columns_timeline)
+  // have no VARIANT_SLOT_MAPS entry at all (no rename needed), which used to skip the
+  // orphan-ПІДПИС_N merge below entirely and pass every slot through unchanged/unfiltered.
+  const map = VARIANT_SLOT_MAPS[`${fromComp}:${toComp}`] ?? {}
   const targetComp = getComposition(toComp)
   const validTarget = new Set(targetComp?.slots.map(s => s.name) ?? [])
   const result: Record<string, string> = {}

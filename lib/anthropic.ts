@@ -133,25 +133,42 @@ const COMP_SLOT_MAX_CHARS: Record<string, number> = {
 const COL_SLOT_KEYS = ['КОЛОНКА_1','КОЛОНКА_2','КОЛОНКА_3','КОЛОНКА_4',
                        'КАРТКА_1','КАРТКА_2','КАРТКА_3','КАРТКА_4']
 
-// Corrects common LLM slot-naming mistakes — runs in both 1to1 and free-form paths.
-function applyMappingGuards(composition: string, slots: Record<string, string>, slideNum: number): string {
-  // Caption-guard: title_body's caption slot is named ПІДПИС (no suffix). The LLM
-  // sometimes still emits ПІДПИС_1/ПІДПИС_2 (pattern-matched from two_columns_labeled) —
-  // that key doesn't exist on title_body, so it would silently vanish. Reattach it.
-  if (composition === 'title_body') {
-    for (const key of ['ПІДПИС_1', 'ПІДПИС_2']) {
-      const val = (slots[key] ?? '').trim()
-      if (!val) continue
-      if (!(slots['ПІДПИС'] ?? '').trim()) {
-        slots['ПІДПИС'] = val
-      } else {
-        slots['ТЕКСТ'] = [slots['ТЕКСТ'], val].filter(Boolean).join('\n')
-      }
-      delete slots[key]
-      console.warn(`[caption-guard] slide ${slideNum}: title_body ${key} → ПІДПИС`)
+// ПІДПИС_N has a dedicated slot only on two_columns_labeled. The LLM sometimes emits it
+// anyway on a composition that has no such slot (pattern bleed from two_columns_labeled) —
+// reattach it instead of letting it silently vanish. Must run using the FINAL composition
+// (after any renaming/demotion below), which is why this is called last, not first.
+function reattachOrphanCaptions(composition: string, slots: Record<string, string>, slideNum: number): void {
+  const comp = PHASE0_COMPOSITIONS.find(c => c.id === composition)
+  if (!comp) return
+  const validNames = new Set(comp.slots.map(s => s.name))
+  for (let n = 1; n <= 4; n++) {
+    const key = `ПІДПИС_${n}`
+    if (validNames.has(key)) continue  // native slot (two_columns_labeled) — leave alone
+    const val = (slots[key] ?? '').trim()
+    if (!val) continue
+    delete slots[key]
+    const colKey = `КОЛОНКА_${n}`
+    const cardKey = `КАРТКА_${n}`
+    if (validNames.has(colKey) && (slots[colKey] ?? '').trim()) {
+      slots[colKey] = `${val} — ${slots[colKey]}`
+      console.warn(`[caption-guard] slide ${slideNum}: ${composition} ${key} → merged into ${colKey}`)
+    } else if (validNames.has(cardKey) && (slots[cardKey] ?? '').trim()) {
+      slots[cardKey] = `${val} — ${slots[cardKey]}`
+      console.warn(`[caption-guard] slide ${slideNum}: ${composition} ${key} → merged into ${cardKey}`)
+    } else if (validNames.has('ПІДПИС') && !(slots['ПІДПИС'] ?? '').trim()) {
+      slots['ПІДПИС'] = val
+      console.warn(`[caption-guard] slide ${slideNum}: ${composition} ${key} → ПІДПИС`)
+    } else if (validNames.has('ТЕКСТ')) {
+      slots['ТЕКСТ'] = [slots['ТЕКСТ'], val].filter(Boolean).join('\n')
+      console.warn(`[caption-guard] slide ${slideNum}: ${composition} ${key} → merged into ТЕКСТ`)
+    } else {
+      console.warn(`[caption-guard] slide ${slideNum}: ${composition} ${key} dropped (no target slot) — "${val.slice(0, 30)}"`)
     }
   }
+}
 
+// Corrects common LLM slot-naming mistakes — runs in both 1to1 and free-form paths.
+function applyMappingGuards(composition: string, slots: Record<string, string>, slideNum: number): string {
   // Long-text guard: if any column/card slot exceeds the composition char limit → title_body.
   // Merges all column/card values into ТЕКСТ (paragraph-separated).
   // No upper bound on merged length: title_body at min font always fits more than any column layout.
@@ -164,7 +181,7 @@ function applyMappingGuards(composition: string, slots: Record<string, string>, 
       for (const k of COL_SLOT_KEYS) delete slots[k]
       slots['ТЕКСТ'] = merged
       console.warn(`[long-text-guard] slide ${slideNum}: ${composition}→title_body (longest=${longestSlot}>${slotMax}, merged=${merged.length})`)
-      return 'title_body'
+      composition = 'title_body'
     }
   }
 
@@ -198,6 +215,8 @@ function applyMappingGuards(composition: string, slots: Record<string, string>, 
     console.warn(`[bento-right-guard] slide ${slideNum}: КОЛОНКА_N → КАРТКА_N, ${composition} → ${fixed} (${colCount} items)`)
     composition = fixed
   }
+
+  reattachOrphanCaptions(composition, slots, slideNum)
   return composition
 }
 
