@@ -254,6 +254,8 @@ ${slidesText}
 
 JSON з рівно ${slides.length} елементами в "slides".`
 
+  console.log(`[mapSlides1to1] prompt slides text (first 4000 chars):\n${slidesText.slice(0, 4000)}`)
+
   const message = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 8192,
@@ -277,6 +279,8 @@ JSON з рівно ${slides.length} елементами в "slides".`
       throw new SyntaxError(`No JSON object found in 1to1 LLM response (len=${json.length})`)
     }
   }
+
+  console.log(`[mapSlides1to1] LLM chose compositions: ${mapping.slides.map((s, i) => `${i + 1}:${s.composition}`).join(', ')}`)
 
   // Build SlidePlan — text copied verbatim from source, LLM never touched it
   return {
