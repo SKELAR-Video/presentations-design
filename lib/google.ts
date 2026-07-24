@@ -937,6 +937,10 @@ function buildCoverTitleOnlyRequests(
   const boxH = _H_SLIDE - 2 * _PAD
   const pt   = pickCoverTitleOnlyPt(titleText)
 
+  if (!titleText) {
+    console.warn(`[cover-title-only-guard] slide ${slideIdx}: ЗАГОЛОВОК empty — skipping text-style requests to avoid API crash`)
+  }
+
   // 1. Resize ЗАГОЛОВОК + apply CENTER/MIDDLE alignment + dynamic font
   for (const el of slide.pageElements ?? []) {
     if (el.shape?.shapeType !== 'TEXT_BOX' || !el.objectId || !el.transform || !el.size) continue
@@ -945,24 +949,32 @@ function buildCoverTitleOnlyRequests(
     const sW = el.size.width?.magnitude  ?? 0
     const sH = el.size.height?.magnitude ?? 0
     reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, _PAD - _INSET, boxW + 2 * _INSET, boxH + 2 * _INSET, sW, sH))
-    if (pt !== 66) {
+    // ЗАГОЛОВОК is required for cover_title_only/closing, but if the mapping stage ever
+    // leaves it empty, the box has no text after replaceAllText — updateTextStyle/
+    // updateParagraphStyle with textRange:'ALL' on an empty box is a hard Slides API 400
+    // ("has no text") that kills the ENTIRE batchUpdate, not just this slide. Skip only
+    // the text-range style requests so a missing slot degrades to a content_integrity
+    // FAIL instead of crashing the whole deck; shape-level properties are still safe.
+    if (titleText) {
+      if (pt !== 66) {
+        reqs.push({
+          updateTextStyle: {
+            objectId: el.objectId,
+            style: { fontSize: { magnitude: pt, unit: 'PT' }, bold: false },
+            fields: 'fontSize,bold',
+            textRange: { type: 'ALL' },
+          },
+        })
+      }
       reqs.push({
-        updateTextStyle: {
+        updateParagraphStyle: {
           objectId: el.objectId,
-          style: { fontSize: { magnitude: pt, unit: 'PT' }, bold: false },
-          fields: 'fontSize,bold',
+          style: { alignment: 'CENTER', lineSpacing: 90 },
+          fields: 'alignment,lineSpacing',
           textRange: { type: 'ALL' },
         },
       })
     }
-    reqs.push({
-      updateParagraphStyle: {
-        objectId: el.objectId,
-        style: { alignment: 'CENTER', lineSpacing: 90 },
-        fields: 'alignment,lineSpacing',
-        textRange: { type: 'ALL' },
-      },
-    })
     reqs.push({
       updateShapeProperties: {
         objectId: el.objectId,
