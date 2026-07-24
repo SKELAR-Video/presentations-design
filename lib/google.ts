@@ -1255,7 +1255,11 @@ function pickBentoCardPts(compId: string, slots: Record<string, string>): Record
   const maxPt  = BENTO_MAX_PT[compId]
   const minPt  = BENTO_MIN_PT[compId] ?? 10
   if (!dims || !tokens || !maxPt) return null
-  const scale = (BENTO_SCALE as readonly number[]).filter(s => s <= maxPt)
+  // 1pt-granularity search (not the coarse BENTO_SCALE steps) — the longest text should
+  // comfortably fill its card, not jump straight from "doesn't fit at 18pt" to "fits
+  // at 14pt with a third of the card empty" just because 15/16/17pt were never tried.
+  const scale: number[] = []
+  for (let pt = maxPt; pt >= minPt; pt--) scale.push(pt)
 
   // Step 1: per-card max fitting pt
   let groupPt = maxPt  // shrink toward the tightest card
