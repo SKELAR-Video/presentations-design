@@ -109,29 +109,114 @@ type SlideAssignment = {
   assignment: Record<string, number | number[] | null>
 }
 
-// Max chars per column/card slot — calibrated to real overflow cases (150-270 chars).
-// If any slot exceeds this → text overflows even at minimum font size.
-const COMP_SLOT_MAX_CHARS: Record<string, number> = {
-  columns_flex:           160,
-  two_columns:            200,
-  two_columns_labeled:    200,
-  two_columns_plain:      200,
-  two_columns_timeline:   200,
-  bento_right_2:          200,
-  three_columns:          150,
-  three_columns_num:      150,
-  three_columns_timeline: 150,
-  bento_right_3:          150,
-  bento_right_2x2:        130,
-  four_columns:           130,
-  four_columns_num:       130,
-  bento_bottom_4:         130,
-  four_columns_paren:     110,
-  four_columns_bubble:    110,
-}
+// Compositions the long-text-guard applies to (fixed-capacity card/column layouts).
+// columns_flex is EXCLUDED on purpose — its width/font adapt to content, so it has no
+// fixed capacity ceiling to overflow (this mirrors the diagnostic already documented in
+// CLAUDE.md: a dynamic-geometry composition passing where fixed ones fail is a design-
+// capacity signal, not a bug — so it should never trigger this guard at all).
+const LONG_TEXT_GUARD_COMPOSITIONS = new Set([
+  'two_columns', 'two_columns_labeled', 'two_columns_plain', 'two_columns_timeline',
+  'bento_right_2', 'three_columns', 'three_columns_num', 'three_columns_timeline', 'bento_right_3',
+  'bento_right_2x2', 'four_columns', 'four_columns_num', 'bento_bottom_4', 'four_columns_paren', 'four_columns_bubble',
+])
 
 const COL_SLOT_KEYS = ['КОЛОНКА_1','КОЛОНКА_2','КОЛОНКА_3','КОЛОНКА_4',
                        'КАРТКА_1','КАРТКА_2','КАРТКА_3','КАРТКА_4']
+
+// ─── Real physical fit-check ────────────────────────────────────────────────────
+// Previously this guard compared raw character count against a fixed threshold — a
+// rough proxy that demoted content to title_body even when it would have physically
+// fit (or, in principle, could let overflowing content through). Mirrors the SAME
+// geometry + word-wrap math lib/google.ts uses at render time (bentoDims/
+// textFitsParagraphs), duplicated here rather than imported to avoid a circular
+// import (google.ts already imports from this file) — same "mirror layout constants
+// across files" pattern already used between lib/google.ts and create-master/route.ts.
+const _G_PAD = 100, _G_UW = 1720, _G_GAP = 30, _G_INN = 30, _G_H = 1080
+const _G_CY = _G_PAD + 100 + 100    // PAD + TH + TG
+const _G_CH = _G_H - _G_PAD - _G_CY
+const _G_RBW = 860
+const _G_RBH = _G_H - 2 * _G_PAD
+
+function fitDims(compId: string): { w: number; h: number } | null {
+  if (compId === 'two_columns') {
+    const cw = Math.floor((_G_UW - _G_GAP) / 2)
+    return { w: cw - 2 * _G_INN, h: _G_CH - 2 * _G_INN }
+  }
+  if (compId === 'two_columns_labeled' || compId === 'two_columns_plain') {
+    const cw = Math.floor((_G_UW - 50) / 2)
+    return { w: cw, h: _G_H - _G_PAD - 540 }
+  }
+  if (compId === 'two_columns_timeline') return { w: 623, h: 502 }
+  if (compId === 'three_columns') {
+    const cw = Math.floor((_G_UW - 2 * _G_GAP) / 3)
+    return { w: cw - 2 * _G_INN, h: _G_CH - 2 * _G_INN }
+  }
+  if (compId === 'three_columns_num') {
+    const cw = Math.floor((_G_UW - 2 * 50) / 3)
+    return { w: cw, h: _G_H - _G_PAD - 540 }
+  }
+  if (compId === 'three_columns_timeline') return { w: 496, h: 502 }
+  if (compId === 'bento_right_2') {
+    const cardH = Math.floor((_G_RBH - _G_GAP) / 2)
+    return { w: _G_RBW - 2 * _G_INN, h: cardH - 2 * _G_INN }
+  }
+  if (compId === 'bento_right_3') {
+    const cardH = Math.floor((_G_RBH - 2 * _G_GAP) / 3)
+    return { w: _G_RBW - 2 * _G_INN, h: cardH - 2 * _G_INN }
+  }
+  if (compId === 'bento_right_2x2') {
+    const cellW = Math.floor((_G_RBW - _G_GAP) / 2)
+    const cellH = Math.floor((_G_RBH - _G_GAP) / 2)
+    return { w: cellW - 2 * _G_INN, h: cellH - 2 * _G_INN }
+  }
+  if (compId === 'bento_bottom_4' || compId === 'four_columns' || compId === 'four_columns_num') {
+    const cw = Math.floor((_G_UW - 3 * _G_GAP) / 4)
+    return { w: cw - 2 * _G_INN, h: _G_CH - 2 * _G_INN }
+  }
+  if (compId === 'four_columns_paren' || compId === 'four_columns_bubble') {
+    const cw = Math.floor((_G_UW - 3 * 50) / 4)
+    return { w: cw, h: _G_H - _G_PAD - 540 }
+  }
+  return null
+}
+
+// Smallest font each composition is allowed to shrink to — mirrors BENTO_MIN_PT in
+// lib/google.ts. Below this, text is considered genuinely too long, not just "long".
+const FIT_FLOOR_PT: Record<string, number> = {
+  two_columns: 18, two_columns_labeled: 14, two_columns_plain: 14, two_columns_timeline: 14,
+  three_columns: 14, three_columns_num: 10, three_columns_timeline: 14,
+  bento_right_2: 18, bento_right_3: 14, bento_right_2x2: 14,
+  four_columns: 10, four_columns_num: 10, four_columns_paren: 10, four_columns_bubble: 10,
+  bento_bottom_4: 10,
+}
+
+function lineHpx(pt: number): number { return pt * 2.667 * 1.4 }
+
+function longestWordPxLocal(text: string, pt: number): number {
+  const pxPerChar = pt * 2.667 * 0.65
+  const words = text.trim().split(/\s+/).filter(Boolean)
+  const coreLen = (w: string) => w.replace(/^[.,;:!?«»"'()\[\]{}\-–—]+|[.,;:!?«»"'()\[\]{}\-–—]+$/g, '').length || w.length
+  return words.length === 0 ? 0 : Math.round(Math.max(...words.map(w => coreLen(w) * pxPerChar)))
+}
+
+// Mirrors textFitsParagraphs in lib/google.ts — word-fit + per-paragraph line-wrap height check.
+function fitsAtFloor(text: string, wPx: number, hPx: number, pt: number): boolean {
+  if (!text.trim()) return true
+  if (longestWordPxLocal(text, pt) * 1.1 > wPx) return false
+  const cpl = Math.max(1, Math.floor(wPx / (pt * 2.667 * 0.65)))
+  const paras = text.split('\n').filter(p => p.trim())
+  const totalLines = paras.reduce((sum, p) => {
+    const words = p.split(/\s+/).filter(Boolean)
+    let lines = 1, cur = 0
+    for (const w of words) {
+      if (!cur) cur = w.length
+      else if (cur + 1 + w.length <= cpl) cur += 1 + w.length
+      else { lines++; cur = w.length }
+    }
+    return sum + lines
+  }, 0)
+  return totalLines * lineHpx(pt) <= hPx
+}
 
 // ПІДПИС_N has a dedicated slot only on two_columns_labeled. The LLM sometimes emits it
 // anyway on a composition that has no such slot (pattern bleed from two_columns_labeled) —
@@ -169,18 +254,23 @@ function reattachOrphanCaptions(composition: string, slots: Record<string, strin
 
 // Corrects common LLM slot-naming mistakes — runs in both 1to1 and free-form paths.
 function applyMappingGuards(composition: string, slots: Record<string, string>, slideNum: number): string {
-  // Long-text guard: if any column/card slot exceeds the composition char limit → title_body.
-  // Merges all column/card values into ТЕКСТ (paragraph-separated).
-  // No upper bound on merged length: title_body at min font always fits more than any column layout.
-  const slotMax = COMP_SLOT_MAX_CHARS[composition]
-  if (slotMax !== undefined) {
-    const longestSlot = COL_SLOT_KEYS.reduce((max, k) => Math.max(max, (slots[k] ?? '').length), 0)
-    if (longestSlot > slotMax) {
+  // Long-text guard: demote to title_body ONLY if a column/card slot genuinely doesn't
+  // fit even at the composition's smallest allowed font (real geometry check, not a
+  // char-count guess) — merges all column/card values into ТЕКСТ (paragraph-separated).
+  // No upper bound on merged length: title_body at min font always fits more than any
+  // column layout. Never truncates — everything that CAN physically fit is kept as-is.
+  if (LONG_TEXT_GUARD_COMPOSITIONS.has(composition)) {
+    const dims = fitDims(composition)
+    const floorPt = FIT_FLOOR_PT[composition] ?? 10
+    const overflowKey = dims
+      ? COL_SLOT_KEYS.find(k => !fitsAtFloor(slots[k] ?? '', dims.w, dims.h, floorPt))
+      : undefined
+    if (overflowKey) {
       const parts = COL_SLOT_KEYS.map(k => slots[k]).filter(Boolean)
       const merged = parts.join('\n\n')
       for (const k of COL_SLOT_KEYS) delete slots[k]
       slots['ТЕКСТ'] = merged
-      console.warn(`[long-text-guard] slide ${slideNum}: ${composition}→title_body (longest=${longestSlot}>${slotMax}, merged=${merged.length})`)
+      console.warn(`[long-text-guard] slide ${slideNum}: ${composition}→title_body (${overflowKey} doesn't fit at ${floorPt}pt in ${dims!.w}×${dims!.h}, merged=${merged.length})`)
       composition = 'title_body'
     }
   }
