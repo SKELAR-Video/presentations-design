@@ -257,8 +257,8 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 80, style: 'h1' },
       { name: 'ТЕКСТ', type: 'text', max_chars: 320, style: 'body', optional: true },
-      { name: 'КАРТКА_1', type: 'text', max_chars: 250, style: 'body' },
-      { name: 'КАРТКА_2', type: 'text', max_chars: 250, style: 'body' },
+      { name: 'КАРТКА_1', type: 'text', max_chars: 260, style: 'body' },
+      { name: 'КАРТКА_2', type: 'text', max_chars: 260, style: 'body' },
     ],
   },
   {
