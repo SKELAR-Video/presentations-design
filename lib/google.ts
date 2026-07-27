@@ -1357,43 +1357,40 @@ function stripTrailingPeriod(text: string): string {
 }
 
 // ─── Bento card content preprocessing ────────────────────────────────────────
-// Converts " · " list separators to proper bullet lines ("• item\n• item").
-// Applied before replaceAllText so font sizing also accounts for the converted text.
-// Exception: value+label cards ("$5M\nнові клієнти") are NOT converted.
+// Normalizes " · "-separated lists into one item per line. Bullets themselves are
+// applied at render time via native Slides bullets (createParagraphBullets) — NOT
+// baked into the text as a literal "• " character. A manual "• " prefix has no
+// reliable way to compute a matching hanging indent (font/glyph-specific metrics
+// we don't have), so a wrapped second line either sits flush left (no indent) or
+// misaligned (guessed indent) — native bullets get correct indent from Slides itself.
+// Exception: value+label cards ("$5M\nнові клієнти") are left untouched.
 function preprocessBentoText(text: string): string {
   if (!text.trim()) return text
   if (splitValueLabel(text)) return text  // value+label: leave as-is
 
-  // Convert " · " list separator to bullet list; strip trailing period per item
   if (text.includes(' · ')) {
     const items = text.split(' · ').map(s => stripTrailingPeriod(s.trim())).filter(Boolean)
-    if (items.length >= 2) {
-      return items.map(item => '• ' + item).join('\n')
-    }
+    if (items.length >= 2) return items.join('\n')
   }
 
-  // Existing multi-line content: add "• " prefix to lines that aren't already bulleted
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-  if (lines.length >= 2) {
-    return lines.map(line =>
-      (line.startsWith('•') || line.startsWith('-') || line.startsWith('–')) ? line : '• ' + line,
-    ).join('\n')
-  }
-  return text
+  // Strip any literal bullet marker already present (e.g. from fetch-doc's source
+  // paragraphMarker.bullet extraction) — bulleting is applied natively below instead.
+  return text.split('\n')
+    .map(l => l.trim().replace(/^[•\-–]\s*/, ''))
+    .filter(Boolean)
+    .join('\n')
 }
 
-// Detects a short lead-in "header"/label line before a bullet list within ONE card's
-// text — e.g. "Залучення талантів" + 3 longer bullets, or "Що даємо:" + a list. Real
-// source content often gives the header line the SAME bullet formatting as the rest
+// Detects a short lead-in "header"/label line before a list within ONE card's text —
+// e.g. "Залучення талантів" + 3 longer items, or "Що даємо:" + a list. Real source
+// content often gives the header line the SAME (bullet) formatting as the rest
 // (Slides has no "list header" role), so the only signal is: the line is either much
-// shorter than what follows, or explicitly ends with ":". Runs AFTER preprocessBentoText
-// (input lines may already carry "• "/"-" markers, stripped here for comparison).
+// shorter than what follows, or explicitly ends with ":".
 function splitCardHeader(text: string): { header: string; bodyLines: string[] } | null {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
   if (lines.length < 2) return null
-  const stripBullet = (l: string) => l.replace(/^[•\-–]\s*/, '').trim()
-  const first = stripBullet(lines[0])
-  const rest = lines.slice(1).map(stripBullet).filter(Boolean)
+  const first = lines[0]
+  const rest = lines.slice(1)
   if (!first || rest.length < 1) return null
   const endsWithColon = /[:：]\s*$/.test(first)
   const avgRestLen = rest.reduce((s, l) => s + l.length, 0) / rest.length
@@ -1401,7 +1398,7 @@ function splitCardHeader(text: string): { header: string; bodyLines: string[] } 
   if (!endsWithColon && !isShort) return null
   const header = first.replace(/[:：]\s*$/, '').trim()
   if (!header) return null
-  return { header, bodyLines: rest.map(l => `• ${l}`) }
+  return { header, bodyLines: rest }
 }
 
 // Word-wrapped line count for a (possibly multi-paragraph) body at a given pt — same
@@ -1422,17 +1419,14 @@ function countWrappedLines(text: string, wPx: number, pt: number): number {
   }, 0)
 }
 
-// If `text`'s first line is a header (no bullet) followed by a bulleted body — see
-// splitCardHeader, applied earlier during preprocessing — try pt values above groupPt
-// for JUST that header line, keeping the body at groupPt. Returns groupPt unchanged
-// (no bump — the header still gets a WHITE color-only distinction at the call site)
-// when there isn't enough slack in the card to raise the header without overflowing.
+// If `text` has a detected header (splitCardHeader) followed by a body list, try pt
+// values above groupPt for JUST that header line, keeping the body at groupPt. Returns
+// groupPt unchanged (no bump — the header still gets a WHITE color-only distinction at
+// the call site) when there isn't enough slack to raise it without overflowing.
 function computeHeaderPt(text: string, dims: { w: number; h: number }, groupPt: number, maxPt: number): number {
+  if (!splitCardHeader(text)) return groupPt
   const lines = text.split('\n')
-  if (lines.length < 2) return groupPt
   const headerLine = lines[0].trim()
-  const secondLine = lines[1].trim()
-  if (!headerLine || headerLine.startsWith('•') || !secondLine.startsWith('•')) return groupPt
   const bodyLines = countWrappedLines(lines.slice(1).join('\n'), dims.w, groupPt)
   for (let pt = Math.min(groupPt + 8, maxPt); pt > groupPt; pt--) {
     if (longestWordPx(headerLine, pt) * 1.1 > dims.w) continue
@@ -3986,34 +3980,27 @@ export async function buildPresentation(
             textRange: { type: 'ALL' },
           },
         })
-        // Hanging indent for "• " bullet lines rendered as literal text (not native
-        // Slides bullets): without this, a wrapped second line starts back at the box's
-        // left edge instead of lining up under the first line's text. indentStart pushes
-        // every line right by ~1 char width; indentFirstLine cancels that for line 1 so
-        // the bullet itself stays at the margin. ~1em (pt×1) approximates "• " width —
-        // not exact per-glyph metrics, but close enough to read as aligned.
-        if (slotValue.includes('•')) {
-          const indentPt = Math.round(pt)
-          requests.push({
-            updateParagraphStyle: {
-              objectId: el.objectId,
-              style: {
-                indentStart: { magnitude: indentPt, unit: 'PT' },
-                indentFirstLine: { magnitude: -indentPt, unit: 'PT' },
+        // Native bullets (correct hanging indent comes from Slides itself — no glyph-
+        // width guessing needed, unlike a literal "• " character would require) for
+        // the list portion: everything except a detected header line, if any.
+        const headerSplit = splitCardHeader(slotValue)
+        const cardLines = slotValue.split('\n')
+        const bodyLineCount = headerSplit ? cardLines.length - 1 : cardLines.length
+        if (bodyLineCount >= 2) {
+          const bodyStart = headerSplit ? Math.min(cardLines[0].length + 1, actualLen) : 0
+          if (bodyStart < actualLen) {
+            fixedRangeStyleRequests.push({
+              createParagraphBullets: {
+                objectId: el.objectId,
+                textRange: { type: 'FIXED_RANGE', startIndex: bodyStart, endIndex: actualLen },
               },
-              fields: 'indentStart,indentFirstLine',
-              textRange: { type: 'ALL' },
-            },
-          })
+            })
+          }
         }
-        // Header line (splitCardHeader, applied during preprocessing): no bullet on
-        // line 1 while line 2+ are bulleted. Always WHITE; bigger only if it fits
-        // without pushing the bulleted body into overflow (computeHeaderPt checks).
-        const headerLines = slotValue.split('\n')
-        const hasHeader = headerLines.length >= 2 &&
-          !headerLines[0].trim().startsWith('•') && headerLines[1].trim().startsWith('•')
-        if (hasHeader) {
-          const headerLen = Math.min(headerLines[0].length, actualLen)
+        // Header line (splitCardHeader, applied during preprocessing): always WHITE;
+        // bigger only if it fits without pushing the body into overflow (computeHeaderPt).
+        if (headerSplit) {
+          const headerLen = Math.min(cardLines[0].length, actualLen)
           if (headerLen > 0) {
             const hDims  = bentoDims(compId)
             const hMaxPt = BENTO_MAX_PT[compId] ?? pt
