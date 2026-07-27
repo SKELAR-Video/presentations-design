@@ -200,7 +200,9 @@ function fitsAtFloor(text: string, wPx: number, hPx: number, pt: number): boolea
   if (!text.trim()) return true
   if (longestWordPxLocal(text, pt) * 1.1 > wPx) return false
   const cpl = Math.max(1, Math.floor(wPx / (pt * 2.667 * 0.65)))
-  const paras = text.split('\n').filter(p => p.trim())
+  // \v = soft line break (Shift+Enter) for list items sharing one paragraph — forces
+  // its own line same as \n, mirrors the split in lib/google.ts's textFitsParagraphs.
+  const paras = text.split(/[\n\v]/).filter(p => p.trim())
   const totalLines = paras.reduce((sum, p) => {
     const words = p.split(/\s+/).filter(Boolean)
     let lines = 1, cur = 0

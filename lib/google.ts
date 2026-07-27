@@ -161,12 +161,14 @@ function textFits(text: string, wPx: number, hPx: number, pt: number): boolean {
   return lines * lineH(pt) <= hPx  // exact height: lines × lineH ≤ inner_height
 }
 
-// Paragraph-aware variant: splits on \n first so each paragraph starts on a new line.
-// textFits() treats \n as a space (wrong for bullet lists). This correctly sums lines per paragraph.
+// Paragraph-aware variant: splits on \n (real paragraph break) AND \v (soft line break,
+// U+000B — used for list items that share one paragraph but must still each start their
+// own line, see preprocessBentoText) so each becomes its own forced line. textFits()
+// treats all whitespace as a space (wrong for a list). This correctly sums lines per break.
 function textFitsParagraphs(text: string, wPx: number, hPx: number, pt: number): boolean {
   if (!text.trim()) return true
   if (longestWordPx(text, pt) * 1.1 > wPx) return false  // 1.1× safety margin
-  const paras = text.split('\n').filter(p => p.trim())
+  const paras = text.split(/[\n\v]/).filter(p => p.trim())
   if (paras.length <= 1) return textFits(text, wPx, hPx, pt)
   // Multi-paragraph: same 0.65 factor for consistent line-count estimation
   const cpl = Math.max(1, Math.floor(wPx / (pt * 2.667 * 0.65)))
@@ -1236,24 +1238,12 @@ function buildTitleBodyFloatRequests(
             textRange: { type: 'ALL' },
           },
         })
-        // formatTitleBodyText (applied upstream, before this text was inserted) bullets
-        // each blank-line-separated group and pulls out a short lead-in line as a
-        // header — style it here: hanging indent for the bullets, WHITE for headers
-        // (default ТЕКСТ color is MUTED gray, so this reads as a clear sub-heading).
-        if (bodyText.includes('•')) {
-          const indentPt = Math.round(bodyPt * 0.5)
-          reqs.push({
-            updateParagraphStyle: {
-              objectId: el.objectId,
-              style: {
-                indentStart: { magnitude: indentPt, unit: 'PT' },
-                indentFirstLine: { magnitude: -indentPt, unit: 'PT' },
-              },
-              fields: 'indentStart,indentFirstLine',
-              textRange: { type: 'ALL' },
-            },
-          })
-        }
+        // formatTitleBodyText (applied upstream, before this text was inserted) splits
+        // each blank-line-separated group into a header + \v-joined list, and pulls
+        // out a short lead-in line as a header — style it WHITE here (default ТЕКСТ
+        // color is MUTED gray, so this reads as a clear sub-heading). No hanging
+        // indent needed: \v doesn't start a new paragraph, so every line already
+        // starts flush at the paragraph's own left edge.
         for (const range of findGroupHeaderRanges(bodyText)) {
           const endIndex = Math.min(range.end, bodyText.length)
           if (endIndex <= range.start) continue
@@ -1388,52 +1378,49 @@ function stripTrailingPeriod(text: string): string {
 }
 
 // ─── Bento card content preprocessing ────────────────────────────────────────
-// Converts " · " list separators to proper bullet lines ("• item\n• item").
+// Joins list items with U+000B (vertical tab — the character Google's text model uses
+// for a Shift+Enter "soft line break") instead of a literal "• " character + "\n".
 // Applied before replaceAllText so font sizing also accounts for the converted text.
 //
-// NOTE: tried native Slides bullets (createParagraphBullets) here first — it gets the
-// hanging indent right automatically, but its glyph/indent come from the presentation's
-// internal List/nestingLevel definition, which the batchUpdate API has no request to
-// customize; updateParagraphStyle's indentStart/indentFirstLine on the paragraph itself
-// is silently ignored once a bullet is attached, and the glyph's own vertical baseline
-// isn't a settable field either. Back to a literal "• " character: less automatic, but
-// indent AND baseline are both under our control since it's plain text sharing the same
-// line as the rest of the paragraph.
+// History: tried native Slides bullets (createParagraphBullets) — correct indent for
+// free, but glyph/indent come from the presentation's internal List/nestingLevel
+// definition, which the batchUpdate API has no request to customize, so it can't be
+// resized. Tried a literal "• " character with a manually computed hanging indent
+// (indentStart/indentFirstLine) — indent is then under our control, but every guess at
+// "• "'s rendered width was visibly off (overshot, then undershot) with no way to
+// verify short of a real render. A soft line break sidesteps the whole problem: \v
+// doesn't start a new paragraph, so there's no per-item indent to compute at all — each
+// item just starts flush at the paragraph's own left edge, same as line 1.
 // Exception: value+label cards ("$5M\nнові клієнти") are NOT converted.
 function preprocessBentoText(text: string): string {
   if (!text.trim()) return text
   if (splitValueLabel(text)) return text  // value+label: leave as-is
 
-  // Convert " · " list separator to bullet list; strip trailing period per item
+  // " · " list separator → one item per line (soft break), trailing period stripped
   if (text.includes(' · ')) {
     const items = text.split(' · ').map(s => stripTrailingPeriod(s.trim())).filter(Boolean)
-    if (items.length >= 2) {
-      return items.map(item => '• ' + item).join('\n')
-    }
+    if (items.length >= 2) return items.join('\v')
   }
 
-  // Existing multi-line content: add "• " prefix to lines that aren't already bulleted
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-  if (lines.length >= 2) {
-    return lines.map(line =>
-      (line.startsWith('•') || line.startsWith('-') || line.startsWith('–')) ? line : '• ' + line,
-    ).join('\n')
-  }
+  // Existing multi-line content: strip any literal bullet marker already present
+  // (e.g. typed "- item" in the source) and join with a soft break instead of "\n".
+  const lines = text.split('\n').map(l => l.trim().replace(/^[•\-–]\s*/, '')).filter(Boolean)
+  if (lines.length >= 2) return lines.join('\v')
   return text
 }
 
-// Detects a short lead-in "header"/label line before a bullet list within ONE card's
-// text — e.g. "Залучення талантів" + 3 longer bullets, or "Що даємо:" + a list. Real
-// source content often gives the header line the SAME bullet formatting as the rest
-// (Slides has no "list header" role), so the only signal is: the line is either much
-// shorter than what follows, or explicitly ends with ":". Runs AFTER preprocessBentoText
-// (input lines already carry "• "/"-" markers, stripped here for comparison).
+// Detects a short lead-in "header"/label line before a list within ONE card's text —
+// e.g. "Залучення талантів" + 3 longer items, or "Що даємо:" + a list. Real source
+// content often gives the header line the SAME (bullet) formatting as the rest (Slides
+// has no "list header" role), so the only signal is: the line is either much shorter
+// than what follows, or explicitly ends with ":". Runs on RAW (pre-preprocessBentoText)
+// \n-separated lines — the header stays its own real paragraph (\n before the body),
+// only the body items below it become one \v-joined paragraph.
 function splitCardHeader(text: string): { header: string; bodyLines: string[] } | null {
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  const lines = text.split('\n').map(l => l.trim().replace(/^[•\-–]\s*/, '')).filter(Boolean)
   if (lines.length < 2) return null
-  const stripBullet = (l: string) => l.replace(/^[•\-–]\s*/, '').trim()
-  const first = stripBullet(lines[0])
-  const rest = lines.slice(1).map(stripBullet).filter(Boolean)
+  const first = lines[0]
+  const rest = lines.slice(1)
   if (!first || rest.length < 1) return null
   const endsWithColon = /[:：]\s*$/.test(first)
   const avgRestLen = rest.reduce((s, l) => s + l.length, 0) / rest.length
@@ -1441,7 +1428,7 @@ function splitCardHeader(text: string): { header: string; bodyLines: string[] } 
   if (!endsWithColon && !isShort) return null
   const header = first.replace(/[:：]\s*$/, '').trim()
   if (!header) return null
-  return { header, bodyLines: rest.map(l => `• ${l}`) }
+  return { header, bodyLines: rest }
 }
 
 // title_body/title_photo ТЕКСТ can hold SEVERAL blank-line-separated groups (unlike a
@@ -1454,21 +1441,24 @@ function formatTitleBodyText(text: string): string {
   const groups = text.split(/\n\s*\n/).map(g => g.trim()).filter(Boolean)
   if (groups.length === 0) return text
   return groups.map(group => {
-    const bulleted = preprocessBentoText(group)
-    const split = splitCardHeader(bulleted)
-    return split ? [split.header, ...split.bodyLines].join('\n') : bulleted
+    const split = splitCardHeader(group)  // needs RAW \n-separated lines
+    return split
+      ? `${split.header}\n${split.bodyLines.join('\v')}`
+      : preprocessBentoText(group)
   }).join('\n\n')
 }
 
 // Finds each group's header line (formatTitleBodyText) within the FINAL joined text,
-// as {start, end} character offsets — for FIXED_RANGE white-color styling.
+// as {start, end} character offsets — for FIXED_RANGE white-color styling. By
+// construction a group is either "header\nbody" (real \n = header present) or a plain
+// \v-joined (or single-line) body with no \n at all.
 function findGroupHeaderRanges(text: string): Array<{ start: number; end: number }> {
   const ranges: Array<{ start: number; end: number }> = []
   let offset = 0
   for (const group of text.split('\n\n')) {
-    const lines = group.split('\n')
-    if (lines.length >= 2 && !lines[0].startsWith('•') && lines[1].startsWith('•') && lines[0].length > 0) {
-      ranges.push({ start: offset, end: offset + lines[0].length })
+    const nlIdx = group.indexOf('\n')
+    if (nlIdx > 0) {
+      ranges.push({ start: offset, end: offset + nlIdx })
     }
     offset += group.length + 2  // +2 accounts for the "\n\n" separator between groups
   }
@@ -1480,7 +1470,7 @@ function findGroupHeaderRanges(text: string): Array<{ start: number; end: number
 // pt that function already verified fits.
 function countWrappedLines(text: string, wPx: number, pt: number): number {
   const cpl = Math.max(1, Math.floor(wPx / (pt * 2.667 * 0.65)))
-  const paras = text.split('\n').filter(p => p.trim())
+  const paras = text.split(/[\n\v]/).filter(p => p.trim())
   return paras.reduce((sum, p) => {
     const words = p.split(/\s+/).filter(Boolean)
     let lines = 1, cur = 0
@@ -1498,7 +1488,9 @@ function countWrappedLines(text: string, wPx: number, pt: number): number {
 // groupPt unchanged (no bump — the header still gets a WHITE color-only distinction at
 // the call site) when there isn't enough slack to raise it without overflowing.
 function computeHeaderPt(text: string, dims: { w: number; h: number }, groupPt: number, maxPt: number): number {
-  if (!splitCardHeader(text)) return groupPt
+  // By construction (preprocessBentoText/splitCardHeader reconstruction above) a header
+  // is present iff there's a real \n — the body itself is \v-joined, no \n left in it.
+  if (text.indexOf('\n') <= 0) return groupPt
   const lines = text.split('\n')
   const headerLine = lines[0].trim()
   const bodyLines = countWrappedLines(lines.slice(1).join('\n'), dims.w, groupPt)
@@ -3594,14 +3586,15 @@ export async function buildPresentation(
       if (!processed[tok]) continue
       // two_columns_plain/labeled: КОЛОНКА body uses label\nbody pattern — no bullet conversion
       if (compId === 'two_columns_plain' || compId === 'two_columns_labeled') continue
-      processed[tok] = preprocessBentoText(processed[tok])
-      // Pull a short lead-in line (e.g. "Залучення талантів") out of the bulleted list
-      // so it can be styled as a header (white + bigger, see the FIXED_RANGE requests
-      // below) instead of looking like just another bullet point.
+      // Header detection needs the RAW \n-separated lines (before preprocessBentoText
+      // joins the list into one \v-separated paragraph) — pull a short lead-in line
+      // (e.g. "Залучення талантів") out first so it can be styled as a header (white +
+      // bigger, see the FIXED_RANGE requests below) instead of looking like just
+      // another list item.
       const headerSplit = splitCardHeader(processed[tok])
-      if (headerSplit) {
-        processed[tok] = [headerSplit.header, ...headerSplit.bodyLines].join('\n')
-      }
+      processed[tok] = headerSplit
+        ? `${headerSplit.header}\n${headerSplit.bodyLines.join('\v')}`
+        : preprocessBentoText(processed[tok])
     }
     bentoProcessedSlots.set(i, processed)
   }
@@ -4073,36 +4066,16 @@ export async function buildPresentation(
             textRange: { type: 'ALL' },
           },
         })
-        // Hanging indent for "• " bullet lines rendered as literal text. Native Slides
-        // bullets (createParagraphBullets) were tried instead — correct indent for
-        // free, but the glyph/indent come from the presentation's internal List
-        // definition, which updateParagraphStyle's indentStart/indentFirstLine cannot
-        // override once a bullet is attached (request "succeeds", zero visual effect).
-        // Back to manual: indentStart pushes every line right, indentFirstLine cancels
-        // that for line 1 so the bullet stays at the margin. ~0.5em approximates "• "
-        // width — first attempt at 1em overshot noticeably per user feedback; halved.
-        if (slotValue.includes('•')) {
-          const indentPt = Math.round(pt * 0.5)
-          requests.push({
-            updateParagraphStyle: {
-              objectId: el.objectId,
-              style: {
-                indentStart: { magnitude: indentPt, unit: 'PT' },
-                indentFirstLine: { magnitude: -indentPt, unit: 'PT' },
-              },
-              fields: 'indentStart,indentFirstLine',
-              textRange: { type: 'ALL' },
-            },
-          })
-        }
-        // Header line (splitCardHeader, applied during preprocessing): no bullet on
-        // line 1 while line 2+ are bulleted. Always WHITE; bigger only if it fits
-        // without pushing the bulleted body into overflow (computeHeaderPt checks).
-        const headerLines = slotValue.split('\n')
-        const hasHeader = headerLines.length >= 2 &&
-          !headerLines[0].trim().startsWith('•') && headerLines[1].trim().startsWith('•')
+        // List items are joined with \v (soft line break, see preprocessBentoText) —
+        // no bullet character, no per-item paragraph, so no hanging indent to compute:
+        // every line already starts flush at the paragraph's own left edge.
+        // Header line (splitCardHeader, applied during preprocessing): the ONLY real
+        // \n left in the text separates it from the \v-joined body. Always WHITE;
+        // bigger only if it fits without pushing the body into overflow (computeHeaderPt).
+        const headerNlIdx = slotValue.indexOf('\n')
+        const hasHeader = headerNlIdx > 0
         if (hasHeader) {
-          const headerLen = Math.min(headerLines[0].length, actualLen)
+          const headerLen = Math.min(headerNlIdx, actualLen)
           if (headerLen > 0) {
             const hDims  = bentoDims(compId)
             const hMaxPt = BENTO_MAX_PT[compId] ?? pt
@@ -4233,22 +4206,9 @@ export async function buildPresentation(
             textRange: { type: 'ALL' },
           },
         })
-        // Same header+bullet treatment as title_body (formatTitleBodyText, applied
-        // upstream): hanging indent for bullets, WHITE for a group's lead-in line.
-        if (bodyText.includes('•')) {
-          const indentPt = Math.round(bodyPt * 0.5)
-          requests.push({
-            updateParagraphStyle: {
-              objectId: el.objectId,
-              style: {
-                indentStart: { magnitude: indentPt, unit: 'PT' },
-                indentFirstLine: { magnitude: -indentPt, unit: 'PT' },
-              },
-              fields: 'indentStart,indentFirstLine',
-              textRange: { type: 'ALL' },
-            },
-          })
-        }
+        // Same header+list treatment as title_body (formatTitleBodyText, applied
+        // upstream): WHITE for a group's lead-in line. No hanging indent needed —
+        // list items are \v-joined (soft line break), not separate bulleted paragraphs.
         for (const range of findGroupHeaderRanges(bodyText)) {
           const endIndex = Math.min(range.end, bodyText.length)
           if (endIndex <= range.start) continue

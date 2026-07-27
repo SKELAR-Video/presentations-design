@@ -419,10 +419,11 @@ function _vTextFits(text: string, wPx: number, hPx: number, pt: number): boolean
   return lines <= maxLines
 }
 
-// Paragraph-aware: mirrors textFitsParagraphs in lib/google.ts.
+// Paragraph-aware: mirrors textFitsParagraphs in lib/google.ts. \v = soft line break
+// (Shift+Enter) for list items sharing one paragraph — forces its own line like \n.
 function _vTextFitsParagraphs(text: string, wPx: number, hPx: number, pt: number): boolean {
   if (!text.trim()) return true
-  const paras = text.split('\n').filter(p => p.trim())
+  const paras = text.split(/[\n\v]/).filter(p => p.trim())
   if (paras.length <= 1) return _vTextFits(text, wPx, hPx, pt)
   const totalLines = paras.reduce((s, p) => s + _vEstimateLines(p, wPx, pt), 0)
   const maxLines   = Math.max(1, Math.floor(hPx / (pt * 2.667 * 1.4)))
@@ -455,14 +456,10 @@ function _vPreprocessBentoText(text: string, compId: string, tok: string): strin
 
   if (text.includes(' · ')) {
     const items = text.split(' · ').map(s => s.trim()).filter(Boolean)
-    if (items.length >= 2) return items.map(item => '• ' + item).join('\n')
+    if (items.length >= 2) return items.join('\v')
   }
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-  if (lines.length >= 2) {
-    return lines.map(line =>
-      (line.startsWith('•') || line.startsWith('-') || line.startsWith('–')) ? line : '• ' + line,
-    ).join('\n')
-  }
+  const lines = text.split('\n').map(l => l.trim().replace(/^[•\-–]\s*/, '')).filter(Boolean)
+  if (lines.length >= 2) return lines.join('\v')
   return text
 }
 
@@ -498,13 +495,14 @@ function checkBentoLayout(compId: string, slots: Record<string, string>): CheckR
       fails.push(`${tok}: overflows at ${uniformPt}pt`)
       continue
     }
-    // Check: bullet separators present when list items detected
+    // Check: " · " separators got converted to a real per-item line break (\v soft
+    // break — see preprocessBentoText in lib/google.ts), not left as inline " · " text.
     const raw = (slots[tok] ?? '').trim()
-    if (raw.includes(' · ') && !text.includes('•')) {
-      fails.push(`${tok}: list items joined with · instead of bullet lines`)
+    if (raw.includes(' · ') && !text.includes('\v') && !text.includes('\n')) {
+      fails.push(`${tok}: list items joined with · instead of separate lines`)
     }
     // Estimated card height vs max card zone height
-    const paras = text.split('\n').filter(p => p.trim())
+    const paras = text.split(/[\n\v]/).filter(p => p.trim())
     const totalLines = paras.reduce((s, p) => s + _vEstimateLines(p, dims.w, uniformPt), 0)
     const contentH   = Math.round(totalLines * uniformPt * 2.667 * 1.4)
     const cardH      = contentH + 2 * _V_VERT_PAD
