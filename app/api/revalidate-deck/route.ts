@@ -59,6 +59,15 @@ export async function GET(request: NextRequest) {
   const pres = await slidesApi.presentations.get({ presentationId })
   const slidesData = pres.data.slides ?? []
 
+  // checkNoDuplicateTitle exempts "variant siblings" (title_body/title_photo/two_columns/...
+  // all showing the same ЗАГОЛОВОК on purpose) by matching a `<base>_v<N>` id suffix —
+  // the shape generation assigns (see expandPlanWithVariants in lib/google.ts). That
+  // synthetic id isn't stored anywhere retrievable post-hoc, but the "Варіант дизайну N"
+  // pill IS still on the slide (buildPresentation always adds it for expanded variants) —
+  // reconstruct an equivalent `_vN` id from that pill instead of the real objectId.
+  const VARIANT_PILL_RE = /^Варіант дизайну (\d+)$/
+  let variantGroupCounter = 0
+
   const planSlides: SlidePlan['slides'] = []
   const planPageIds: string[] = []
   const skipped: number[] = []
@@ -69,7 +78,17 @@ export async function GET(request: NextRequest) {
       skipped.push(i)
       return
     }
-    planSlides.push({ id: slide.objectId, composition: parsed.composition, slots: parsed.slots, flags: {} })
+    let id: string = slide.objectId
+    for (const el of slide.pageElements ?? []) {
+      const text = (el.shape?.text?.textElements ?? []).map(te => te.textRun?.content ?? '').join('').trim()
+      const m = text.match(VARIANT_PILL_RE)
+      if (m) {
+        if (m[1] === '1') variantGroupCounter++
+        id = `vgroup${variantGroupCounter}_v${m[1]}`
+        break
+      }
+    }
+    planSlides.push({ id, composition: parsed.composition, slots: parsed.slots, flags: {} })
     planPageIds.push(slide.objectId)
   })
 
