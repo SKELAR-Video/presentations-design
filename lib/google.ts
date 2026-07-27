@@ -3986,6 +3986,26 @@ export async function buildPresentation(
             textRange: { type: 'ALL' },
           },
         })
+        // Hanging indent for "• " bullet lines rendered as literal text (not native
+        // Slides bullets): without this, a wrapped second line starts back at the box's
+        // left edge instead of lining up under the first line's text. indentStart pushes
+        // every line right by ~1 char width; indentFirstLine cancels that for line 1 so
+        // the bullet itself stays at the margin. ~1em (pt×1) approximates "• " width —
+        // not exact per-glyph metrics, but close enough to read as aligned.
+        if (slotValue.includes('•')) {
+          const indentPt = Math.round(pt)
+          requests.push({
+            updateParagraphStyle: {
+              objectId: el.objectId,
+              style: {
+                indentStart: { magnitude: indentPt, unit: 'PT' },
+                indentFirstLine: { magnitude: -indentPt, unit: 'PT' },
+              },
+              fields: 'indentStart,indentFirstLine',
+              textRange: { type: 'ALL' },
+            },
+          })
+        }
         // Header line (splitCardHeader, applied during preprocessing): no bullet on
         // line 1 while line 2+ are bulleted. Always WHITE; bigger only if it fits
         // without pushing the bulleted body into overflow (computeHeaderPt checks).
