@@ -4005,6 +4005,11 @@ export async function buildPresentation(
             if (headerPt > pt) {
               style.fontSize = { magnitude: headerPt, unit: 'PT' }
               fields += ',fontSize'
+              // readDeckFacts reads fontSize off the shape's FIRST text run, which is
+              // now the header — update the recorded expectation (same object stored
+              // in expectedCardPts) so verification checks what's actually there
+              // instead of flagging the intentional header/body size difference.
+              cardPts[matchedToken] = headerPt
             }
             fixedRangeStyleRequests.push({
               updateTextStyle: {
