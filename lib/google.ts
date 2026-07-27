@@ -3989,10 +3989,23 @@ export async function buildPresentation(
         if (bodyLineCount >= 2) {
           const bodyStart = headerSplit ? Math.min(cardLines[0].length + 1, actualLen) : 0
           if (bodyStart < actualLen) {
+            const bodyRange = { type: 'FIXED_RANGE' as const, startIndex: bodyStart, endIndex: actualLen }
             fixedRangeStyleRequests.push({
-              createParagraphBullets: {
+              createParagraphBullets: { objectId: el.objectId, textRange: bodyRange },
+            })
+            // Slides' default indent for a level-0 disc bullet (indentFirstLine=18pt,
+            // indentStart=36pt) left an 18pt gap between the glyph and the text — halved
+            // to 9pt (indentStart=27pt) per user feedback. Must be set AFTER
+            // createParagraphBullets, which otherwise resets indent to its own default.
+            fixedRangeStyleRequests.push({
+              updateParagraphStyle: {
                 objectId: el.objectId,
-                textRange: { type: 'FIXED_RANGE', startIndex: bodyStart, endIndex: actualLen },
+                style: {
+                  indentFirstLine: { magnitude: 18, unit: 'PT' },
+                  indentStart: { magnitude: 27, unit: 'PT' },
+                },
+                fields: 'indentFirstLine,indentStart',
+                textRange: bodyRange,
               },
             })
           }
