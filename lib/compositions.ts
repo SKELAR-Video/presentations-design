@@ -243,10 +243,11 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
   {
     id: 'closing',
     name: 'Фінальний слайд',
-    when_to_use: 'останній слайд',
+    when_to_use: 'останній слайд. Якщо останній аркуш містить БІЛЬШЕ за короткий заголовок (напр. підсумковий текст, тези, список) — увесь цей текст іде в ПІДЗАГОЛОВОК, дослівно, без скорочення.',
     themes: ['dark', 'red', 'light'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 60, style: 'h1' },
+      { name: 'ПІДЗАГОЛОВОК', type: 'text', max_chars: 1500, style: 'body', optional: true, float_after: 'ЗАГОЛОВОК', float_gap: 60 },
     ],
   },
   {

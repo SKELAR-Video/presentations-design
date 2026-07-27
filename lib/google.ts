@@ -1191,31 +1191,34 @@ const _TB_TITLE_PT = 36  // ЗАГОЛОВОК pt fixed in title_body master tem
 function buildTitleBodyFloatRequests(
   slide: slides_v1.Schema$Page,
   slots: Record<string, string>,
+  opts: { titleH: number; titlePt: number; titleSlot?: string; bodySlot?: string } = { titleH: _H1_FIXED_36, titlePt: _TB_TITLE_PT },
 ): { main: object[]; fixedRange: object[] } {
-  const titleText = (slots['ЗАГОЛОВОК'] ?? '').trim()
-  const bodyText  = (slots['ТЕКСТ']     ?? '').trim()
+  const titleSlot = opts.titleSlot ?? 'ЗАГОЛОВОК'
+  const bodySlot  = opts.bodySlot  ?? 'ТЕКСТ'
+  const titleText = (slots[titleSlot] ?? '').trim()
+  const bodyText  = (slots[bodySlot]  ?? '').trim()
   if (!titleText) return { main: [], fixedRange: [] }
 
-  const titleH   = _H1_FIXED_36
+  const titleH   = opts.titleH
   const textY    = _PAD + titleH + TITLE_GAP  // 380 (fixed)
   const textMaxH = Math.max(1, _H_SLIDE - _PAD - 52 - _GAP - textY)  // 488px
 
-  // Auto-shrink ТЕКСТ: largest pt at which body text fits in the available box.
+  // Auto-shrink body: largest pt at which body text fits in the available box.
   let bodyPt = _TB_BODY_STEPS[0]
   if (bodyText) {
     for (const pt of _TB_BODY_STEPS) {
       if (textFitsParagraphs(bodyText, _UW, textMaxH, pt)) { bodyPt = pt; break }
     }
   }
-  // Typography hierarchy guard: ТЕКСТ must be strictly smaller than ЗАГОЛОВОК (fixed 36pt).
-  if (bodyPt >= _TB_TITLE_PT) {
-    const lower = _TB_BODY_STEPS.find(pt => pt < _TB_TITLE_PT)
+  // Typography hierarchy guard: body must be strictly smaller than title.
+  if (bodyPt >= opts.titlePt) {
+    const lower = _TB_BODY_STEPS.find(pt => pt < opts.titlePt)
     if (lower !== undefined) {
-      console.log(`[title-body-hierarchy] bodyPt ${bodyPt} → ${lower} (title fixed=${_TB_TITLE_PT}pt)`)
+      console.log(`[title-body-hierarchy] bodyPt ${bodyPt} → ${lower} (title fixed=${opts.titlePt}pt)`)
       bodyPt = lower
     }
   }
-  console.log(`[title-body-fit] bodyLen=${bodyText.length} | chosen_font=${bodyPt}`)
+  console.log(`[title-body-fit] slot=${bodySlot} bodyLen=${bodyText.length} | chosen_font=${bodyPt}`)
 
   const reqs: object[] = []
   const fixedRange: object[] = []
@@ -1224,10 +1227,10 @@ function buildTitleBodyFloatRequests(
     const raw = (el.shape?.text?.textElements ?? []).map(te => te.textRun?.content ?? '').join('')
     const sW  = el.size.width?.magnitude  ?? 0
     const sH  = el.size.height?.magnitude ?? 0
-    if (raw.includes('{{ЗАГОЛОВОК}}')) {
+    if (raw.includes(`{{${titleSlot}}}`)) {
       reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, _PAD - _INSET, _TITLE_W + 2 * _INSET, titleH + 2 * _INSET, sW, sH))
     }
-    if (raw.includes('{{ТЕКСТ}}')) {
+    if (raw.includes(`{{${bodySlot}}}`)) {
       reqs.push(makeElemTransform(el.objectId, _PAD - _INSET, textY - _INSET, _UW + 2 * _INSET, (bodyText ? textMaxH : 1) + 2 * _INSET, sW, sH))
       if (bodyText) {
         reqs.push({
@@ -3249,10 +3252,9 @@ export async function buildPresentation(
     }
   }
 
-  // Step 2.0: Strip slots not in the closing composition (closing = only ЗАГОЛОВОК).
+  // Step 2.0: Strip slots not in the closing composition (master has no image placeholder).
   for (const slide of plan.slides) {
     if (slide.composition !== 'closing') continue
-    delete slide.slots['ПІДЗАГОЛОВОК']
     delete slide.slots['ЗОБРАЖЕННЯ_1']
   }
 
@@ -3625,6 +3627,17 @@ export async function buildPresentation(
     bentoProcessedSlots.set(i, processed)
   }
 
+  // closing ПІДЗАГОЛОВОК: same header+bullet treatment when it carries a real body
+  // (extra text beyond a short title) instead of a one-line subtitle.
+  for (let i = 0; i < plan.slides.length; i++) {
+    if (plan.slides[i].composition !== 'closing') continue
+    const raw = plan.slides[i].slots['ПІДЗАГОЛОВОК']
+    if (!raw) continue
+    const processed = bentoProcessedSlots.get(i) ?? { ...plan.slides[i].slots }
+    processed['ПІДЗАГОЛОВОК'] = formatTitleBodyText(raw)
+    bentoProcessedSlots.set(i, processed)
+  }
+
   // Delete slides not needed by the plan
   for (const slide of updatedSlides) {
     if (!keepSet.has(slide.objectId!)) {
@@ -3821,9 +3834,14 @@ export async function buildPresentation(
     }
   }
 
-  // ── Closing title-only: override section-float ЗАГОЛОВОК with cover_title_only style ──
-  // Must run AFTER section/closing loop so these requests come last (override subtitle-collapsed
-  // geometry set by buildSectionFloatRequests above).
+  // fixedRangeStyleRequests isn't declared until later in this function (colon-split
+  // batch) — buffered here and flushed into it right after that declaration below.
+  const titleBodyFixedRange: object[] = []
+
+  // ── Closing: either a substantial ПІДЗАГОЛОВОК (auto-shrink + list treatment, same
+  // as title_body's ТЕКСТ) or a bare title (collapse to cover_title_only style). Must
+  // run AFTER the section/closing loop so these requests come last (override the
+  // subtitle-collapsed geometry set by buildSectionFloatRequests above).
   for (let i = 0; i < plan.slides.length; i++) {
     if (plan.slides[i].composition !== 'closing') continue
     const slots = plan.slides[i].slots
@@ -3831,6 +3849,15 @@ export async function buildPresentation(
     if (!pageId) continue
     const slide = updatedSlides.find(s => s.objectId === pageId)
     if (!slide) continue
+    if ((slots['ПІДЗАГОЛОВОК'] ?? '').trim()) {
+      const pSlots = bentoProcessedSlots.get(i) ?? slots
+      const { main, fixedRange } = buildTitleBodyFloatRequests(slide, pSlots, {
+        titleH: _H1_FIXED_44, titlePt: 44, bodySlot: 'ПІДЗАГОЛОВОК',
+      })
+      requests.push(...main)
+      titleBodyFixedRange.push(...fixedRange)
+      continue
+    }
     requests.push(...buildCoverTitleOnlyRequests(slide, slots, pageId, i))
     // Master always has {{ПІДЗАГОЛОВОК}} box — replace with '' so the token doesn't show
     requests.push({
@@ -3843,9 +3870,6 @@ export async function buildPresentation(
   }
 
   // ── title_body: float ТЕКСТ below ЗАГОЛОВОК (gap = TITLE_GAP) ────────────────────
-  // fixedRangeStyleRequests isn't declared until later in this function (colon-split
-  // batch) — buffered here and flushed into it right after that declaration below.
-  const titleBodyFixedRange: object[] = []
   for (let i = 0; i < plan.slides.length; i++) {
     if (plan.slides[i].composition !== 'title_body') continue
     const pageId = planPageIds[i]
