@@ -1244,6 +1244,19 @@ function buildTitleBodyFloatRequests(
         // color is MUTED gray, so this reads as a clear sub-heading). No hanging
         // indent needed: \v doesn't start a new paragraph, so every line already
         // starts flush at the paragraph's own left edge.
+        // 140% lineSpacing gives adjacent \v-joined items breathing room without a
+        // bullet marker — matches the 1.4 factor lineH() already assumes everywhere
+        // in this file, so it doesn't cut into any overflow safety margin.
+        if (bodyText.includes('\v')) {
+          reqs.push({
+            updateParagraphStyle: {
+              objectId: el.objectId,
+              style: { lineSpacing: 140 },
+              fields: 'lineSpacing',
+              textRange: { type: 'ALL' },
+            },
+          })
+        }
         for (const range of findGroupHeaderRanges(bodyText)) {
           const endIndex = Math.min(range.end, bodyText.length)
           if (endIndex <= range.start) continue
@@ -1424,7 +1437,7 @@ function splitCardHeader(text: string): { header: string; bodyLines: string[] } 
   if (!first || rest.length < 1) return null
   const endsWithColon = /[:：]\s*$/.test(first)
   const avgRestLen = rest.reduce((s, l) => s + l.length, 0) / rest.length
-  const isShort = first.length <= 40 && first.length <= avgRestLen * 0.6
+  const isShort = first.length <= 40 && first.length <= avgRestLen * 0.7
   if (!endsWithColon && !isShort) return null
   const header = first.replace(/[:：]\s*$/, '').trim()
   if (!header) return null
@@ -4068,7 +4081,23 @@ export async function buildPresentation(
         })
         // List items are joined with \v (soft line break, see preprocessBentoText) —
         // no bullet character, no per-item paragraph, so no hanging indent to compute:
-        // every line already starts flush at the paragraph's own left edge.
+        // every line already starts flush at the paragraph's own left edge. Without a
+        // bullet marker, adjacent items need SOME vertical gap to read as separate
+        // entries rather than run-on text — the master template's default 90%
+        // lineSpacing (tight, meant for single-line labels) doesn't give that. 140%
+        // matches the 1.4 factor lineH() already assumes for every capacity/overflow
+        // calculation in this file, so this doesn't reduce any safety margin — it just
+        // makes the actual render match what the math already budgets for.
+        if (slotValue.includes('\v')) {
+          requests.push({
+            updateParagraphStyle: {
+              objectId: el.objectId,
+              style: { lineSpacing: 140 },
+              fields: 'lineSpacing',
+              textRange: { type: 'ALL' },
+            },
+          })
+        }
         // Header line (splitCardHeader, applied during preprocessing): the ONLY real
         // \n left in the text separates it from the \v-joined body. Always WHITE;
         // bigger only if it fits without pushing the body into overflow (computeHeaderPt).
@@ -4209,6 +4238,18 @@ export async function buildPresentation(
         // Same header+list treatment as title_body (formatTitleBodyText, applied
         // upstream): WHITE for a group's lead-in line. No hanging indent needed —
         // list items are \v-joined (soft line break), not separate bulleted paragraphs.
+        // 140% lineSpacing gives adjacent items breathing room without a bullet marker
+        // — matches the 1.4 factor lineH() already assumes everywhere in this file.
+        if (bodyText.includes('\v')) {
+          requests.push({
+            updateParagraphStyle: {
+              objectId: el.objectId,
+              style: { lineSpacing: 140 },
+              fields: 'lineSpacing',
+              textRange: { type: 'ALL' },
+            },
+          })
+        }
         for (const range of findGroupHeaderRanges(bodyText)) {
           const endIndex = Math.min(range.end, bodyText.length)
           if (endIndex <= range.start) continue
