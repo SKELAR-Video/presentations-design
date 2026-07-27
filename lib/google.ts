@@ -1189,10 +1189,10 @@ const _TB_TITLE_PT = 36  // ЗАГОЛОВОК pt fixed in title_body master tem
 function buildTitleBodyFloatRequests(
   slide: slides_v1.Schema$Page,
   slots: Record<string, string>,
-): object[] {
+): { main: object[]; fixedRange: object[] } {
   const titleText = (slots['ЗАГОЛОВОК'] ?? '').trim()
   const bodyText  = (slots['ТЕКСТ']     ?? '').trim()
-  if (!titleText) return []
+  if (!titleText) return { main: [], fixedRange: [] }
 
   const titleH   = _H1_FIXED_36
   const textY    = _PAD + titleH + TITLE_GAP  // 380 (fixed)
@@ -1216,6 +1216,7 @@ function buildTitleBodyFloatRequests(
   console.log(`[title-body-fit] bodyLen=${bodyText.length} | chosen_font=${bodyPt}`)
 
   const reqs: object[] = []
+  const fixedRange: object[] = []
   for (const el of slide.pageElements ?? []) {
     if (el.shape?.shapeType !== 'TEXT_BOX' || !el.objectId || !el.transform || !el.size) continue
     const raw = (el.shape?.text?.textElements ?? []).map(te => te.textRun?.content ?? '').join('')
@@ -1235,10 +1236,40 @@ function buildTitleBodyFloatRequests(
             textRange: { type: 'ALL' },
           },
         })
+        // formatTitleBodyText (applied upstream, before this text was inserted) bullets
+        // each blank-line-separated group and pulls out a short lead-in line as a
+        // header — style it here: hanging indent for the bullets, WHITE for headers
+        // (default ТЕКСТ color is MUTED gray, so this reads as a clear sub-heading).
+        if (bodyText.includes('•')) {
+          const indentPt = Math.round(bodyPt * 0.5)
+          reqs.push({
+            updateParagraphStyle: {
+              objectId: el.objectId,
+              style: {
+                indentStart: { magnitude: indentPt, unit: 'PT' },
+                indentFirstLine: { magnitude: -indentPt, unit: 'PT' },
+              },
+              fields: 'indentStart,indentFirstLine',
+              textRange: { type: 'ALL' },
+            },
+          })
+        }
+        for (const range of findGroupHeaderRanges(bodyText)) {
+          const endIndex = Math.min(range.end, bodyText.length)
+          if (endIndex <= range.start) continue
+          fixedRange.push({
+            updateTextStyle: {
+              objectId: el.objectId,
+              style: { foregroundColor: { opaqueColor: { rgbColor: { red: 1, green: 1, blue: 1 } } } },
+              fields: 'foregroundColor',
+              textRange: { type: 'FIXED_RANGE', startIndex: range.start, endIndex },
+            },
+          })
+        }
       }
     }
   }
-  return reqs
+  return { main: reqs, fixedRange }
 }
 
 // Returns the LARGEST pt (≤ BENTO_MAX_PT, ≥ BENTO_MIN_PT) at which every non-empty card fits.
@@ -1411,6 +1442,37 @@ function splitCardHeader(text: string): { header: string; bodyLines: string[] } 
   const header = first.replace(/[:：]\s*$/, '').trim()
   if (!header) return null
   return { header, bodyLines: rest.map(l => `• ${l}`) }
+}
+
+// title_body/title_photo ТЕКСТ can hold SEVERAL blank-line-separated groups (unlike a
+// single bento card) — e.g. a brief with 3+ categories that's too big to fit any column
+// composition, falling back to one flat text slot. Without this, that fallback reads as
+// one undifferentiated wall of text with no bullets or hierarchy. Applies the same
+// per-group header+bullet treatment as a bento card, group by group.
+function formatTitleBodyText(text: string): string {
+  if (!text.trim()) return text
+  const groups = text.split(/\n\s*\n/).map(g => g.trim()).filter(Boolean)
+  if (groups.length === 0) return text
+  return groups.map(group => {
+    const bulleted = preprocessBentoText(group)
+    const split = splitCardHeader(bulleted)
+    return split ? [split.header, ...split.bodyLines].join('\n') : bulleted
+  }).join('\n\n')
+}
+
+// Finds each group's header line (formatTitleBodyText) within the FINAL joined text,
+// as {start, end} character offsets — for FIXED_RANGE white-color styling.
+function findGroupHeaderRanges(text: string): Array<{ start: number; end: number }> {
+  const ranges: Array<{ start: number; end: number }> = []
+  let offset = 0
+  for (const group of text.split('\n\n')) {
+    const lines = group.split('\n')
+    if (lines.length >= 2 && !lines[0].startsWith('•') && lines[1].startsWith('•') && lines[0].length > 0) {
+      ranges.push({ start: offset, end: offset + lines[0].length })
+    }
+    offset += group.length + 2  // +2 accounts for the "\n\n" separator between groups
+  }
+  return ranges
 }
 
 // Word-wrapped line count for a (possibly multi-paragraph) body at a given pt — same
@@ -3544,6 +3606,19 @@ export async function buildPresentation(
     bentoProcessedSlots.set(i, processed)
   }
 
+  // title_body/title_photo ТЕКСТ: same header+bullet treatment, per blank-line group
+  // (see formatTitleBodyText). Stored in the SAME map — the replaceAllText loop below
+  // already falls back to `processedSlots?.[slotName] ?? slotValue` for any slot.
+  for (let i = 0; i < plan.slides.length; i++) {
+    const compId = plan.slides[i].composition
+    if (compId !== 'title_body' && compId !== 'title_photo') continue
+    const raw = plan.slides[i].slots['ТЕКСТ']
+    if (!raw) continue
+    const processed = bentoProcessedSlots.get(i) ?? { ...plan.slides[i].slots }
+    processed['ТЕКСТ'] = formatTitleBodyText(raw)
+    bentoProcessedSlots.set(i, processed)
+  }
+
   // Delete slides not needed by the plan
   for (const slide of updatedSlides) {
     if (!keepSet.has(slide.objectId!)) {
@@ -3762,13 +3837,19 @@ export async function buildPresentation(
   }
 
   // ── title_body: float ТЕКСТ below ЗАГОЛОВОК (gap = TITLE_GAP) ────────────────────
+  // fixedRangeStyleRequests isn't declared until later in this function (colon-split
+  // batch) — buffered here and flushed into it right after that declaration below.
+  const titleBodyFixedRange: object[] = []
   for (let i = 0; i < plan.slides.length; i++) {
     if (plan.slides[i].composition !== 'title_body') continue
     const pageId = planPageIds[i]
     if (!pageId) continue
     const slide = updatedSlides.find(s => s.objectId === pageId)
     if (!slide) continue
-    requests.push(...buildTitleBodyFloatRequests(slide, plan.slides[i].slots))
+    const pSlots = bentoProcessedSlots.get(i) ?? plan.slides[i].slots
+    const { main, fixedRange } = buildTitleBodyFloatRequests(slide, pSlots)
+    requests.push(...main)
+    titleBodyFixedRange.push(...fixedRange)
   }
 
   // ── badges: float title + delete ПУНКТИ placeholder + create pill shapes ────
@@ -3898,7 +3979,7 @@ export async function buildPresentation(
   // Font-size auto-shrink + colon-split colouring.
   // Runs AFTER replaceAllText — object IDs stay valid, text is already real content.
   // FIXED_RANGE requests are isolated in a separate batch so a bad endIndex never kills the main batch.
-  const fixedRangeStyleRequests: object[] = []
+  const fixedRangeStyleRequests: object[] = [...titleBodyFixedRange]
   const _WHITE = { red: 1, green: 1, blue: 1 }
   // Save per-slide expected card pts for readDeckFacts verification.
   const expectedCardPts = new Map<number, Record<string, number>>()
@@ -4107,8 +4188,9 @@ export async function buildPresentation(
     if (!pageId) continue
     const slide = updatedSlides.find(s => s.objectId === pageId)
     if (!slide) continue
+    const pSlots   = bentoProcessedSlots.get(i) ?? plan.slides[i].slots
     const title    = plan.slides[i].slots['ЗАГОЛОВОК'] ?? ''
-    const bodyText = (plan.slides[i].slots['ТЕКСТ'] ?? '').trim()
+    const bodyText = (pSlots['ТЕКСТ'] ?? '').trim()
     const titlePt  = pickTitlePhotoPt(title)
 
     // Body font auto-shrink (same steps as title_body)
@@ -4151,6 +4233,34 @@ export async function buildPresentation(
             textRange: { type: 'ALL' },
           },
         })
+        // Same header+bullet treatment as title_body (formatTitleBodyText, applied
+        // upstream): hanging indent for bullets, WHITE for a group's lead-in line.
+        if (bodyText.includes('•')) {
+          const indentPt = Math.round(bodyPt * 0.5)
+          requests.push({
+            updateParagraphStyle: {
+              objectId: el.objectId,
+              style: {
+                indentStart: { magnitude: indentPt, unit: 'PT' },
+                indentFirstLine: { magnitude: -indentPt, unit: 'PT' },
+              },
+              fields: 'indentStart,indentFirstLine',
+              textRange: { type: 'ALL' },
+            },
+          })
+        }
+        for (const range of findGroupHeaderRanges(bodyText)) {
+          const endIndex = Math.min(range.end, bodyText.length)
+          if (endIndex <= range.start) continue
+          fixedRangeStyleRequests.push({
+            updateTextStyle: {
+              objectId: el.objectId,
+              style: { foregroundColor: { opaqueColor: { rgbColor: _WHITE } } },
+              fields: 'foregroundColor',
+              textRange: { type: 'FIXED_RANGE', startIndex: range.start, endIndex },
+            },
+          })
+        }
       }
     }
   }

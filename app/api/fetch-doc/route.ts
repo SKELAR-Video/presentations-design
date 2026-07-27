@@ -45,6 +45,13 @@ export type SourceSlide = { index: number; texts: string[]; columns: (number | n
 // ever become one flat title_body ТЕКСТ — there was no way to hand КОЛОНКА_1/КОЛОНКА_2
 // two DIFFERENT fragments when they both lived inside one shape. A single leading/
 // trailing blank line (common Slides artifact) does not produce an extra empty block.
+// Matches a Material Symbols/Icons glyph name ("verified", "trending_up") typed as
+// plain text with an icon font applied — visually a small icon in the source, but the
+// Slides API returns its underlying text content like any other run. Snake_case/lower-
+// ASCII-only is a reliable tell in an otherwise all-Cyrillic brief: real content is
+// never a single English identifier-shaped word on its own line.
+const ICON_GLYPH_RE = /^[a-z][a-z_]{1,30}$/
+
 function extractElementBlocks(el: slides_v1.Schema$PageElement): string[] {
   if (el.elementGroup?.children?.length) {
     const merged = el.elementGroup.children.flatMap(extractElementBlocks).filter(Boolean)
@@ -56,6 +63,13 @@ function extractElementBlocks(el: slides_v1.Schema$PageElement): string[] {
   let bulletLevel: number | null = null
   const flush = () => {
     const trimmed = current.replace(/\n+$/, '')
+    if (trimmed && ICON_GLYPH_RE.test(trimmed)) {
+      // Decorative icon glyph — drop entirely (not even as a block separator) so the
+      // next real line becomes line 1 of the block instead of a fake "header" candidate.
+      current = ''
+      bulletLevel = null
+      return
+    }
     lines.push(trimmed ? (bulletLevel !== null ? `${'  '.repeat(bulletLevel)}• ${trimmed}` : trimmed) : null)
     current = ''
     bulletLevel = null
