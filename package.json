@@ -6,7 +6,8 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check-deck": "node scripts/check-deck.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",
