@@ -406,11 +406,18 @@ const _V_BENTO_MAX_PT: Record<string, number> = {
   two_columns: 48, three_columns: 28, three_columns_num: 18, bento_bottom_4: 22, bento_right_2: 36, bento_right_3: 22, bento_right_2x2: 22,
 }
 
+// Must track lib/google.ts: FIT_LINE_FACTOR (body text renders at lineSpacing 90%, not the
+// old 140%) and LIST_ITEM_GAP_EM (spaceBelow after each list item). If this stays at the
+// old 1.4 while the generator budgets 1.2, the validator fails cards the generator
+// deliberately allowed to grow.
+const _V_FIT_LINE_FACTOR = 1.2
+const _V_LIST_ITEM_GAP_EM = 0.5
+
 function _vTextFits(text: string, wPx: number, hPx: number, pt: number): boolean {
   if (!text.trim()) return true
   const px = pt * 2.667
   const cpl = Math.max(1, Math.floor(wPx / (px * 0.48)))
-  const maxLines = Math.max(1, Math.floor(hPx / (px * 1.4)))
+  const maxLines = Math.max(1, Math.floor(hPx / (px * _V_FIT_LINE_FACTOR)))
   const words = text.split(/\s+/).filter(Boolean)
   let lines = 1, cur = 0
   for (const w of words) {
@@ -428,7 +435,9 @@ function _vTextFitsParagraphs(text: string, wPx: number, hPx: number, pt: number
   const paras = text.split(/[\n\v]/).filter(p => p.trim())
   if (paras.length <= 1) return _vTextFits(text, wPx, hPx, pt)
   const totalLines = paras.reduce((s, p) => s + _vEstimateLines(p, wPx, pt), 0)
-  const maxLines   = Math.max(1, Math.floor(hPx / (pt * 2.667 * 1.4)))
+  // The air between list items is real height — subtract it before counting lines
+  const gapPx      = paras.length * _V_LIST_ITEM_GAP_EM * pt * 2.667
+  const maxLines   = Math.max(1, Math.floor((hPx - gapPx) / (pt * 2.667 * _V_FIT_LINE_FACTOR)))
   return totalLines <= maxLines
 }
 
@@ -506,7 +515,10 @@ function checkBentoLayout(compId: string, slots: Record<string, string>): CheckR
     // Estimated card height vs max card zone height
     const paras = text.split(/[\n\v]/).filter(p => p.trim())
     const totalLines = paras.reduce((s, p) => s + _vEstimateLines(p, dims.w, uniformPt), 0)
-    const contentH   = Math.round(totalLines * uniformPt * 2.667 * 1.4)
+    const contentH   = Math.round(
+      totalLines * uniformPt * 2.667 * _V_FIT_LINE_FACTOR
+      + paras.length * _V_LIST_ITEM_GAP_EM * uniformPt * 2.667,
+    )
     const cardH      = contentH + 2 * _V_VERT_PAD
     cardHInfo.push(`${tok}:h=${cardH}`)
   }

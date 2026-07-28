@@ -32,7 +32,28 @@ const _NUM_TEXT_TOP_3 = _NUM_PAD + _NUM_H_3 + _NUM_GAP_3  // 130
 // kpi_cards card width (mirrors create-master kw formula)
 const _KW = Math.floor((_UW - 3 * _GAP) / 4)  // 407
 
-function bentoDims(compId: string): { w: number; h: number } | null {
+// Timeline layout: the dots — and the text below them — sit under the ACTUAL title, so a
+// one-line title leaves ~135px more text height than a three-line one. Single source of
+// truth for both the layout (buildTimelineLayoutRequests) and the font search (bentoDims),
+// which previously disagreed: the font search used a hard-coded worst case (300px title)
+// and threw that extra height away on every slide whose title was short.
+function timelineLayoutMetrics(titleText: string): { titleContentH: number; textY: number; textH: number } {
+  const lines = titleText.trim() ? estimateLineCount(titleText, _TITLE_W, TCL_TITLE_PT) : 1
+  const titleContentH = Math.min(
+    Math.max(Math.ceil(lines * lineH(TCL_TITLE_PT)), Math.ceil(lineH(TCL_TITLE_PT))),
+    TCL_TITLE_HMAX,
+  )
+  const textY = (_PAD - 1 + _INSET) + titleContentH + TCL_TITLE_GAP  // title box sits at y=99
+  return { titleContentH, textY, textH: _H - _PAD - textY }
+}
+
+// `ctx` carries what a composition needs to know its REAL text area. Timelines need the
+// slide's title (height) and which column this is (the two columns differ in width);
+// without it they fall back to the narrowest/shortest worst case, as before.
+function bentoDims(
+  compId: string,
+  ctx?: { titleText?: string; tokenIdx?: number },
+): { w: number; h: number } | null {
   // h = usable inner height inside the TEXT_BOX (after _INN padding on each side).
   // Layout places TEXT_BOX at offset _INN from card edge (then _INSET-compensated),
   // so inner content height = cardH - 2*_INN — must match pickBentoPt's height check.
@@ -65,13 +86,13 @@ function bentoDims(compId: string): { w: number; h: number } | null {
     const cw = Math.floor((_UW - 2 * 50) / 3)  // 540 — no card INN padding
     return { w: cw, h: _H - _PAD - 540 }        // {w: 540, h: 440}
   }
-  if (compId === 'three_columns_timeline') {
-    // conservative: max title=300px → dotsY=textY=478 → h=502; w=zone_w-dot-gap=496
-    return { w: 496, h: 502 }
-  }
-  if (compId === 'two_columns_timeline') {
-    // conservative: max title=300px → dotsY=textY=478 → h=502
-    return { w: 623, h: 502 }
+  if (compId === 'three_columns_timeline' || compId === 'two_columns_timeline') {
+    const isThree = compId === 'three_columns_timeline'
+    const w = isThree
+      ? TCL_ZONE_W_THREE - _AG_DOT_SZ - 10                              // zone − dot − gap = 496
+      : TCL_TEXT_W_TWO[ctx?.tokenIdx === 0 ? 0 : 1]                     // default: narrower column
+    if (ctx?.titleText === undefined) return { w, h: 502 }              // worst case (300px title)
+    return { w, h: timelineLayoutMetrics(ctx.titleText).textH }
   }
   if (compId === 'bento_bottom_4' || compId === 'four_columns' || compId === 'four_columns_num') {
     const cw = Math.floor((_UW - 3 * _GAP) / 4)  // 407
@@ -146,6 +167,17 @@ const FONT_STEPS = [22, 18, 14, 10] as const
 // Full scale including large sizes for upward scaling
 const BENTO_SCALE = [48, 36, 28, 22, 18, 14, 10] as const
 
+// Height a rendered line actually occupies, used ONLY to decide whether text fits.
+// lineH()'s 1.4 was the right budget while body text was set at lineSpacing 140%; we now
+// set 90% (listParagraphStyleRequest / the master default), where a line box is about
+// 0.9 × Inter's ~1.21em ≈ 1.09em. Keeping 1.4 meant the font search paid for ~28% of
+// height that is never drawn — the card looked half empty and the text was still shrunk.
+// 1.2 keeps a margin over the 1.09 estimate without giving that room away.
+// lineH() itself is deliberately untouched: it also SIZES boxes, and shrinking those is a
+// separate geometry change.
+const FIT_LINE_FACTOR = 1.2
+function fitLineH(pt: number): number { return pt * 2.667 * FIT_LINE_FACTOR }
+
 function textFits(text: string, wPx: number, hPx: number, pt: number): boolean {
   if (!text.trim()) return true
   if (longestWordPx(text, pt) * 1.1 > wPx) return false  // 1.1× safety margin
@@ -158,7 +190,7 @@ function textFits(text: string, wPx: number, hPx: number, pt: number): boolean {
     else if (cur + 1 + w.length <= cpl) { cur += 1 + w.length }
     else { lines++; cur = w.length }
   }
-  return lines * lineH(pt) <= hPx  // exact height: lines × lineH ≤ inner_height
+  return lines * fitLineH(pt) <= hPx  // exact height: lines × rendered line height
 }
 
 // Paragraph-aware variant: splits on \n (real paragraph break) AND \v (soft line break,
@@ -207,7 +239,7 @@ function textFitsParagraphs(text: string, wPx: number, hPx: number, pt: number):
     }
     return s + lines
   }, 0)
-  return totalLines * lineH(pt) + gapPx <= hPx  // lines + the air between items
+  return totalLines * fitLineH(pt) + gapPx <= hPx  // lines + the air between items
 }
 
 // ─── bento_right ТЕКСТ font-shrink ───────────────────────────────────────────
@@ -1304,10 +1336,14 @@ function buildTitleBodyFloatRequests(
 // 2. Group pt = min of those per-card maxes (tightest card dictates the group).
 // 3. Clamp to floor (minPt). Apply same pt to every filled card.
 function pickBentoCardPts(compId: string, slots: Record<string, string>): Record<string, number> | null {
-  const dims   = bentoDims(compId)
   const tokens = BENTO_TOKENS[compId]
   const maxPt  = BENTO_MAX_PT[compId]
   const minPt  = BENTO_MIN_PT[compId] ?? 10
+  // Per-token dims: timeline columns differ in width and their height depends on this
+  // slide's own title. Everything else returns the same box for every token.
+  const titleText = slots['ЗАГОЛОВОК'] ?? ''
+  const dimsOf = (tokenIdx: number) => bentoDims(compId, { titleText, tokenIdx })
+  const dims   = dimsOf(tokens ? tokens.length - 1 : 0)  // narrowest/shortest, for diagnostics
   if (!dims || !tokens || !maxPt) return null
   // 1pt-granularity search (not the coarse BENTO_SCALE steps) — the longest text should
   // comfortably fill its card, not jump straight from "doesn't fit at 18pt" to "fits
@@ -1317,12 +1353,13 @@ function pickBentoCardPts(compId: string, slots: Record<string, string>): Record
 
   // Step 1: per-card max fitting pt
   let groupPt = maxPt  // shrink toward the tightest card
-  for (const t of tokens) {
+  for (const [tIdx, t] of tokens.entries()) {
     const text = slots[t] ?? ''
     if (!text.trim()) continue
+    const d = dimsOf(tIdx) ?? dims
     let cardPt = minPt
     for (const pt of scale) {
-      if (textFitsParagraphs(text, dims.w, dims.h, pt)) { cardPt = pt; break }
+      if (textFitsParagraphs(text, d.w, d.h, pt)) { cardPt = pt; break }
     }
     groupPt = Math.min(groupPt, cardPt)  // group = tightest of per-card maxes
   }
@@ -1347,7 +1384,9 @@ function pickBentoCardPts(compId: string, slots: Record<string, string>): Record
       }
       return s + lines
     }, 0)
-    const hPass = totalLines * lineH(groupPt) <= dims.h
+    // Mirrors textFitsParagraphs exactly, so the log never claims a fit the search denied
+    const hPass = totalLines * fitLineH(groupPt)
+      + (hasListItems(text) ? paras.length * listGapPx(groupPt) : 0) <= (dimsOf(idx) ?? dims).h
     console.log(
       `[bento-fit] ${compId}/card${idx + 1}: max_font=${maxPt} | group_font=${groupPt} | floor=${minPt} | fits_width=${wPass ? '✓' : '✗'} | fits_height=${hPass ? '✓' : '✗'}`,
     )
@@ -2731,19 +2770,12 @@ function buildTimelineLayoutRequests(
   pSlots: Record<string, string>,
 ): { requests: object[]; dotsY: number } {
   const titleText = (pSlots['ЗАГОЛОВОК'] ?? '').trim()
-  const titleLines  = titleText ? estimateLineCount(titleText, _TITLE_W, TCL_TITLE_PT) : 1
-  const titleContentH = Math.min(
-    Math.max(Math.ceil(titleLines * lineH(TCL_TITLE_PT)), Math.ceil(lineH(TCL_TITLE_PT))),
-    TCL_TITLE_HMAX,
-  )
-
-  // Title box at y=99 (master) → content starts at y=99+_INSET=118
-  const titleContentY = _PAD - 1 + _INSET  // 118
-  const dotsY = titleContentY + titleContentH + TCL_TITLE_GAP
+  // Same metrics bentoDims() used to pick the font — one source of truth, so the box the
+  // text is measured against and the box it is placed in can never drift apart.
+  const { titleContentH, textY, textH } = timelineLayoutMetrics(titleText)
+  const dotsY = textY  // text top aligned with dot top for both compositions
 
   const isThree = compId === 'three_columns_timeline'
-  const textY   = dotsY  // text top aligned with dot top for both compositions
-  const textH   = _H - _PAD - textY
 
   const bentoTokens = BENTO_TOKENS[compId] ?? []
   const reqs: object[] = []
@@ -4176,7 +4208,10 @@ export async function buildPresentation(
         if (hasHeader) {
           const headerLen = Math.min(headerNlIdx, actualLen)
           if (headerLen > 0) {
-            const hDims  = bentoDims(compId)
+            const hDims  = bentoDims(compId, {
+              titleText: pSlots['ЗАГОЛОВОК'] ?? '',
+              tokenIdx: bentoTokens.indexOf(matchedToken),
+            })
             const hMaxPt = BENTO_MAX_PT[compId] ?? pt
             const headerPt = hDims ? computeHeaderPt(slotValue, hDims, pt, hMaxPt) : pt
             const style: { foregroundColor: object; fontSize?: object } = {
