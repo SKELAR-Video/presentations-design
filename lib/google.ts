@@ -1247,18 +1247,10 @@ function buildTitleBodyFloatRequests(
         // color is MUTED gray, so this reads as a clear sub-heading). No hanging
         // indent needed: \v doesn't start a new paragraph, so every line already
         // starts flush at the paragraph's own left edge.
-        // 140% lineSpacing gives adjacent \v-joined items breathing room without a
-        // bullet marker — matches the 1.4 factor lineH() already assumes everywhere
-        // in this file, so it doesn't cut into any overflow safety margin.
+        // Items are written as real paragraphs (softBreaksToParagraphs), so the gap
+        // between them comes from spaceBelow while lines inside one item stay tight.
         if (bodyText.includes('\v')) {
-          reqs.push({
-            updateParagraphStyle: {
-              objectId: el.objectId,
-              style: { lineSpacing: 140 },
-              fields: 'lineSpacing',
-              textRange: { type: 'ALL' },
-            },
-          })
+          reqs.push(listParagraphStyleRequest(el.objectId, bodyPt))
         }
         for (const range of findGroupHeaderRanges(bodyText)) {
           const endIndex = Math.min(range.end, bodyText.length)
@@ -1423,6 +1415,38 @@ function preprocessBentoText(text: string): string {
   const lines = text.split('\n').map(l => l.trim().replace(/^[•\-–]\s*/, '')).filter(Boolean)
   if (lines.length >= 2) return lines.join('\v')
   return text
+}
+
+// \v is the pipeline's internal marker for "next list item" — everything downstream
+// (splitCardHeader/computeHeaderPt/findGroupHeaderRanges) relies on \n meaning "a header
+// line ends here" and \v meaning "just another item", so the two must stay distinct all
+// the way through. At WRITE time that distinction is no longer needed: \v is turned into
+// a real paragraph break, because Slides only applies spaceAbove/spaceBelow BETWEEN
+// paragraphs — a \v-joined block is one paragraph, so its only lever is lineSpacing,
+// which spaces the wrapped continuation lines INSIDE a sentence exactly as much as the
+// break between two sentences. That is what made the card read as one canvas of text.
+// 1 char → 1 char, so every FIXED_RANGE offset computed on the \v text stays valid.
+function softBreaksToParagraphs(text: string): string {
+  return text.replace(/\v/g, '\n')
+}
+
+// Paragraph style for a list body: the air goes BETWEEN items (spaceBelow), not inside a
+// sentence (tight 90% lineSpacing) — so a sentence wrapping to a second line stays welded
+// into one visual block while adjacent items visibly separate.
+// Height: 0.9·lines + 0.5·items ≤ 1.4·lines (items ≤ lines), i.e. always LESS than the
+// flat 140% this replaces — the change cannot introduce an overflow that didn't exist.
+function listParagraphStyleRequest(objectId: string, pt: number): object {
+  return {
+    updateParagraphStyle: {
+      objectId,
+      style: {
+        lineSpacing: 90,
+        spaceBelow: { magnitude: Math.round(pt * 0.5 * 10) / 10, unit: 'PT' },
+      },
+      fields: 'lineSpacing,spaceBelow',
+      textRange: { type: 'ALL' },
+    },
+  }
 }
 
 // Detects a short lead-in "header"/label line before a list within ONE card's text —
@@ -3696,7 +3720,7 @@ export async function buildPresentation(
           }
         }
       }
-      replaceText = addNbsp(replaceText)
+      replaceText = softBreaksToParagraphs(addNbsp(replaceText))
       requests.push({
         replaceAllText: {
           containsText: { text: `{{${slotName}}}`, matchCase: true },
@@ -3734,7 +3758,7 @@ export async function buildPresentation(
         requests.push({
           replaceAllText: {
             containsText: { text: `{{КАРТКА_${k}}}`, matchCase: true },
-            replaceText: val ? addNbsp(stripTrailingPeriod(val)) : '',
+            replaceText: val ? softBreaksToParagraphs(addNbsp(stripTrailingPeriod(val))) : '',
             pageObjectIds: [pageId],
           },
         })
@@ -4108,24 +4132,13 @@ export async function buildPresentation(
             textRange: { type: 'ALL' },
           },
         })
-        // List items are joined with \v (soft line break, see preprocessBentoText) —
-        // no bullet character, no per-item paragraph, so no hanging indent to compute:
-        // every line already starts flush at the paragraph's own left edge. Without a
-        // bullet marker, adjacent items need SOME vertical gap to read as separate
-        // entries rather than run-on text — the master template's default 90%
-        // lineSpacing (tight, meant for single-line labels) doesn't give that. 140%
-        // matches the 1.4 factor lineH() already assumes for every capacity/overflow
-        // calculation in this file, so this doesn't reduce any safety margin — it just
-        // makes the actual render match what the math already budgets for.
+        // List items carry no bullet character and no hanging indent — every line starts
+        // flush at the left edge — so the ONLY thing telling the reader where one item
+        // ends is vertical space. softBreaksToParagraphs makes each item a real paragraph
+        // so that space can live between items (spaceBelow) instead of being smeared over
+        // every wrapped line by a flat lineSpacing.
         if (slotValue.includes('\v')) {
-          requests.push({
-            updateParagraphStyle: {
-              objectId: el.objectId,
-              style: { lineSpacing: 140 },
-              fields: 'lineSpacing',
-              textRange: { type: 'ALL' },
-            },
-          })
+          requests.push(listParagraphStyleRequest(el.objectId, pt))
         }
         // Header line (splitCardHeader, applied during preprocessing): the ONLY real
         // \n left in the text separates it from the \v-joined body. Always WHITE;
@@ -4266,18 +4279,9 @@ export async function buildPresentation(
         })
         // Same header+list treatment as title_body (formatTitleBodyText, applied
         // upstream): WHITE for a group's lead-in line. No hanging indent needed —
-        // list items are \v-joined (soft line break), not separate bulleted paragraphs.
-        // 140% lineSpacing gives adjacent items breathing room without a bullet marker
-        // — matches the 1.4 factor lineH() already assumes everywhere in this file.
+        // list items become real paragraphs at write time, so the gap lives between them.
         if (bodyText.includes('\v')) {
-          requests.push({
-            updateParagraphStyle: {
-              objectId: el.objectId,
-              style: { lineSpacing: 140 },
-              fields: 'lineSpacing',
-              textRange: { type: 'ALL' },
-            },
-          })
+          requests.push(listParagraphStyleRequest(el.objectId, bodyPt))
         }
         for (const range of findGroupHeaderRanges(bodyText)) {
           const endIndex = Math.min(range.end, bodyText.length)
