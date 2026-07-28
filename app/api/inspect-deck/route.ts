@@ -48,6 +48,21 @@ type ContentCheck = {
   pass: boolean
 }
 
+// Per-paragraph spacing facts. The "one canvas of text" defect is invisible in `text`
+// and `paragraphs` alone: a list joined with \v is ONE paragraph, so the gap between two
+// items is produced by the same lineSpacing as the wrap inside a single sentence. Only
+// paragraph COUNT + the actual lineSpacing/spaceBelow written to the file can tell the
+// two apart, so both are reported here rather than inferred from the code.
+type ParagraphFact = {
+  index: number
+  text: string
+  chars: number
+  soft_breaks: number          // \v inside this paragraph = item breaks that are NOT paragraphs
+  lineSpacing_pct: number | null
+  spaceAbove_pt: number | null
+  spaceBelow_pt: number | null
+}
+
 type ShapeInfo = {
   objectId: string
   shapeType: string
@@ -59,6 +74,44 @@ type ShapeInfo = {
   fontSize_pt: number | null
   all_fontSizes_pt: number[]
   paragraphs: string[]
+  paragraph_count: number
+  paragraph_facts: ParagraphFact[]
+}
+
+// Slides returns textElements as a flat list: a paragraphMarker opens each paragraph
+// (carrying its ParagraphStyle), the textRuns after it are that paragraph's content.
+function readParagraphFacts(
+  textElements: Array<Record<string, any>>,
+): ParagraphFact[] {
+  const facts: ParagraphFact[] = []
+  let cur: ParagraphFact | null = null
+
+  for (const te of textElements) {
+    if (te.paragraphMarker) {
+      const st = te.paragraphMarker.style ?? {}
+      cur = {
+        index: facts.length,
+        text: '',
+        chars: 0,
+        soft_breaks: 0,
+        lineSpacing_pct: st.lineSpacing ?? null,
+        spaceAbove_pt: st.spaceAbove?.magnitude ?? null,
+        spaceBelow_pt: st.spaceBelow?.magnitude ?? null,
+      }
+      facts.push(cur)
+      continue
+    }
+    const content: string = te.textRun?.content ?? te.autoText?.content ?? ''
+    if (!content || !cur) continue
+    cur.text += content
+  }
+
+  for (const f of facts) {
+    f.soft_breaks = (f.text.match(/\v/g) ?? []).length
+    f.text = f.text.replace(/\n$/, '')
+    f.chars = f.text.length
+  }
+  return facts.filter(f => f.text.trim() || f.soft_breaks > 0)
 }
 
 type SlideInfo = {
@@ -138,6 +191,8 @@ export async function GET(request: NextRequest) {
         .map(te => te.textRun?.style?.fontSize?.magnitude ?? null)
         .filter((n): n is number => n !== null)
 
+      const paragraphFacts = readParagraphFacts(textElements as Array<Record<string, any>>)
+
       const uniqueFontSizes = [...new Set(fontSizes)]
       const firstFontSize = fontSizes[0] ?? null
 
@@ -159,6 +214,8 @@ export async function GET(request: NextRequest) {
         fontSize_pt: firstFontSize,
         all_fontSizes_pt: uniqueFontSizes,
         paragraphs,
+        paragraph_count: paragraphFacts.length,
+        paragraph_facts: paragraphFacts,
       })
     }
 
