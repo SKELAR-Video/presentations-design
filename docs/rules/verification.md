@@ -107,6 +107,7 @@ npm run validate-fixture
 - **Fixture 5** — `content_coverage`: closing зберіг body-текст → PASS
 - **Fixture 6** — `content_coverage`: closing втратив body-текст (той самий реальний баг) → FAIL
 - **Fixture 7** — `applyCoverageFallback`: усі втрачені рядки відновлені, композиція `closing` збережена
+- **Fixture 8** — спільна мірка `lib/textfit.ts` на реальних payload'ах: `three_columns` зі слайда 6 отримує `group_font ≥ 13pt` (було 11pt) і жодна картка не переповнюється; надбавка +8pt на першому рядку слайда 14 дає 497px у боксі 440px і має бути відкинута. Викликає **справжні** функції, не копію їхньої арифметики.
 
 ## Маркер-тест для верифікації деплою
 

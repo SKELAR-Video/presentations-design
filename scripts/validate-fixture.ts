@@ -5,6 +5,7 @@
 import { validatePlan, checkContentCoverage } from '../lib/validator'
 import { applyCoverageFallback, missingSourceLines } from '../lib/coverage'
 import type { SlidePlan } from '../lib/types'
+import { renderedHeight, renderedHeightUniform, FIT_MARGIN } from '../lib/textfit'
 
 // ─── Fixture 1 — PASS: correct badges slide (App Store categories) ─────────
 const fixture1: SlidePlan = {
@@ -560,4 +561,61 @@ run('Fixture 2 — run 2', fixture2)
   console.log(`  composition kept: ${broken.composition} | slots: ${Object.keys(broken.slots).join(', ')}`)
   const ok = before.length === 3 && after.length === 0 && broken.composition === 'closing'
   console.log(`  → ${ok ? '✅ all 3 lines restored, closing preserved' : '❌ WRONG'}`)
+
+  // ─── Fixture 8 — one ruler: the font search must not pay for unused space ────
+  // Calls the REAL shared functions (lib/textfit.ts), not a copy of their arithmetic.
+  // Payload: deck 1iJo-…XbWg slide 6, three_columns, cards of 4 / 6 / 4 items in a
+  // 493×620px text area. The old budget (0.65 char width, 1.2 line box) measured the
+  // fullest card as 581px and settled on 11pt; the renderer draws 411px there, i.e. a
+  // third of the card was empty by arithmetic alone.
+  console.log('\n=== Fixture 8 — rendered ruler + header bump (slide 6 / slide 14 payloads) ===')
+  {
+    const W = 493, H = 620
+    const cards = [
+      ['Proof of Talents', 'Участь в програмах SKELAR - це круто  і престижно',
+       'Програми дають цінний досвід і підвищують мою “цінність” на ринку',
+       'Можливість вчитися у зірок ринку на реальних кейсах'].join('\n'),
+      ['Lovemark', 'Формування сприйняття SKELAR як лавмарка серед студентів',
+       'SKELAR цінує талановиту молодь і інвестує в її розвиток',
+       'Орієнтація на якість навчання', 'Відкритість до фідбека і нетворкінга',
+       'Компанія інвестує в людей, а не лише шукає готових'].join('\n'),
+      ['Місце для амбітного старту', 'місце для амбітних, де можна швидко зростати',
+       'жорсткий відбір + безмежні можливості',
+       'Скорочуємо/прискорюємо шлях до результату/успіху'].join('\n'),
+    ]
+
+    // Mirrors pickBentoCardPts: 1pt granularity, group = tightest card, floor 10.
+    let groupPt = 28
+    for (const text of cards) {
+      let cardPt = 10
+      for (let pt = 28; pt >= 10; pt--) {
+        if (renderedHeightUniform(text, W, pt, true) <= H * FIT_MARGIN) { cardPt = pt; break }
+      }
+      groupPt = Math.min(groupPt, cardPt)
+    }
+    const heights = cards.map(t => Math.round(renderedHeightUniform(t, W, groupPt, true)))
+    const fitsAll = heights.every(h => h <= H)
+    const grew    = groupPt >= 13            // 11pt was the old answer for this payload
+    console.log(
+      `  group_font=${groupPt}pt | card heights ${heights.join(' / ')}px in ${H}px | ` +
+      `≥13pt=${grew ? '✓' : '✗'} no_overflow=${fitsAll ? '✓' : '✗'}`,
+    )
+
+    // Slide 14: a +8pt bump on the first line must be refused when the text, gaps
+    // included, no longer fits — the omission that cost 57px of overflow.
+    const items14 = [
+      'Стипендія на першому курсі навчання (за умови вступу в український ЗВО, ЗВО-партнер)',
+      'ексклюзивний мерч;', 'Фінансування участі в змаганнях, хакатонах і тд.',
+      'персональний ментор',
+    ]
+    const bodyPt = 14, GAP_PT = 7            // 0.5 × 14, as written to the file
+    const flat   = renderedHeight(items14.map(t => ({ text: t, pt: bodyPt, spaceBelowPt: GAP_PT })), 873 - 38)
+    const bumped = renderedHeight(items14.map((t, i) => ({ text: t, pt: i === 0 ? bodyPt + 8 : bodyPt, spaceBelowPt: GAP_PT })), 873 - 38)
+    const bumpRefused = flat <= 440 && bumped > 440
+    console.log(
+      `  slide14 box 440px: body-only=${Math.round(flat)}px | with +8pt bump=${Math.round(bumped)}px | ` +
+      `bump must be refused=${bumpRefused ? '✓' : '✗'}`,
+    )
+    console.log(`  → ${grew && fitsAll && bumpRefused ? '✅ one ruler, no unused space, no bump past the box' : '❌ WRONG'}`)
+  }
 }

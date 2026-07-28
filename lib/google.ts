@@ -5,6 +5,11 @@ import { PHASE0_COMPOSITIONS, getComposition } from './compositions'
 import { validateDeck, type ValidationReport } from './validator'
 import { fixOverflowSlots } from './anthropic'
 import { autoPushIfPass } from './auto-push'
+import {
+  renderedHeight, renderedHeightUniform,
+  LIST_ITEM_GAP_EM, FIT_MARGIN,
+  type Para,
+} from './textfit'
 
 // ─── Bento font-size auto-shrink ─────────────────────────────────────────────
 // Layout constants must mirror create-master/route.ts
@@ -167,14 +172,11 @@ const FONT_STEPS = [22, 18, 14, 10] as const
 // Full scale including large sizes for upward scaling
 const BENTO_SCALE = [48, 36, 28, 22, 18, 14, 10] as const
 
-// Height a rendered line actually occupies, used ONLY to decide whether text fits.
-// lineH()'s 1.4 was the right budget while body text was set at lineSpacing 140%; we now
-// set 90% (listParagraphStyleRequest / the master default), where a line box is about
-// 0.9 × Inter's ~1.21em ≈ 1.09em. Keeping 1.4 meant the font search paid for ~28% of
-// height that is never drawn — the card looked half empty and the text was still shrunk.
-// 1.2 keeps a margin over the 1.09 estimate without giving that room away.
-// lineH() itself is deliberately untouched: it also SIZES boxes, and shrinking those is a
-// separate geometry change.
+// Line height for TITLE-side fits only (textFits below: covers, sections, kpi values,
+// timeline titles — single blocks in fixed-height boxes, where a cautious budget is what
+// keeps a long word or a second line from touching the edges).
+// Body text and cards do NOT come through here any more: they are measured by the
+// renderer's own ruler in lib/textfit.ts. See textFitsParagraphs.
 const FIT_LINE_FACTOR = 1.2
 function fitLineH(pt: number): number { return pt * 2.667 * FIT_LINE_FACTOR }
 
@@ -201,7 +203,6 @@ function textFits(text: string, wPx: number, hPx: number, pt: number): boolean {
 // as a fraction of the font size so it scales with the card. This is the whole point of
 // the rule: a wrapped line inside one sentence gets only lineSpacing, an item boundary
 // gets lineSpacing + this — which is what makes two sentences read as two sentences.
-const LIST_ITEM_GAP_EM = 0.5
 function listGapPx(pt: number): number { return LIST_ITEM_GAP_EM * pt * 2.667 }
 function listGapPt(pt: number): number { return Math.round(LIST_ITEM_GAP_EM * pt * 10) / 10 }
 
@@ -228,18 +229,22 @@ function hasListItems(text: string): boolean {
 // longestWordPx, and adds the inter-item air the renderer really writes.
 function measuredTextHeight(text: string, wPx: number, pt: number): number {
   if (!text.trim()) return 0
-  const lines  = countWrappedLines(text, wPx, pt)
-  const items  = text.split(/[\n\v]/).filter(p => p.trim()).length
-  const gapPx  = hasListItems(text) ? items * listGapPx(pt) : 0
-  return lines * fitLineH(pt) + gapPx
+  return renderedHeightUniform(text, wPx, pt, hasListItems(text))
 }
 
+// Does this body text fit its box? Two independent questions, deliberately answered by
+// two different rulers:
+//   width  — pessimistic (0.65 char width, see longestWordPx): a single word sticking out
+//            of its card is a visible defect, so it keeps its safety margin.
+//   height — the renderer's own ruler (lib/textfit.ts) with FIT_MARGIN of slack. The old
+//            budget here assumed a 0.65-wide character and a 1.2 line box, i.e. ~30% more
+//            width and ~10% more height per line than Slides actually draws — so a card
+//            holding 410px of text was measured as 580px and the font was shrunk to fill
+//            space that was never used (three_columns at 11pt where 13pt fits).
 function textFitsParagraphs(text: string, wPx: number, hPx: number, pt: number): boolean {
   if (!text.trim()) return true
   if (longestWordPx(text, pt) * 1.1 > wPx) return false  // 1.1× safety margin
-  const paras = text.split(/[\n\v]/).filter(p => p.trim())
-  if (paras.length <= 1) return textFits(text, wPx, hPx, pt)
-  return measuredTextHeight(text, wPx, pt) <= hPx
+  return measuredTextHeight(text, wPx, pt) <= hPx * FIT_MARGIN
 }
 
 // ─── bento_right ТЕКСТ font-shrink ───────────────────────────────────────────
@@ -1372,23 +1377,15 @@ function pickBentoCardPts(compId: string, slots: Record<string, string>): Record
     if (!text.trim()) continue
     result[t] = groupPt
     const wPass = longestWordPx(text, groupPt) * 1.1 <= dims.w
-    const cpl   = Math.max(1, Math.floor(dims.w / (groupPt * 2.667 * 0.65)))
-    const paras = text.split('\n').filter(p => p.trim())
-    const totalLines = paras.reduce((s, p) => {
-      const words = p.split(/\s+/).filter(Boolean)
-      let lines = 1, cur = 0
-      for (const w of words) {
-        if (!cur) cur = w.length
-        else if (cur + 1 + w.length <= cpl) cur += 1 + w.length
-        else { lines++; cur = w.length }
-      }
-      return s + lines
-    }, 0)
-    // Mirrors textFitsParagraphs exactly, so the log never claims a fit the search denied
-    const hPass = totalLines * fitLineH(groupPt)
-      + (hasListItems(text) ? paras.length * listGapPx(groupPt) : 0) <= (dimsOf(idx) ?? dims).h
+    // Calls the very functions the search used, so the log can never claim a fit the
+    // search denied (or hide one it granted).
+    const boxH   = (dimsOf(idx) ?? dims).h
+    const needed = Math.round(measuredTextHeight(text, dims.w, groupPt))
+    const hPass  = textFitsParagraphs(text, dims.w, boxH, groupPt)
     console.log(
-      `[bento-fit] ${compId}/card${idx + 1}: max_font=${maxPt} | group_font=${groupPt} | floor=${minPt} | fits_width=${wPass ? '✓' : '✗'} | fits_height=${hPass ? '✓' : '✗'}`,
+      `[bento-fit] ${compId}/card${idx + 1}: max_font=${maxPt} | group_font=${groupPt} | floor=${minPt} | ` +
+      `text_h=${needed} | box_h=${boxH} (usable ${Math.round(boxH * FIT_MARGIN)}) | ` +
+      `fits_width=${wPass ? '✓' : '✗'} | fits_height=${hPass ? '✓' : '✗'}`,
     )
   }
   return result
@@ -1570,24 +1567,6 @@ function findGroupHeaderRanges(text: string): Array<{ start: number; end: number
   return ranges
 }
 
-// Word-wrapped line count for a (possibly multi-paragraph) body at a given pt — same
-// 0.65 char-width factor as textFitsParagraphs, so it stays consistent with whatever
-// pt that function already verified fits.
-function countWrappedLines(text: string, wPx: number, pt: number): number {
-  const cpl = Math.max(1, Math.floor(wPx / (pt * 2.667 * 0.65)))
-  const paras = text.split(/[\n\v]/).filter(p => p.trim())
-  return paras.reduce((sum, p) => {
-    const words = p.split(/\s+/).filter(Boolean)
-    let lines = 1, cur = 0
-    for (const w of words) {
-      if (!cur) cur = w.length
-      else if (cur + 1 + w.length <= cpl) cur += 1 + w.length
-      else { lines++; cur = w.length }
-    }
-    return sum + lines
-  }, 0)
-}
-
 // If `text` has a detected header (splitCardHeader) followed by a body list, try pt
 // values above groupPt for JUST that header line, keeping the body at groupPt. Returns
 // groupPt unchanged (no bump — the header still gets a WHITE color-only distinction at
@@ -1598,11 +1577,20 @@ function computeHeaderPt(text: string, dims: { w: number; h: number }, groupPt: 
   if (text.indexOf('\n') <= 0) return groupPt
   const lines = text.split('\n')
   const headerLine = lines[0].trim()
-  const bodyLines = countWrappedLines(lines.slice(1).join('\n'), dims.w, groupPt)
+  const body       = lines.slice(1).join('\n')
+  // Measured with the SAME ruler that picked groupPt (lib/textfit.ts), header at the
+  // candidate pt and the body at groupPt — and including the air between list items, which
+  // this check used to ignore entirely. That omission is how a +8pt bump was granted to
+  // text that then overflowed its card by 57px: the gaps it had to share the box with
+  // were invisible here.
+  const gapPt = (pt: number) => (hasListItems(text) ? listGapPt(pt) : 0)
   for (let pt = Math.min(groupPt + 8, maxPt); pt > groupPt; pt--) {
     if (longestWordPx(headerLine, pt) * 1.1 > dims.w) continue
-    const totalH = bodyLines * lineH(groupPt) + lineH(pt)
-    if (totalH <= dims.h) return pt
+    const paras: Para[] = [{ text: headerLine, pt, spaceBelowPt: gapPt(groupPt) }]
+    for (const item of body.split(/[\n\v]/).filter(s => s.trim())) {
+      paras.push({ text: item, pt: groupPt, spaceBelowPt: gapPt(groupPt) })
+    }
+    if (renderedHeight(paras, dims.w) <= dims.h * FIT_MARGIN) return pt
   }
   return groupPt
 }

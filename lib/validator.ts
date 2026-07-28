@@ -2,6 +2,7 @@ import type { slides_v1 } from 'googleapis'
 import { getComposition } from './compositions'
 import type { SlidePlan } from './types'
 import { looseNorm as normLoose } from './coverage'
+import { renderedHeight } from './textfit'
 
 const _FPX   = 9144000 / 1920  // EMU per Figma px
 const _SLIDE_W = 1920
@@ -52,13 +53,12 @@ function elBounds(el: slides_v1.Schema$PageElement) {
 // checks the box, bento_layout works off the plan — so text spilling out of its card (and
 // off the slide) was machine-invisible and reached production twice.
 //
-// Models what is RENDERED, not what the generator budgeted. The generator is deliberately
-// conservative (0.65 char width, 1.2 line factor) so it picks a font with room to spare;
-// reusing those numbers here would fail slides that look perfectly fine — e.g. a closing
-// whose text needs 469px in a 478px box measures as 499px under the generator's budget.
-// This check answers only "does it actually spill on screen": ~0.5 char width and a 1.1
-// line factor (lineSpacing 90% × Inter's ~1.21em), plus the spaceBelow recorded on each
-// paragraph. The defects it exists to catch were +132px and +77px — far outside the slack.
+// Measured with lib/textfit.ts — the same ruler the generator picks fonts with, applied to
+// the per-paragraph sizes and spaceBelow values actually recorded in the file. The only
+// difference is the slack: the generator stops at FIT_MARGIN of the box, this asks the bare
+// question "does it spill on screen". So a pass here means the two agreed, not that two
+// similar formulas happened to land close. The defects it exists to catch were +132px,
+// +77px and +57px — all far outside the tolerance.
 //
 // Scope: boxes holding 2+ paragraphs. Single-paragraph boxes (titles) are governed by the
 // word-fit and fixed-height rules and would only add noise here.
@@ -93,15 +93,13 @@ function checkTextOverflow(slide: slides_v1.Schema$Page): CheckResult {
     const innerH = h - 2 * _V_INSET
     if (innerW <= 0 || innerH <= 0) continue
 
-    let needed = 0
-    for (const p of filled) {
-      const pt = p.pt || 14
-      // \v would be a soft break inside the paragraph — still its own line
-      for (const seg of p.text.replace(/\n$/, '').split('\v')) {
-        needed += _vWrappedLines(seg, innerW, pt) * pt * 2.667 * _V_RENDERED_LINE_FACTOR
-      }
-      needed += p.spaceBelow * 2.667
-    }
+    // Same function the generator picks fonts with (lib/textfit.ts). The generator keeps
+    // FIT_MARGIN of slack, this asks the bare question — "does it actually spill?" — so a
+    // pass here is not a coincidence of two similar formulas but the same answer twice.
+    const needed = renderedHeight(
+      filled.map(p => ({ text: p.text, pt: p.pt || 14, spaceBelowPt: p.spaceBelow })),
+      innerW,
+    )
 
     if (needed > innerH + _V_OVERFLOW_TOL) {
       const tok = elToken(el) ?? el.objectId ?? '?'
@@ -115,22 +113,8 @@ function checkTextOverflow(slide: slides_v1.Schema$Page): CheckResult {
   return { check: 'text_overflow', pass: fails.length === 0, detail: fails.join(' | ') || undefined }
 }
 
-// Rendered-reality constants — see checkTextOverflow for why they are not the generator's
-const _V_RENDERED_LINE_FACTOR = 1.1   // lineSpacing 90% × Inter's ~1.21em
-const _V_RENDERED_CHAR_W      = 0.5   // measured average, vs the generator's cautious 0.65
-
-function _vWrappedLines(text: string, wPx: number, pt: number): number {
-  if (!text.trim()) return 0
-  const cpl = Math.max(1, Math.floor(wPx / (pt * 2.667 * _V_RENDERED_CHAR_W)))
-  const words = text.split(/\s+/).filter(Boolean)
-  let lines = 1, cur = 0
-  for (const w of words) {
-    if (!cur) cur = w.length
-    else if (cur + 1 + w.length <= cpl) cur += 1 + w.length
-    else { lines++; cur = w.length }
-  }
-  return lines
-}
+// The rendered ruler itself now lives in lib/textfit.ts — the generator imports the same
+// one. Keeping a private copy here is what let the two drift apart in the first place.
 
 function elToken(el: slides_v1.Schema$PageElement): string | null {
   const raw = (el.shape?.text?.textElements ?? [])
