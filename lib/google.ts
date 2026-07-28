@@ -165,11 +165,36 @@ function textFits(text: string, wPx: number, hPx: number, pt: number): boolean {
 // U+000B — used for list items that share one paragraph but must still each start their
 // own line, see preprocessBentoText) so each becomes its own forced line. textFits()
 // treats all whitespace as a space (wrong for a list). This correctly sums lines per break.
+// Vertical air placed AFTER each list item (spaceBelow, see listParagraphStyleRequest),
+// as a fraction of the font size so it scales with the card. This is the whole point of
+// the rule: a wrapped line inside one sentence gets only lineSpacing, an item boundary
+// gets lineSpacing + this — which is what makes two sentences read as two sentences.
+const LIST_ITEM_GAP_EM = 0.5
+function listGapPx(pt: number): number { return LIST_ITEM_GAP_EM * pt * 2.667 }
+function listGapPt(pt: number): number { return Math.round(LIST_ITEM_GAP_EM * pt * 10) / 10 }
+
+// Is this text a list whose items must be visually separated?
+//  - \v  — items sharing one paragraph (preprocessBentoText)
+//  - \n  — compositions that skip that preprocessing and are already line-per-item
+//          (two_columns_plain / two_columns_labeled), plus header + body cards
+// A value+label card ("$5M\nнові клієнти") is NOT a list: those two lines belong
+// together and must not be pushed apart.
+function hasListItems(text: string): boolean {
+  if (!text || !/[\n\v]/.test(text)) return false
+  if (splitValueLabel(text)) return false
+  return text.split(/[\n\v]/).filter(s => s.trim()).length >= 2
+}
+
 function textFitsParagraphs(text: string, wPx: number, hPx: number, pt: number): boolean {
   if (!text.trim()) return true
   if (longestWordPx(text, pt) * 1.1 > wPx) return false  // 1.1× safety margin
   const paras = text.split(/[\n\v]/).filter(p => p.trim())
   if (paras.length <= 1) return textFits(text, wPx, hPx, pt)
+  // The inter-item gap is real height, so the font search has to pay for it here —
+  // otherwise pt is picked for a density the render no longer produces and the last
+  // item drops out of the card. Budgeting for it is what makes "smaller font, clearly
+  // separated items" an outcome of the model rather than a hope.
+  const gapPx = hasListItems(text) ? paras.length * listGapPx(pt) : 0
   // Multi-paragraph: same 0.65 factor for consistent line-count estimation
   const cpl = Math.max(1, Math.floor(wPx / (pt * 2.667 * 0.65)))
   const totalLines = paras.reduce((s, p) => {
@@ -182,7 +207,7 @@ function textFitsParagraphs(text: string, wPx: number, hPx: number, pt: number):
     }
     return s + lines
   }, 0)
-  return totalLines * lineH(pt) <= hPx  // exact height check
+  return totalLines * lineH(pt) + gapPx <= hPx  // lines + the air between items
 }
 
 // ─── bento_right ТЕКСТ font-shrink ───────────────────────────────────────────
@@ -1249,7 +1274,7 @@ function buildTitleBodyFloatRequests(
         // starts flush at the paragraph's own left edge.
         // Items are written as real paragraphs (softBreaksToParagraphs), so the gap
         // between them comes from spaceBelow while lines inside one item stay tight.
-        if (bodyText.includes('\v')) {
+        if (hasListItems(bodyText)) {
           reqs.push(listParagraphStyleRequest(el.objectId, bodyPt))
         }
         for (const range of findGroupHeaderRanges(bodyText)) {
@@ -1433,15 +1458,16 @@ function softBreaksToParagraphs(text: string): string {
 // Paragraph style for a list body: the air goes BETWEEN items (spaceBelow), not inside a
 // sentence (tight 90% lineSpacing) — so a sentence wrapping to a second line stays welded
 // into one visual block while adjacent items visibly separate.
-// Height: 0.9·lines + 0.5·items ≤ 1.4·lines (items ≤ lines), i.e. always LESS than the
-// flat 140% this replaces — the change cannot introduce an overflow that didn't exist.
+// Height is not a hope here: textFitsParagraphs charges the same LIST_ITEM_GAP_EM per
+// item when it picks pt, so a card too dense for the gap gets a smaller font instead of
+// a clipped last item.
 function listParagraphStyleRequest(objectId: string, pt: number): object {
   return {
     updateParagraphStyle: {
       objectId,
       style: {
         lineSpacing: 90,
-        spaceBelow: { magnitude: Math.round(pt * 0.5 * 10) / 10, unit: 'PT' },
+        spaceBelow: { magnitude: listGapPt(pt), unit: 'PT' },
       },
       fields: 'lineSpacing,spaceBelow',
       textRange: { type: 'ALL' },
@@ -4136,8 +4162,10 @@ export async function buildPresentation(
         // flush at the left edge — so the ONLY thing telling the reader where one item
         // ends is vertical space. softBreaksToParagraphs makes each item a real paragraph
         // so that space can live between items (spaceBelow) instead of being smeared over
-        // every wrapped line by a flat lineSpacing.
-        if (slotValue.includes('\v')) {
+        // every wrapped line by a flat lineSpacing. two_columns_plain/two_columns_labeled
+        // skip preprocessBentoText, so their items arrive as real \n paragraphs already —
+        // hasListItems covers both shapes (and excludes value+label cards).
+        if (hasListItems(slotValue)) {
           requests.push(listParagraphStyleRequest(el.objectId, pt))
         }
         // Header line (splitCardHeader, applied during preprocessing): the ONLY real
@@ -4280,7 +4308,7 @@ export async function buildPresentation(
         // Same header+list treatment as title_body (formatTitleBodyText, applied
         // upstream): WHITE for a group's lead-in line. No hanging indent needed —
         // list items become real paragraphs at write time, so the gap lives between them.
-        if (bodyText.includes('\v')) {
+        if (hasListItems(bodyText)) {
           requests.push(listParagraphStyleRequest(el.objectId, bodyPt))
         }
         for (const range of findGroupHeaderRanges(bodyText)) {

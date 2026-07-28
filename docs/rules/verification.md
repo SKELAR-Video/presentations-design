@@ -52,6 +52,16 @@
 
 Коли все PASS — дати лінк + вивести звіт (PASS/FAIL по слайдах).
 
+## Інтервали — перевірка з файлу
+
+```bash
+node scripts/diag-spacing.js <deckId> [номер слайда|all]
+```
+
+`inspect-deck` віддає по кожному текстовому боксу `paragraph_count` і `paragraph_facts[]` (`lineSpacing_pct`, `spaceAbove_pt`, `spaceBelow_pt`, `soft_breaks`). Без цього дефект «список читається як полотно» **невидимий**: `\v`-склеєний список і нормально розділений мають однаковий `text` і однаковий `paragraphs[]`.
+
+Що має бути на боксі зі списком (≥2 пунктів): `lineSpacing=90%`, `spaceBelow ≠ —`, `soft_breaks(\v)=0`. Скрипт сам виводить вердикт `DIFFERENT ✅` / `SAME ❌`.
+
 ## Панель фактів (inspect-deck)
 
 `buildPresentation` повертає `{ url, validation, deckFacts }`.
