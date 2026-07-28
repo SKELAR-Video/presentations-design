@@ -46,3 +46,6 @@ next-env.d.ts
 
 # fixture-test build output
 .fx-build/
+
+# diagnostic run artifacts
+scripts/.last-plan.json
