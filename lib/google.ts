@@ -52,6 +52,30 @@ function timelineLayoutMetrics(titleText: string): { titleContentH: number; text
   return { titleContentH, textY, textH: _H - _PAD - textY }
 }
 
+// ─── Flat column families ────────────────────────────────────────────────────
+// Columns with no card behind the text (two_columns_plain / two_columns_labeled). The
+// master parks them at a fixed y=540 — 195px below the title zone, spacing drawn for a
+// full two-line title — and every slide paid for it whether it needed it or not: 440px of
+// area, font down at 13pt while 15–16pt fits.
+//
+// Same two variables as a bento row, same order (docs/rules/bento.md): the text area grows
+// first (it costs nothing), the font gives way only after. The area can only grow — 540 is
+// still the floor, so a short column looks exactly as it does today.
+const _FLAT_TITLE_H    = 245   // create-master: flat-column ЗАГОЛОВОК box height
+const _FLAT_LABEL_BAND = 89    // ПІДПИС_N band above the columns (451→540 in the master)
+const _FLAT_COL_Y_DEF  = 540   // master column top = the smallest area, never worse
+const _FLAT_LABEL_H    = 50    // ПІДПИС_N box height in the master
+
+// The highest the columns may go: TITLE_GAP below the title zone, plus the label band for
+// the labelled variant (its ПІДПИС rides along, keeping its 89px band).
+function flatColumnsTopMin(compId: string): number {
+  const firstContentY = _PAD + _FLAT_TITLE_H + TITLE_GAP           // 405
+  return compId === 'two_columns_labeled' ? firstContentY + _FLAT_LABEL_BAND : firstContentY
+}
+function flatColumnsMaxH(compId: string): number {
+  return _H - _PAD - flatColumnsTopMin(compId)
+}
+
 // `ctx` carries what a composition needs to know its REAL text area. Timelines need the
 // slide's title (height) and which column this is (the two columns differ in width);
 // without it they fall back to the narrowest/shortest worst case, as before.
@@ -68,7 +92,7 @@ function bentoDims(
   }
   if (compId === 'two_columns_labeled' || compId === 'two_columns_plain') {
     const cw = Math.floor((_UW - 50) / 2)  // 50px gap, no INN (flat layout)
-    return { w: cw, h: _H - _PAD - 540 }   // content area y=540→980
+    return { w: cw, h: flatColumnsMaxH(compId) }
   }
   if (compId === 'three_columns') {
     const cw = Math.floor((_UW - 2 * _GAP) / 3)
@@ -1789,6 +1813,60 @@ function buildBentoRowLayoutRequests(
         }
       }
     }
+    return reqs
+  }
+
+  // ── Flat columns: two_columns_plain / two_columns_labeled ───────────────────
+  // No cards to resize — the text box itself IS the column, so the box grows upward and
+  // the ПІДПИС band (labelled variant) rides along above it. Bottom stays on the page
+  // margin, top never rises past flatColumnsTopMin, never sinks below the master's 540.
+  if (compId === 'two_columns_plain' || compId === 'two_columns_labeled') {
+    const cw      = Math.floor((_UW - 50) / 2)          // 835
+    const cardPts = pickBentoCardPts(compId, processedSlots)
+
+    let maxTextH = 0
+    for (const token of tokens) {
+      const text = (processedSlots[token] ?? '').trim()
+      if (!text) continue
+      const pt = cardPts?.[token] ?? (BENTO_MIN_PT[compId] ?? 10)
+      const h  = Math.ceil(measuredTextHeight(text, cw, pt))
+      if (h > maxTextH) maxTextH = h
+    }
+    // A group header is one step larger than its list (computeHeaderPt) — ask for that
+    // step too, so the box is not sized for a font the header does not use.
+    const headerSlack = Math.ceil(lineH(BENTO_MAX_PT[compId] ?? 22) * 0.25)
+    const textY = Math.min(
+      _FLAT_COL_Y_DEF,
+      Math.max(flatColumnsTopMin(compId), _H - _PAD - maxTextH - headerSlack),
+    )
+    const textH = _H - _PAD - textY
+
+    const reqs: object[] = []
+    for (const el of slide.pageElements ?? []) {
+      if (!el.objectId || !el.transform || !el.size) continue
+      if (el.shape?.shapeType !== 'TEXT_BOX') continue
+      const sW  = el.size.width?.magnitude  ?? 0
+      const sH  = el.size.height?.magnitude ?? 0
+      const elX = Math.round((el.transform.translateX ?? 0) / _FPX)
+      const elY = Math.round((el.transform.translateY ?? 0) / _FPX)
+      const elW = Math.round(sW * (el.transform.scaleX ?? 1) / _FPX)
+      const elH = Math.round(sH * (el.transform.scaleY ?? 1) / _FPX)
+      // Column width identifies both the columns and their labels; the title box is
+      // _TITLE_W wide and stays where it is.
+      if (Math.abs(elW - (cw + 2 * _INSET)) > TOL) continue
+      if (elY < _PAD + _FLAT_TITLE_H - TOL) continue     // anything inside the title zone
+
+      const isLabel = Math.abs(elH - (_FLAT_LABEL_H + 2 * _INSET)) < TOL
+      if (isLabel) {
+        reqs.push(makeElemTransform(el.objectId, elX, textY - _FLAT_LABEL_BAND - _INSET, elW, elH, sW, sH))
+      } else {
+        reqs.push(makeElemTransform(el.objectId, elX, textY - _INSET, elW, textH + 2 * _INSET, sW, sH))
+      }
+    }
+    console.log(
+      `[flat-columns] ${compId}: text_h=${maxTextH} | top ${_FLAT_COL_Y_DEF}→${textY} | ` +
+      `area ${_H - _PAD - _FLAT_COL_Y_DEF}→${textH}px | font=${cardPts ? Object.values(cardPts)[0] : '—'}pt`,
+    )
     return reqs
   }
 

@@ -618,4 +618,39 @@ run('Fixture 2 — run 2', fixture2)
     )
     console.log(`  → ${grew && fitsAll && bumpRefused ? '✅ one ruler, no unused space, no bump past the box' : '❌ WRONG'}`)
   }
+
+  // ─── Fixture 9 — flat columns grow before the font shrinks ───────────────────
+  // two_columns_plain / two_columns_labeled have no card to resize, so the text box IS
+  // the column. The master parks it at y=540 (440px of area) — spacing drawn for a
+  // two-line title — and the font paid for it: measured on deck
+  // 1wit_n5dPxryz87WQwi1yjff6ZdPqdWUU2lqgi7-3_Tw, area 440 explained every observed font
+  // exactly (slides 3/16/10/13/14 → 13/11/13/13/16pt).
+  console.log('\n=== Fixture 9 — flat columns: area grows first, font follows ===')
+  {
+    const W = 835
+    const column = [
+      'Залучення талантів',
+      'Зниження cost per lead, час пошуку',
+      'Отримання постійного доступу до нових талантів (джуни, студенти, alumni)',
+      'Створення talent bench',
+      'Сформувати сприйняття компанії як найкращого місця для старту карʼєри в ІТ',
+    ].join('\n')
+
+    const bestPt = (area: number) => {
+      for (let pt = 36; pt >= 10; pt--) {
+        if (renderedHeightUniform(column, W, pt, true) <= area * FIT_MARGIN) return pt
+      }
+      return 10
+    }
+    // 440 = master, 486 = grown labelled area (label band rides along), 575 = grown plain
+    const at440 = bestPt(440), at486 = bestPt(486), at575 = bestPt(575)
+    const monotonic = at575 >= at486 && at486 >= at440
+    const gained    = at575 > at440
+    const noOverflow = renderedHeightUniform(column, W, at575, true) <= 575
+    console.log(
+      `  area 440px → ${at440}pt | 486px → ${at486}pt | 575px → ${at575}pt | ` +
+      `grew=${gained ? '✓' : '✗'} monotonic=${monotonic ? '✓' : '✗'} no_overflow=${noOverflow ? '✓' : '✗'}`,
+    )
+    console.log(`  → ${gained && monotonic && noOverflow ? '✅ a taller area buys a bigger font, and it still fits' : '❌ WRONG'}`)
+  }
 }
