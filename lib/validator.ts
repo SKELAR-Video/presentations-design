@@ -1,6 +1,7 @@
 import type { slides_v1 } from 'googleapis'
 import { getComposition } from './compositions'
 import type { SlidePlan } from './types'
+import { looseNorm as normLoose } from './coverage'
 
 const _FPX   = 9144000 / 1920  // EMU per Figma px
 const _SLIDE_W = 1920
@@ -145,7 +146,8 @@ function isCompactNumberMatch(value: string, sourceText: string): boolean {
 //   (b) when sourceText is available: every non-empty line of each slot value must be
 //       a verbatim substring of the original input (LLM never invented / paraphrased)
 // Exception: КАРТКА_N_ЗНАЧЕННЯ may contain compact number form (e.g. "2M" ↔ "2 000 000").
-// Exemptions: image slots, closing composition (structural / default text).
+// Exemption: image slots only. closing used to be exempt too, which is exactly how a
+// closing slide with invented/dropped body text passed validation unnoticed.
 function checkContentIntegrity(
   slots: Record<string, string>,
   compId: string,
@@ -175,7 +177,7 @@ function checkContentIntegrity(
     const lines = v.split('\n').map(l => l.trim()).filter(Boolean)
     for (const line of lines) {
       // NBSP (U+00A0) inserted by addNbsp is a display-only transform — treat as space for verbatim check.
-      const normalized = line.replace(/ /g, ' ')
+      const normalized = line.replace(/\u00A0/g, ' ')
       const verbatimOk = sourceText.includes(normalized)
       const compactOk  = isKpiValue && isCompactNumberMatch(normalized, sourceText)
       // Allow first-letter capitalization when a leading stat was stripped into ЗНАЧЕННЯ
@@ -667,16 +669,6 @@ function checkFragmentCoverage(
 // Matching is loose on purpose: the render stage rewrites slot text in known ways (NBSP,
 // \v soft line breaks, colon→em-dash, stripped trailing period, capitalisation), and those
 // transforms must not read as content loss.
-function normLoose(s: string): string {
-  return (s ?? '')
-    .replace(/ /g, ' ')   // NBSP inserted by addNbsp
-    .replace(//g, ' ')   // \v soft line break inserted for bullet lists
-    .replace(/ — /g, ': ')     // colon→em-dash normalisation
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/[.…]+$/, '')  // trailing period stripped at render
-    .toLowerCase()
-}
 
 export function checkContentCoverage(plan: SlidePlan): CheckResult {
   const owners = plan.slides
@@ -693,17 +685,18 @@ export function checkContentCoverage(plan: SlidePlan): CheckResult {
     ...(plan.preRenderSlots ?? []),
   ].join(' \n '))
 
-  // A slide may appear several times (variants share the same fragments) — dedupe by line.
+  // Variant copies of a slide carry the same fragments — count each distinct source line
+  // once, so the reported number is the brief's real line count.
   const seen = new Set<string>()
   const lost: string[] = []
   let total = 0
   for (const { i, lines } of owners) {
     for (const line of lines) {
-      const key = `${i}::${line}`
-      if (seen.has(key)) continue
+      const key = normLoose(line)
+      if (!key || seen.has(key)) continue
       seen.add(key)
       total++
-      if (!deckBlob.includes(normLoose(line))) {
+      if (!deckBlob.includes(key)) {
         lost.push(`slide ${i + 1}: "${line.slice(0, 60)}${line.length > 60 ? '…' : ''}"`)
       }
     }

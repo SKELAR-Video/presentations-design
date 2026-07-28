@@ -43,3 +43,6 @@ next-env.d.ts
 # local check-deck run state (per-machine, not shared)
 /scripts/.last-inspect-snapshot.json
 /scripts/.thumbnails/
+
+# fixture-test build output
+.fx-build/

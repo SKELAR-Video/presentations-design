@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { PHASE0_COMPOSITIONS } from './compositions'
-import type { SlidePlan, Theme } from './types'
+import type { Slide, SlidePlan, Theme } from './types'
+import { applyCoverageFallback, looseNorm, missingSourceLines } from './coverage'
 import type { SourceSlide } from '@/app/api/fetch-doc/route'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -351,32 +352,15 @@ JSON з рівно ${slides.length} елементами в "slides".`
   const content = message.content[0]
   if (content.type !== 'text') throw new Error('Unexpected response type from Anthropic')
   const raw = content.text.trim()
-  let json = raw.startsWith('```') ? raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```\s*$/, '').trim() : raw
-  let mapping: { slides: SlideAssignment[] }
-  try {
-    mapping = JSON.parse(json) as { slides: SlideAssignment[] }
-  } catch {
-    const start = json.indexOf('{'), end = json.lastIndexOf('}')
-    if (start !== -1 && end > start) {
-      json = json.slice(start, end + 1)
-      mapping = JSON.parse(json) as { slides: SlideAssignment[] }
-    } else {
-      throw new SyntaxError(`No JSON object found in 1to1 LLM response (len=${json.length})`)
-    }
-  }
+  let mapping = parse1to1Mapping(raw)
 
-  // Build SlidePlan — text copied verbatim from source, LLM never touched it
-  return {
-    theme,
-    sheetCount: slides.length,
-    // Verbatim reference for the live content_integrity check. Without this the check
-    // silently no-ops on every slide of a Slides brief (it needs sourceText to compare).
-    sourceText: slides.flatMap(s => s.texts).join('\n'),
-    slides: slides.map((source, i) => {
-      const m = mapping.slides[i] ?? { composition: 'title_body', assignment: {} }
+  // Build the plan — text copied verbatim from source, LLM never touched it
+  function buildSlides(m: { slides: SlideAssignment[] }): Slide[] {
+    return slides.map((source, i) => {
+      const a = m.slides[i] ?? { composition: 'title_body', assignment: {} }
       const slots: Record<string, string> = {}
 
-      for (const [slotName, ref] of Object.entries(m.assignment ?? {})) {
+      for (const [slotName, ref] of Object.entries(a.assignment ?? {})) {
         if (ref === null || ref === undefined) continue
         const indices = Array.isArray(ref) ? ref : [ref]
         const text = indices
@@ -386,7 +370,7 @@ JSON з рівно ${slides.length} елементами в "slides".`
         if (text) slots[slotName] = text
       }
 
-      const composition = applyMappingGuards(m.composition || 'title_body', slots, i + 1)
+      const composition = applyMappingGuards(a.composition || 'title_body', slots, i + 1)
       return {
         id: `slide_${i + 1}`,
         composition,
@@ -394,15 +378,119 @@ JSON з рівно ${slides.length} елементами в "slides".`
         flags: {},
         fragments: sourceLines(source),
       }
-    }),
+    })
+  }
+
+  // Per-slide source lines that landed in no slot at all — i.e. content about to vanish.
+  function findMissing(built: Slide[]): string[][] {
+    return built.map((slide, i) => missingSourceLines(slide, sourceLines(slides[i])))
+  }
+  const lostCount = (m: string[][]) => m.reduce((n, l) => n + l.length, 0)
+
+  let built   = buildSlides(mapping)
+  let missing = findMissing(built)
+
+  // ── Content-integrity retry ─────────────────────────────────────────────────
+  // Mirrors mapToPlan: the Docs path has always had this guard, the Slides path had
+  // none — a single unlucky assignment ("this is a closing, I'll take the first line
+  // only") dropped the rest of the slide silently.
+  if (lostCount(missing) > 0) {
+    const report = missing
+      .map((m, i) => m.length > 0
+        ? `Слайд ${i + 1}: не призначено ${m.length} рядків: ${m.map(f => `"${f.slice(0, 60)}"`).join(', ')}`
+        : null)
+      .filter(Boolean)
+      .join('\n')
+    console.warn(`[1to1-content-integrity] FAIL before retry:\n${report}`)
+
+    const retryPrompt = `ПОМИЛКА: частина рядків не потрапила в жоден слот — цей контент буде ВТРАЧЕНО.
+${report}
+
+Правила виправлення (виконай ВСІ):
+1. НЕ залишай жоден рядок без слоту. Якщо у вибраній композиції не вистачає слотів — зміни композицію.
+2. Слайд, де крім заголовка є ще текст (тези, список, підсумок), а слотів під нього немає → title_body: ЗАГОЛОВОК = індекс заголовка, ТЕКСТ = масив індексів усіх решти фрагментів.
+3. Для closing / section / section_red решту фрагментів признач у ПІДЗАГОЛОВОК масивом індексів — композицію не міняй.
+4. НЕ змінюй кількість слайдів і НЕ зливай слайди.
+5. НЕ дублюй один фрагмент у кількох слотах.
+Поверни виправлений JSON з РІВНО ${slides.length} слайдами.`
+
+    try {
+      const retry = await client.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 8192,
+        system: SYSTEM_1TO1,
+        messages: [
+          { role: 'user', content: userMessage },
+          { role: 'assistant', content: raw },
+          { role: 'user', content: retryPrompt },
+        ],
+      })
+      const rc = retry.content[0]
+      if (rc.type === 'text') {
+        const m2 = parse1to1Mapping(rc.text.trim())
+        if (m2.slides.length === slides.length) {
+          const built2   = buildSlides(m2)
+          const missing2 = findMissing(built2)
+          // Only accept the retry if it actually loses less content
+          if (lostCount(missing2) < lostCount(missing)) {
+            mapping = m2; built = built2; missing = missing2
+            console.log(`[1to1-content-integrity] retry accepted: lost ${lostCount(missing2)} lines`)
+          } else {
+            console.warn(`[1to1-content-integrity] retry rejected: lost ${lostCount(missing2)} ≥ ${lostCount(missing)}`)
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`[1to1-content-integrity] retry failed: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  // ── Deterministic fallback ──────────────────────────────────────────────────
+  // Whatever the LLM decided, no source line is allowed to disappear.
+  built.forEach((slide, i) => {
+    if ((missing[i]?.length ?? 0) === 0) return
+    applyCoverageFallback(slide, sourceLines(slides[i]), i + 1)
+    missing[i] = []
+  })
+
+  built.forEach((slide, i) => {
+    console.log(`[mapSlides1to1] slide ${i + 1} (${slide.composition}): src_lines=${sourceLines(slides[i]).length} slots=${Object.keys(slide.slots).join(',') || '(none)'} lost=${missing[i]?.length ?? 0}`)
+  })
+
+  return {
+    theme,
+    sheetCount: slides.length,
+    // Verbatim reference for the live content_integrity check. Without this the check
+    // silently no-ops on every slide of a Slides brief (it needs sourceText to compare).
+    sourceText: slides.flatMap(s => s.texts).join('\n'),
+    slides: built,
   }
 }
+
+function parse1to1Mapping(text: string): { slides: SlideAssignment[] } {
+  let json = text.startsWith('```')
+    ? text.replace(/^```(?:json)?\n?/, '').replace(/\n?```\s*$/, '').trim()
+    : text
+  try {
+    return JSON.parse(json) as { slides: SlideAssignment[] }
+  } catch {
+    const start = json.indexOf('{'), end = json.lastIndexOf('}')
+    if (start !== -1 && end > start) {
+      json = json.slice(start, end + 1)
+      return JSON.parse(json) as { slides: SlideAssignment[] }
+    }
+    throw new SyntaxError(`No JSON object found in 1to1 LLM response (len=${json.length})`)
+  }
+}
+
 
 // Source slide → its brief lines. Shape texts are multi-line; the line is the smallest
 // unit a slot can carry, so coverage is tracked per line, not per shape.
 function sourceLines(source: SourceSlide): string[] {
   return source.texts.flatMap(t => t.split('\n').map(l => l.trim()).filter(Boolean))
 }
+
+
 
 // ─── Sheet + fragment parsing ─────────────────────────────────────────────────
 // Splits ТЗ by ___ / --- delimiters into sheets, then into verbatim line fragments.
@@ -417,7 +505,7 @@ type SheetParse = {
 
 function parseSheets(text: string): SheetParse {
   const DELIMITER = /^[_\-]{3,}$/
-  const lines = text.replace(/\r\n/g, '\n').replace(//g, '\n').split('\n').map(l => l.trim())
+  const lines = text.replace(/\r\n/g, '\n').replace(/\u000B/g, '\n').split('\n').map(l => l.trim())
 
   const hasDelimiters = lines.some(l => DELIMITER.test(l))
   const sheets: string[][] = [[]]

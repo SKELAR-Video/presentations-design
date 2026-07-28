@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "check-deck": "node scripts/check-deck.js"
+    "check-deck": "node scripts/check-deck.js",
+    "validate-fixture": "tsc scripts/validate-fixture.ts --outDir .fx-build --module commonjs --target es2020 --esModuleInterop --skipLibCheck --moduleResolution node && node .fx-build/scripts/validate-fixture.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",

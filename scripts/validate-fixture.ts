@@ -2,7 +2,8 @@
 // Run: npx ts-node --skip-project scripts/validate-fixture.ts
 // Verifies: no_literal_asterisk, no_duplicate_title, badge_item_max_chars
 
-import { validatePlan } from '../lib/validator'
+import { validatePlan, checkContentCoverage } from '../lib/validator'
+import { applyCoverageFallback, missingSourceLines } from '../lib/coverage'
 import type { SlidePlan } from '../lib/types'
 
 // ─── Fixture 1 — PASS: correct badges slide (App Store categories) ─────────
@@ -405,4 +406,64 @@ run('Fixture 2 — run 2', fixture2)
   runTitle('title / short',               'Чому бігати важливо')
   runTitle('title / щоденного borderline', 'Категорії для щоденного життя')
   runTitle('title / one long word',        'Продуктивність підприємства')
+}
+
+// ─── content_coverage + mapping fallback ──────────────────────────────────────
+// Regression guard for the bug where a Slides brief lost a whole slide's body text and
+// the deck still reported PASS: nothing in the live path compared the deck against the
+// brief. Fixture 5/6 cover the live check; Fixture 7 covers the mapping safety net.
+{
+  const WORDING_LINES = [
+    'Wording directions',
+    'Ми не чекаємо, поки ти "будеш готовий" - ми допоможемо почати вже зараз',
+    'Питання "навіщо?" вітаються більше, ніж "як скажете"',
+    'Ти не "гвинтик"',
+  ]
+
+  const coveragePass: SlidePlan = {
+    theme: 'dark',
+    slides: [{
+      id: 'slide_1',
+      composition: 'closing',
+      slots: { ЗАГОЛОВОК: WORDING_LINES[0], ПІДЗАГОЛОВОК: WORDING_LINES.slice(1).join('\n') },
+      flags: {},
+      fragments: WORDING_LINES,
+    }],
+  }
+
+  // The actual reported bug: LLM took only the title, the rest vanished.
+  const coverageFail: SlidePlan = {
+    theme: 'dark',
+    slides: [{
+      id: 'slide_1',
+      composition: 'closing',
+      slots: { ЗАГОЛОВОК: WORDING_LINES[0] },
+      flags: {},
+      fragments: WORDING_LINES,
+    }],
+  }
+
+  function runCoverage(label: string, plan: SlidePlan, expectPass: boolean) {
+    const r = the_check(plan)
+    const ok = r.pass === expectPass
+    console.log(`\n=== ${label} ===`)
+    console.log(`  content_coverage: ${r.pass ? '✅ PASS' : '❌ FAIL'} — ${r.detail}`)
+    console.log(`  → expected ${expectPass ? 'PASS' : 'FAIL'}: ${ok ? '✅ correct' : '❌ WRONG'}`)
+  }
+  const the_check = checkContentCoverage
+
+  runCoverage('Fixture 5 — content_coverage PASS (closing keeps its body text)', coveragePass, true)
+  runCoverage('Fixture 6 — content_coverage FAIL (closing body text dropped)', coverageFail, false)
+
+  // Fixture 7 — mapping fallback must restore every dropped line, no LLM involved.
+  console.log('\n=== Fixture 7 — mapSlides1to1 coverage fallback ===')
+  const broken = { id: 'slide_1', composition: 'closing', slots: { ЗАГОЛОВОК: WORDING_LINES[0] }, flags: {} }
+  const before = missingSourceLines(broken, WORDING_LINES)
+  applyCoverageFallback(broken, WORDING_LINES, 1)
+  const after = missingSourceLines(broken, WORDING_LINES)
+  console.log(`  missing before fallback: ${before.length} lines`)
+  console.log(`  missing after  fallback: ${after.length} lines`)
+  console.log(`  composition kept: ${broken.composition} | slots: ${Object.keys(broken.slots).join(', ')}`)
+  const ok = before.length === 3 && after.length === 0 && broken.composition === 'closing'
+  console.log(`  → ${ok ? '✅ all 3 lines restored, closing preserved' : '❌ WRONG'}`)
 }
