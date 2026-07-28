@@ -78,7 +78,8 @@ async function main() {
       const softTotal = facts.reduce((n, f) => n + f.soft_breaks, 0)
       console.log(
         `\n  box ${tb.objectId}  ${Math.round(tb.w)}×${Math.round(tb.h)}px  ` +
-        `font=${tb.fontSize_pt ?? '—'}pt  paragraphs=${tb.paragraph_count}  soft_breaks(\\v)=${softTotal}`
+        `font=${tb.fontSize_pt ?? '—'}pt  all_fonts=[${(tb.all_fontSizes_pt ?? []).join(',')}]  ` +
+        `paragraphs=${tb.paragraph_count}  soft_breaks(\\v)=${softTotal}`
       )
       for (const f of facts) {
         console.log(

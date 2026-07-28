@@ -73,6 +73,8 @@ node scripts/diag-spacing.js <deckId> [номер слайда|all]
 
 Що має бути на боксі зі списком (≥2 пунктів): `lineSpacing=90%`, `spaceBelow ≠ —`, `soft_breaks(\v)=0`. Скрипт сам виводить вердикт `DIFFERENT ✅` / `SAME ❌`.
 
+Він також виводить `all_fonts=[...]` — **усі** кеглі в боксі, не лише перший. Без цього дефект «перший пункт списку роздутий на +8pt» був невидимий: `fontSize_pt` читається з першого текст-рану, тобто саме з роздутого рядка, і бокс виглядав як однорідні 22pt. Правило → `docs/rules/bento.md`.
+
 ## Панель фактів (inspect-deck)
 
 `buildPresentation` повертає `{ url, validation, deckFacts }`.

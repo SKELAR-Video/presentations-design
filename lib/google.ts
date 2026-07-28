@@ -3675,6 +3675,13 @@ export async function buildPresentation(
   // Pre-process bento card slots: convert " · " list separators to bullet lines.
   // Done BEFORE replaceAllText so font sizing also uses the converted text.
   const bentoProcessedSlots = new Map<number, Record<string, string>>()
+  // Which (slide, token) pairs actually HAVE a group header — recorded here, where the
+  // header is created, instead of being guessed later from "the text contains a \n".
+  // That guess was wrong for two_columns_plain/two_columns_labeled: they skip the
+  // preprocessing below (their label lives in its own ПІДПИС_N box), so their items stay
+  // \n-separated and item #1 was styled as a header — one full step (+8pt) larger than the
+  // rest of the list, on every such card in the deck.
+  const bentoHeaderSlots = new Map<number, Set<string>>()
   for (let i = 0; i < plan.slides.length; i++) {
     const compId = plan.slides[i].composition
     const tokens = BENTO_TOKENS[compId]
@@ -3703,6 +3710,10 @@ export async function buildPresentation(
       processed[tok] = headerSplit
         ? `${headerSplit.header}\n${headerSplit.bodyLines.join('\v')}`
         : preprocessBentoText(processed[tok])
+      if (headerSplit) {
+        if (!bentoHeaderSlots.has(i)) bentoHeaderSlots.set(i, new Set())
+        bentoHeaderSlots.get(i)!.add(tok)
+      }
     }
     bentoProcessedSlots.set(i, processed)
   }
@@ -4206,11 +4217,13 @@ export async function buildPresentation(
         if (hasListItems(slotValue)) {
           requests.push(listParagraphStyleRequest(el.objectId, pt))
         }
-        // Header line (splitCardHeader, applied during preprocessing): the ONLY real
-        // \n left in the text separates it from the \v-joined body. Always WHITE;
+        // Header line (splitCardHeader, applied during preprocessing): always WHITE;
         // bigger only if it fits without pushing the body into overflow (computeHeaderPt).
+        // Whether a header exists is READ from what preprocessing recorded, never inferred
+        // from the presence of a \n — in a list that keeps its items \n-separated the first
+        // item is not a header, and enlarging it invents a hierarchy that isn't there.
         const headerNlIdx = slotValue.indexOf('\n')
-        const hasHeader = headerNlIdx > 0
+        const hasHeader = headerNlIdx > 0 && (bentoHeaderSlots.get(i)?.has(matchedToken) ?? false)
         if (hasHeader) {
           const headerLen = Math.min(headerNlIdx, actualLen)
           if (headerLen > 0) {
