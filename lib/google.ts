@@ -3463,6 +3463,11 @@ export async function buildPresentation(
   const { expanded: _expandedPlan, variantMap } = expandPlanWithVariants(plan)
   plan = _expandedPlan
 
+  // Snapshot slot text as the mapping stage left it — the steps below deliberately rewrite
+  // it (number compaction, ПІДПИС de-duplication, label extraction). content_coverage
+  // accepts a source line found in either state, so those rewrites don't read as loss.
+  plan.preRenderSlots = plan.slides.flatMap(s => Object.values(s.slots))
+
   // Step 2.9: Auto-extract column labels for two_columns_labeled / two_columns_plain.
   // For "Label — Body" or "Label: Body" content in КОЛОНКА_N:
   //   two_columns_labeled → ПІДПИС_N = label (gray box), КОЛОНКА_N = capitalized body

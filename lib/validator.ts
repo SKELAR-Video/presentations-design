@@ -169,8 +169,8 @@ function checkContentIntegrity(
       continue
     }
 
-    // (b) verbatim check — closing is structural, skip it
-    if (!sourceText || compId === 'closing') continue
+    // (b) verbatim check — needs the original brief to compare against
+    if (!sourceText) continue
     const isKpiValue = /^КАРТКА_\d+_ЗНАЧЕННЯ$/.test(name)
     const lines = v.split('\n').map(l => l.trim()).filter(Boolean)
     for (const line of lines) {
@@ -657,6 +657,66 @@ function checkFragmentCoverage(
   return { check: 'fragment_coverage', pass, detail }
 }
 
+// Deck-level zero-content-loss check — the live counterpart of fragment_coverage.
+//
+// Deliberately deck-level, not per-slide: expandPlanWithVariants duplicates a slide into
+// several layout variants, and a variant is allowed to structurally drop a slot (e.g. ТЕКСТ
+// when moving to two_columns). Asking "does this line still exist anywhere in the deck"
+// therefore reports real loss without flagging legitimate per-variant drops.
+//
+// Matching is loose on purpose: the render stage rewrites slot text in known ways (NBSP,
+// \v soft line breaks, colon→em-dash, stripped trailing period, capitalisation), and those
+// transforms must not read as content loss.
+function normLoose(s: string): string {
+  return (s ?? '')
+    .replace(/ /g, ' ')   // NBSP inserted by addNbsp
+    .replace(//g, ' ')   // \v soft line break inserted for bullet lists
+    .replace(/ — /g, ': ')     // colon→em-dash normalisation
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.…]+$/, '')  // trailing period stripped at render
+    .toLowerCase()
+}
+
+export function checkContentCoverage(plan: SlidePlan): CheckResult {
+  const owners = plan.slides
+    .map((s, i) => ({ i, lines: s.fragments ?? [] }))
+    .filter(o => o.lines.length > 0)
+  if (owners.length === 0) {
+    return { check: 'content_coverage', pass: true, detail: 'no source fragments attached — skipped' }
+  }
+
+  // Every slot value of the whole deck, normalised once — final slots plus the
+  // pre-render snapshot, so deliberate render-time rewrites are not read as loss.
+  const deckBlob = normLoose([
+    ...plan.slides.flatMap(s => Object.values(s.slots)),
+    ...(plan.preRenderSlots ?? []),
+  ].join(' \n '))
+
+  // A slide may appear several times (variants share the same fragments) — dedupe by line.
+  const seen = new Set<string>()
+  const lost: string[] = []
+  let total = 0
+  for (const { i, lines } of owners) {
+    for (const line of lines) {
+      const key = `${i}::${line}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      total++
+      if (!deckBlob.includes(normLoose(line))) {
+        lost.push(`slide ${i + 1}: "${line.slice(0, 60)}${line.length > 60 ? '…' : ''}"`)
+      }
+    }
+  }
+
+  const pass = lost.length === 0
+  const detail = pass
+    ? `source_lines=${total} | all present in deck`
+    : `source_lines=${total} | LOST ${lost.length}: ${lost.slice(0, 8).join('; ')}${lost.length > 8 ? ` …+${lost.length - 8}` : ''}`
+  if (!pass) console.warn(`[content_coverage] FAIL: ${detail}`)
+  return { check: 'content_coverage', pass, detail }
+}
+
 export function validatePlan(plan: SlidePlan): PlanCheckResult[] {
   const results: PlanCheckResult[] = []
 
@@ -751,6 +811,7 @@ export async function validateDeck(
     // deck-level checks — attach to slide 0
     if (i === 0) {
       checks.push(themeCheck)
+      checks.push(checkContentCoverage(plan))
       if (plan.sheetCount !== undefined) {
         const pass = plan.slides.length >= plan.sheetCount
         checks.push({

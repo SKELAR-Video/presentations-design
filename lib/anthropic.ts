@@ -368,6 +368,10 @@ JSON з рівно ${slides.length} елементами в "slides".`
   // Build SlidePlan — text copied verbatim from source, LLM never touched it
   return {
     theme,
+    sheetCount: slides.length,
+    // Verbatim reference for the live content_integrity check. Without this the check
+    // silently no-ops on every slide of a Slides brief (it needs sourceText to compare).
+    sourceText: slides.flatMap(s => s.texts).join('\n'),
     slides: slides.map((source, i) => {
       const m = mapping.slides[i] ?? { composition: 'title_body', assignment: {} }
       const slots: Record<string, string> = {}
@@ -388,9 +392,16 @@ JSON з рівно ${slides.length} елементами в "slides".`
         composition,
         slots,
         flags: {},
+        fragments: sourceLines(source),
       }
     }),
   }
+}
+
+// Source slide → its brief lines. Shape texts are multi-line; the line is the smallest
+// unit a slot can carry, so coverage is tracked per line, not per shape.
+function sourceLines(source: SourceSlide): string[] {
+  return source.texts.flatMap(t => t.split('\n').map(l => l.trim()).filter(Boolean))
 }
 
 // ─── Sheet + fragment parsing ─────────────────────────────────────────────────
@@ -624,7 +635,16 @@ ${sheetSummary}
       }
 
       const composition = applyMappingGuards(s.composition || 'title_body', slots, i + 1)
-      return { id: `slide_${i + 1}`, composition, slots, flags: {} }
+      const [fStart, fEnd] = sheetRanges[i] ?? [0, -1]
+      return {
+        id: `slide_${i + 1}`,
+        composition,
+        slots,
+        flags: {},
+        // Same per-slide coverage data the Slides path attaches, so the live
+        // content_coverage check works for Docs briefs too.
+        fragments: hasSheets ? fragments.slice(fStart, fEnd + 1).filter(Boolean) : undefined,
+      }
     })
   }
 

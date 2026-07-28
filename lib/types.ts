@@ -15,6 +15,10 @@ export type Slide = {
   theme?: Theme
   slots: SlideSlots
   flags: SlotFlag
+  // Source lines of the brief that belong to this slide. Attached per-slide (not by
+  // index) so it survives expandPlanWithVariants reordering/duplication, and read by
+  // the deck-level content_coverage check to catch silently dropped content.
+  fragments?: string[]
 }
 
 export type SlidePlan = {
@@ -29,6 +33,11 @@ export type SlidePlan = {
   // Per-slide source fragments (lines from the original brief that belong to that slide).
   // Set when hasSheets=true. Used by validatePlan to detect silent content loss.
   fragmentGroups?: string[][]
+  // Slot values captured right after variant expansion, BEFORE the render stage rewrites
+  // them (number compaction, ПІДПИС de-duplication, …). content_coverage accepts a source
+  // line found in either this snapshot or the final slots, so deliberate rewrites don't
+  // read as content loss.
+  preRenderSlots?: string[]
 }
 
 export type CompositionSlot = {
