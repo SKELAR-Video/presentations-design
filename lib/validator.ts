@@ -7,6 +7,8 @@ const _FPX   = 9144000 / 1920  // EMU per Figma px
 const _SLIDE_W = 1920
 const _SLIDE_H = 1080
 const _BOUNDS_TOL = 4           // px — rounding slack
+const _V_INSET = 19             // Google Slides' fixed inner padding; mirrors _INSET
+const _V_OVERFLOW_TOL = 8       // px — rounding slack for text_overflow
 
 export type CheckResult = {
   check: string
@@ -42,6 +44,92 @@ function elBounds(el: slides_v1.Schema$PageElement) {
   const w = rPx(s.width?.magnitude, t.scaleX)
   const h = rPx(s.height?.magnitude, t.scaleY)
   return { x, y, w, h, right: x + w, bottom: y + h }
+}
+
+// ─── text_overflow ────────────────────────────────────────────────────────────
+// Reads the FINISHED file: how tall is the text that was actually written, versus the box
+// it was written into. Nothing else checked this — max_chars caps characters, bounds
+// checks the box, bento_layout works off the plan — so text spilling out of its card (and
+// off the slide) was machine-invisible and reached production twice.
+//
+// Models what is RENDERED, not what the generator budgeted. The generator is deliberately
+// conservative (0.65 char width, 1.2 line factor) so it picks a font with room to spare;
+// reusing those numbers here would fail slides that look perfectly fine — e.g. a closing
+// whose text needs 469px in a 478px box measures as 499px under the generator's budget.
+// This check answers only "does it actually spill on screen": ~0.5 char width and a 1.1
+// line factor (lineSpacing 90% × Inter's ~1.21em), plus the spaceBelow recorded on each
+// paragraph. The defects it exists to catch were +132px and +77px — far outside the slack.
+//
+// Scope: boxes holding 2+ paragraphs. Single-paragraph boxes (titles) are governed by the
+// word-fit and fixed-height rules and would only add noise here.
+function checkTextOverflow(slide: slides_v1.Schema$Page): CheckResult {
+  const fails: string[] = []
+
+  for (const el of slide.pageElements ?? []) {
+    if (!el.shape || el.shape.shapeType !== 'TEXT_BOX') continue
+    if (!el.size || !el.transform) continue
+
+    // Rebuild paragraphs the way Slides stores them: a paragraphMarker opens each one.
+    type P = { text: string; pt: number; spaceBelow: number }
+    const paras: P[] = []
+    let cur: P | null = null
+    for (const te of el.shape.text?.textElements ?? []) {
+      if (te.paragraphMarker) {
+        cur = { text: '', pt: 0, spaceBelow: te.paragraphMarker.style?.spaceBelow?.magnitude ?? 0 }
+        paras.push(cur)
+        continue
+      }
+      const run = te.textRun
+      if (!run?.content || !cur) continue
+      cur.text += run.content
+      cur.pt = Math.max(cur.pt, run.style?.fontSize?.magnitude ?? 0)
+    }
+
+    const filled = paras.filter(p => p.text.trim())
+    if (filled.length < 2) continue
+
+    const { w, h } = elBounds(el)
+    const innerW = w - 2 * _V_INSET
+    const innerH = h - 2 * _V_INSET
+    if (innerW <= 0 || innerH <= 0) continue
+
+    let needed = 0
+    for (const p of filled) {
+      const pt = p.pt || 14
+      // \v would be a soft break inside the paragraph — still its own line
+      for (const seg of p.text.replace(/\n$/, '').split('\v')) {
+        needed += _vWrappedLines(seg, innerW, pt) * pt * 2.667 * _V_RENDERED_LINE_FACTOR
+      }
+      needed += p.spaceBelow * 2.667
+    }
+
+    if (needed > innerH + _V_OVERFLOW_TOL) {
+      const tok = elToken(el) ?? el.objectId ?? '?'
+      fails.push(
+        `${tok}: text ${Math.round(needed)}px in a ${Math.round(innerH)}px box ` +
+        `(+${Math.round(needed - innerH)}px, ${filled.length} paragraphs)`,
+      )
+    }
+  }
+
+  return { check: 'text_overflow', pass: fails.length === 0, detail: fails.join(' | ') || undefined }
+}
+
+// Rendered-reality constants — see checkTextOverflow for why they are not the generator's
+const _V_RENDERED_LINE_FACTOR = 1.1   // lineSpacing 90% × Inter's ~1.21em
+const _V_RENDERED_CHAR_W      = 0.5   // measured average, vs the generator's cautious 0.65
+
+function _vWrappedLines(text: string, wPx: number, pt: number): number {
+  if (!text.trim()) return 0
+  const cpl = Math.max(1, Math.floor(wPx / (pt * 2.667 * _V_RENDERED_CHAR_W)))
+  const words = text.split(/\s+/).filter(Boolean)
+  let lines = 1, cur = 0
+  for (const w of words) {
+    if (!cur) cur = w.length
+    else if (cur + 1 + w.length <= cpl) cur += 1 + w.length
+    else { lines++; cur = w.length }
+  }
+  return lines
 }
 
 function elToken(el: slides_v1.Schema$PageElement): string | null {
@@ -779,6 +867,7 @@ export async function validateDeck(
     }
 
     checks.push(checkBounds(slide))
+    checks.push(checkTextOverflow(slide))
     checks.push(checkAutofit(slide))
     checks.push(checkFont(slide))
     checks.push(checkMaxChars(planSlide.slots, compId))

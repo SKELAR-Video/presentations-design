@@ -217,29 +217,29 @@ function hasListItems(text: string): boolean {
   return text.split(/[\n\v]/).filter(s => s.trim()).length >= 2
 }
 
+// THE height of a block of text — the single number both variables of a bento row are
+// derived from: the font search asks "does this fit the card?", the layout asks "how tall
+// must the card be?". They used to answer with two different formulas (the layout counted
+// a 12-item list as one flowing paragraph and knew nothing about the gaps between items),
+// so the font was chosen for 620px of card while the card was built 380px tall and the
+// text spilled out of it. One function makes that divergence impossible.
+//
+// Counts every forced line start (\n and \v), wraps at the same 0.65 char-width factor as
+// longestWordPx, and adds the inter-item air the renderer really writes.
+function measuredTextHeight(text: string, wPx: number, pt: number): number {
+  if (!text.trim()) return 0
+  const lines  = countWrappedLines(text, wPx, pt)
+  const items  = text.split(/[\n\v]/).filter(p => p.trim()).length
+  const gapPx  = hasListItems(text) ? items * listGapPx(pt) : 0
+  return lines * fitLineH(pt) + gapPx
+}
+
 function textFitsParagraphs(text: string, wPx: number, hPx: number, pt: number): boolean {
   if (!text.trim()) return true
   if (longestWordPx(text, pt) * 1.1 > wPx) return false  // 1.1× safety margin
   const paras = text.split(/[\n\v]/).filter(p => p.trim())
   if (paras.length <= 1) return textFits(text, wPx, hPx, pt)
-  // The inter-item gap is real height, so the font search has to pay for it here —
-  // otherwise pt is picked for a density the render no longer produces and the last
-  // item drops out of the card. Budgeting for it is what makes "smaller font, clearly
-  // separated items" an outcome of the model rather than a hope.
-  const gapPx = hasListItems(text) ? paras.length * listGapPx(pt) : 0
-  // Multi-paragraph: same 0.65 factor for consistent line-count estimation
-  const cpl = Math.max(1, Math.floor(wPx / (pt * 2.667 * 0.65)))
-  const totalLines = paras.reduce((s, p) => {
-    const words = p.split(/\s+/).filter(Boolean)
-    let lines = 1, cur = 0
-    for (const w of words) {
-      if (!cur) cur = w.length
-      else if (cur + 1 + w.length <= cpl) cur += 1 + w.length
-      else { lines++; cur = w.length }
-    }
-    return s + lines
-  }, 0)
-  return totalLines * fitLineH(pt) + gapPx <= hPx  // lines + the air between items
+  return measuredTextHeight(text, wPx, pt) <= hPx
 }
 
 // ─── bento_right ТЕКСТ font-shrink ───────────────────────────────────────────
@@ -1719,13 +1719,19 @@ function buildBentoRowLayoutRequests(
     // minTopY = _CY = 300 (title-to-bento gap; cards never overlap title).
     const VERT_PAD_ROW = 40
     const cardPts = pickBentoCardPts(compId, processedSlots)
+    // measuredTextHeight — the SAME function pickBentoCardPts just used to choose the
+    // font. Growing the card is the free variable: nothing is lost by making it taller,
+    // whereas a font drop costs legibility, so the row takes all the height it needs and
+    // only then is the font asked to give way (down to the 10pt floor, see
+    // docs/rules/bento.md). The previous estimate here ignored line breaks and the
+    // inter-item gaps entirely, so the row stayed at its 440px minimum while holding
+    // 500px+ of text.
     let maxTextH = 0
     for (const token of tokens) {
       const text = (processedSlots[token] ?? '').trim()
       if (!text) continue
       const pt = cardPts?.[token] ?? (BENTO_MIN_PT[compId] ?? 10)
-      const lines = estimateLineCount(text, innerW, pt)
-      const h = Math.ceil(lines * lineH(pt))
+      const h  = Math.ceil(measuredTextHeight(text, innerW, pt))
       if (h > maxTextH) maxTextH = h
     }
     const contentCardH  = maxTextH + 2 * _INN + 2 * VERT_PAD_ROW
@@ -4486,7 +4492,10 @@ export async function buildPresentation(
       const steps = (FONT_STEPS as readonly number[]).filter(s => s <= defaultPt)
       let chosenPt: number | null = null
       for (const pt of steps) {
-        if (textFits(slotValue, innerW, innerH, pt)) { chosenPt = pt; break }
+        // Paragraph-aware: textFits() collapses \n/\v to spaces, so an 11-item list looked
+        // like one flowing paragraph and kept a font far too large for the forced line
+        // starts and the gaps between them.
+        if (textFitsParagraphs(slotValue, innerW, innerH, pt)) { chosenPt = pt; break }
       }
       if (chosenPt === null) chosenPt = steps[steps.length - 1] ?? 10
       logWordFit(`${compId}/${slotName}`, slotValue, innerW, chosenPt)
@@ -4500,6 +4509,13 @@ export async function buildPresentation(
           textRange: { type: 'ALL' },
         },
       })
+      // The inter-item gap is a fraction of the FONT, and the font just changed. Whoever
+      // queued listParagraphStyleRequest earlier sized it from the pre-shrink pt — on a
+      // closing slide that left an 18pt gap (computed at 36pt) under 10pt text, i.e. 528px
+      // of air in a 478px box. Re-emit it so the gap always matches the font on screen.
+      if (hasListItems(slotValue)) {
+        requests.push(listParagraphStyleRequest(el.objectId, chosenPt))
+      }
     }
   }
 

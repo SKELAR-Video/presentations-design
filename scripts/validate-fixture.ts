@@ -298,6 +298,100 @@ run('Fixture 2 — run 2', fixture2)
     comps.forEach(checkBento)
   }
 
+  // ─── Bento card growth: the row must get TALLER before the font gets smaller ──
+  // Regression guard for the two decks where text ran out of its card and off the slide.
+  // A bento row has two variables — card height and font size. Card height is free
+  // (nothing is lost by using it), so it must be spent first. It wasn't: the row-layout
+  // height estimate counted a 12-item list as one flowing paragraph and ignored the gaps
+  // between items, so the row stayed at its 440px minimum while holding 500px+ of text.
+  console.log('\n=== Bento card growth fixture ===')
+  {
+    const PAD = 100, H = 1080, UW = 1720, GAP = 30, INN = 30, CY = 300
+    const VERT_PAD_ROW = 40, ROW_H_DEFAULT = 440
+    const CHAR_W = 0.65, FIT_LINE = 1.2, GAP_EM = 0.5     // generator's budget
+    const R_CHAR_W = 0.5, R_LINE = 1.1                    // what actually renders
+
+    const wrapped = (t: string, wPx: number, pt: number, cw: number) => {
+      const cpl = Math.max(1, Math.floor(wPx / (pt * 2.667 * cw)))
+      return t.split(/[\n\v]/).filter(p => p.trim()).reduce((sum, p) => {
+        const words = p.split(/\s+/).filter(Boolean)
+        let lines = 1, cur = 0
+        for (const w of words) {
+          if (!cur) cur = w.length
+          else if (cur + 1 + w.length <= cpl) cur += 1 + w.length
+          else { lines++; cur = w.length }
+        }
+        return sum + lines
+      }, 0)
+    }
+    const items = (t: string) => t.split(/[\n\v]/).filter(p => p.trim()).length
+    // generator: how tall does it think the text is (drives BOTH font and card height)
+    const budgetH = (t: string, wPx: number, pt: number) =>
+      wrapped(t, wPx, pt, CHAR_W) * pt * 2.667 * FIT_LINE + items(t) * GAP_EM * pt * 2.667
+    // reality: how tall it comes out on screen
+    const renderH = (t: string, wPx: number, pt: number) =>
+      wrapped(t, wPx, pt, R_CHAR_W) * pt * 2.667 * R_LINE + items(t) * GAP_EM * pt * 2.667
+    // the estimate the layout used BEFORE the fix: one flat paragraph, no item gaps
+    const oldH = (t: string, wPx: number, pt: number) => {
+      const cpl = Math.max(1, Math.floor(wPx / (pt * 2.667 * 0.48)))
+      const words = t.replace(/[\n\v]/g, ' ').split(/\s+/).filter(Boolean)
+      let lines = 1, cur = 0
+      for (const w of words) {
+        if (!cur) cur = w.length
+        else if (cur + 1 + w.length <= cpl) cur += 1 + w.length
+        else { lines++; cur = w.length }
+      }
+      return lines * pt * 2.667 * 1.4
+    }
+
+    const rowInnerH = (textH: number) => {
+      const contentCardH = textH + 2 * INN + 2 * VERT_PAD_ROW
+      const rowY  = Math.max(H - PAD - Math.max(contentCardH, ROW_H_DEFAULT), CY)
+      const cardH = H - PAD - rowY
+      return { cardH, boxInner: cardH - 2 * INN }
+    }
+
+    // Real payloads from deck 1J3ftoH4g2uDPK-atf22t6pL706pFjdekHg_lbxMDA6Q
+    const slide7 = [
+      '“Зіркові” учні шкіл', 'Переможці олімпіад, МАН і конкурсів',
+      'Екстернат за успіхи в навчанні', 'Талановиті студенти та випускники',
+      'Найкращі на курсі', 'Переможці конкурсів та змагань, беруть участь в обмінах',
+      'Дипломи з відзнакою', 'Писали дипломні чи курсові по нашим бізнесам',
+      'Викладачі/Голови студпарламентів', 'Профільні спеціальності',
+      'Викладають в кількох вузах', 'Мають паралельно бізнес/працюють в ІТ',
+    ].join('\n')
+    const slide15 = [
+      'Студенти', 'Отримуй fast-track у компанію, в яку дуже складно потрапити',
+      'Працюй з глобальними ринками', 'Будуй бізнес, а не заповнюй безкінечні ікселі та джиру',
+      'Ростеш так швидко, як ростуть люди навколо тебе. Обирай оточення',
+      'Університет навчив тебе думати. Ми навчимо тебе діяти',
+    ].join('\n')
+
+    const innerW = Math.floor((UW - GAP) / 2) - 2 * INN   // 785 — two_columns column
+    const cases: Array<[string, string, number]> = [
+      ['slide7 / 12 items', slide7, 10],
+      ['slide15 / 6 items', slide15, 14],
+    ]
+
+    let allPass = true
+    for (const [label, text, pt] of cases) {
+      const now = rowInnerH(Math.ceil(budgetH(text, innerW, pt)))
+      const before = rowInnerH(Math.ceil(oldH(text, innerW, pt)))
+      const rendered = Math.round(renderH(text, innerW, pt))
+      const grew   = now.cardH > before.cardH
+      const fits   = rendered <= now.boxInner
+      const caught = rendered > before.boxInner        // the fixture must fail the old way
+      const pass = grew && fits && caught
+      allPass &&= pass
+      console.log(
+        `  [${label}] card_before=${before.cardH}px card_now=${now.cardH}px | ` +
+        `box_inner ${before.boxInner}→${now.boxInner}px | rendered=${rendered}px | ` +
+        `grew=${grew ? '✓' : '✗'} fits=${fits ? '✓' : '✗'} old_overflowed=${caught ? '✓' : '✗'} → ${pass ? 'PASS' : 'FAIL'}`,
+      )
+    }
+    console.log(`  → ${allPass ? '✅ card grows before the font shrinks' : '❌ FAILED'}`)
+  }
+
   // ─── Font selection: max-first + floor (2/3/4-card groups) ──────────────────
   // Pure math: verifies chosen_font = largest fitting pt ≥ floor.
   // Determinism: run twice — output must be identical.
