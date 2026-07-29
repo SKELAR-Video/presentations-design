@@ -1748,9 +1748,14 @@ function splitCardHeader(text: string): { header: string; bodyLines: string[] } 
   const rest = lines.slice(1)
   if (!first || rest.length < 1) return null
   const endsWithColon = /[:：]\s*$/.test(first)
-  const avgRestLen = rest.reduce((s, l) => s + l.length, 0) / rest.length
-  const isShort = first.length <= 40 && first.length <= avgRestLen * 0.7
-  if (!endsWithColon && !isShort) return null
+  // Whether a line is a marker is a property of that LINE, not of its neighbours. The old
+  // test also demanded it be ≤70% of the average item length, so the same kind of heading
+  // was a heading in one column and plain text in the next, purely because that column's
+  // items happened to be shorter: "Викладачі/Голови студпарламентів" (32 chars) failed
+  // against items averaging 29, while "Найкращі на курсі" passed against items averaging
+  // 50. Same predicate as the flat columns use for their grey marker — one definition of
+  // "marker" for the whole deck.
+  if (!endsWithColon && !isColumnLabel(first)) return null
   const header = first.replace(/[:：]\s*$/, '').trim()
   if (!header) return null
   return { header, bodyLines: rest }
