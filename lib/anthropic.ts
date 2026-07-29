@@ -68,7 +68,14 @@ const SYSTEM_VERBATIM = `Ти маппінг-агент: ТЗ → SKELAR-пре�
 - **bento_right_N використовує КАРТКА_N, не КОЛОНКА_N.** Для bento_right_2 → КАРТКА_1, КАРТКА_2. Для bento_right_3 → КАРТКА_1..3. Для bento_right_2x2 → КАРТКА_1..4. НІКОЛИ не використовуй КОЛОНКА_N для bento. Якщо пунктів 4 і всі є метриками — kpi_cards.
 
 Формат:
-{ "slides": [ { "composition": "cover", "assignment": { "ЗАГОЛОВОК": 0, "ПІДЗАГОЛОВОК": 1, "ДАТА": 2 } } ] }`
+{ "slides": [ { "composition": "cover", "assignment": { "ЗАГОЛОВОК": 0, "ПІДЗАГОЛОВОК": 1, "ДАТА": 2 } } ] }
+
+## markers — що виділяти білим у колонках
+Для КОЖНОЇ колонки (КОЛОНКА_N / КАРТКА_N), у якій ≥2 рядків, додай у "markers" відповідь:
+  true  — перший рядок є НАЗВОЮ КАТЕГОРІЇ для рядків під ним ("Викладачі/Голови студпарламентів" над описом цих людей; "Студенти" над тезами для студентів)
+  false — перший рядок є ЗВИЧАЙНИМ ПУНКТОМ, рівним іншим ("Підтримка проявів бренду" серед інших дій; будь-який перелік однорідних пунктів)
+Формат: "markers": { "КОЛОНКА_1": true, "КОЛОНКА_2": false }
+Це рішення про ЗМІСТ, не про довжину: короткий перший рядок сам по собі ще не робить його назвою категорії.`
 
 // ─── 1:1 mode ────────────────────────────────────────────────────────────────
 // LLM outputs ONLY composition + slot→index mapping.
@@ -104,12 +111,22 @@ assignment — Record<назва_слоту, індекс | [масив_інде
 11. agenda_3/4/5/6/7/8 → слайди адженди. ЗАГОЛОВОК="Адженда". ПУНКТ_N = по одному індексу, текст БЕЗ нумерації (номери 01..0N автоматичні). Вибирай СТРОГО за кількістю пунктів: 3→agenda_3, 4→agenda_4, 5→agenda_5, 6→agenda_6, 7→agenda_7, 8→agenda_8. Якщо пунктів не рівно N — НЕ використовуй agenda_N.
 12. title_photo → Як title_body з фото справа. ЗАГОЛОВОК(обов'язково) + ТЕКСТ?(опціонально) + ФОТО?(URL якщо є в тексті, інакше null). Обирай замість title_body коли тема виграє від візуального акценту.
 
+## markers — що виділяти білим у колонках
+Для КОЖНОЇ колонки (КОЛОНКА_N / КАРТКА_N), у якій ≥2 рядків, додай відповідь у "markers":
+  true  — перший рядок є НАЗВОЮ КАТЕГОРІЇ для рядків під ним ("Викладачі/Голови студпарламентів" над описом цих людей; "Студенти" над тезами для студентів)
+  false — перший рядок є ЗВИЧАЙНИМ ПУНКТОМ, рівним іншим ("Підтримка проявів бренду" серед інших дій; будь-який однорідний перелік)
+Це рішення про ЗМІСТ, не про довжину: короткий перший рядок сам по собі ще не робить його назвою категорії.
+
 Виводь ТІЛЬКИ JSON (без markdown):
-{ "slides": [ { "composition": "cover", "assignment": { "ЗАГОЛОВОК": 0, "ДАТА": null } } ] }`
+{ "slides": [ { "composition": "two_columns", "assignment": { "ЗАГОЛОВОК": 0, "КОЛОНКА_1": 1, "КОЛОНКА_2": 2 }, "markers": { "КОЛОНКА_1": true, "КОЛОНКА_2": false } } ] }`
 
 type SlideAssignment = {
   composition: string
   assignment: Record<string, number | number[] | null>
+  // Per column slot: is that column's FIRST line a category name for the lines under it,
+  // or just the first item of a plain list? Formatting cannot answer this — the same brief
+  // writes both patterns in identical 12pt (sheets 4 and 7) — but meaning can.
+  markers?: Record<string, boolean>
 }
 
 // Compositions the long-text-guard applies to (fixed-capacity card/column layouts).
@@ -382,6 +399,10 @@ JSON з рівно ${slides.length} елементами в "slides".`
         if (source.markers?.[idx]) markerSlots.push(slotName)
       }
 
+      const llmMarkers = Object.entries(a.markers ?? {})
+        .filter(([, v]) => v === true)
+        .map(([k]) => k)
+
       const composition = applyMappingGuards(a.composition || 'title_body', slots, i + 1)
       const slide: Slide = {
         id: `slide_${i + 1}`,
@@ -391,6 +412,7 @@ JSON з рівно ${slides.length} елементами в "slides".`
         fragments: sourceLines(source),
         sourceColumns: countSourceColumns(source),
         markerSlots: source.markers ? markerSlots : undefined,
+        llmMarkers,
       }
       return applyTitleFallback(applyColumnCapacityFallback(slide, source, i + 1), source)
     })

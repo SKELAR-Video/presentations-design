@@ -4,7 +4,7 @@
 
 import { validatePlan, checkContentCoverage, checkSourceColumns } from '../lib/validator'
 import { applyCoverageFallback, missingSourceLines } from '../lib/coverage'
-import { applyColumnCapacityFallback, countSourceColumns } from '../lib/columns'
+import { applyColumnCapacityFallback, countSourceColumns, listMarkerSignal } from '../lib/columns'
 import type { SlidePlan } from '../lib/types'
 import { renderedHeight, renderedHeightUniform, FIT_MARGIN } from '../lib/textfit'
 
@@ -734,6 +734,33 @@ run('Fixture 2 — run 2', fixture2)
     const same = untouched.composition === 'three_columns'
     console.log(`  композиція, якій вистачає слотів, не чіпається: ${same ? '✓' : '✗'}`)
     console.log(`  → ${ok && same ? '✅ колонок на слайді ніколи не менше, ніж в аркуші' : '❌ WRONG'}`)
+  }
+
+  // ─── Fixture 13 — what counts as a marker: the list's own markup ────────────
+  // The deterministic half of the decision. A column whose items carry bullets, dashes or
+  // trailing ";" says where the items start: a first line carrying the same mark is one of
+  // them, a clean first line stands above them. This is what settles the two columns the
+  // brief writes identically at 12pt/15pt.
+  console.log('\n=== Fixture 13 — list-markup signal ===')
+  {
+    const cases: Array<[string, string, string | null]> = [
+      ['аркуш 7: перший рядок теж із «;»',
+       'Ambassador fee - фіксована сума на 10 місяців;\nДоступ до бази знань SKELAR;\nЗапрошення на закриті події;', 'enumeration'],
+      ['аркуш 9: те саме',
+       'Фінансова стипендія на 10 місяців;\nдоступ до бази знань;\nдоступ до закритих івентів;', 'enumeration'],
+      ['чистий рядок над булітами', 'Категорія\n• перший пункт\n• другий пункт', 'header'],
+      ['буліти всюди', '• перший пункт\n• другий пункт\n• третій', 'enumeration'],
+      ['аркуш 4: жодного маркера', 'Викладачі/Голови студпарламентів\nПрофільні спеціальності\nВикладають в кількох вузах', null],
+      ['один рядок', 'Самотній рядок', null],
+    ]
+    let ok = true
+    for (const [label, text, expected] of cases) {
+      const got = listMarkerSignal(text)
+      const correct = got === expected
+      ok &&= correct
+      console.log(`  ${correct ? '✅' : '❌'} ${label}: ${got ?? 'сигналу нема'}${correct ? '' : ` ← очікувалось ${expected}`}`)
+    }
+    console.log(`  → ${ok ? '✅ розмітка списку вирішує там, де кегль мовчить' : '❌ WRONG'}`)
   }
 
   // ─── Fixture 10 — a blank line is height, not free space ────────────────────

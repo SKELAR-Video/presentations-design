@@ -136,7 +136,9 @@ function hasSourceMarker(el: slides_v1.Schema$PageElement): boolean {
   if (filled.length < 2) return false
   const first = filled[0]
   const rest  = filled.slice(1)
-  const restPt = Math.max(...rest.map(p => p.pt))
+  // Against the smallest body line, not the largest: briefs are typed by hand, and one
+  // stray item at the heading's size (sheet 2 has two) must not hide the heading itself.
+  const restPt = Math.min(...rest.map(p => p.pt).filter(pt => pt > 0))
   if (first.pt && restPt && first.pt >= restPt + _MARKER_PT_DELTA) return true
   return first.bold && !rest.some(p => p.bold)
 }

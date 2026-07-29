@@ -28,6 +28,9 @@ export type Slide = {
   // the brief). Undefined for Google Docs briefs, which carry no such formatting — there
   // the old heuristic still decides.
   markerSlots?: string[]
+  // The mapping model's read of the same question, used when neither the list markup nor
+  // the brief's formatting answers it.
+  llmMarkers?: string[]
 }
 
 export type SlidePlan = {

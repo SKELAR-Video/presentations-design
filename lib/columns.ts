@@ -98,3 +98,25 @@ export function applyTitleFallback(
   if (used) return slide
   return { ...slide, slots: { ...slide.slots, ЗАГОЛОВОК: first } }
 }
+
+// ─── Is the first line a marker? The deterministic half ───────────────────────
+// A list that marks its items — bullets, leading dashes, or a trailing ";" — says out
+// loud where the items begin. If the first line carries the same mark as the rest, it IS
+// one of them and there is nothing to highlight; if it is clean and the rest are marked,
+// it stands above them. This settles the cases no font size could: sheet 7's column opens
+// with "Ambassador fee — фіксована сума на 10 місяців;" among semicolons, sheet 4's opens
+// with a bare "Викладачі/Голови студпарламентів".
+const _ITEM_MARK = /^\s*[•\-–—]\s+/
+const _ITEM_END  = /;\s*$/
+function isMarkedItem(line: string): boolean {
+  return _ITEM_MARK.test(line) || _ITEM_END.test(line)
+}
+
+export function listMarkerSignal(text: string): 'enumeration' | 'header' | null {
+  const lines = text.split(/[\n\v]/).map(l => l.trim()).filter(Boolean)
+  if (lines.length < 2) return null
+  const rest = lines.slice(1)
+  const markedRest = rest.filter(isMarkedItem).length
+  if (markedRest < Math.ceil(rest.length / 2)) return null   // not a marked list at all
+  return isMarkedItem(lines[0]) ? 'enumeration' : 'header'
+}

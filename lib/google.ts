@@ -5,6 +5,7 @@ import { PHASE0_COMPOSITIONS, getComposition } from './compositions'
 import { validateDeck, type ValidationReport } from './validator'
 import { fixOverflowSlots } from './anthropic'
 import { autoPushIfPass } from './auto-push'
+import { listMarkerSignal } from './columns'
 import {
   renderedHeight, renderedHeightUniform, wrappedLines,
   LIST_ITEM_GAP_EM, FIT_MARGIN,
@@ -710,11 +711,33 @@ function getLogoWordmarkUrl(): string {
 // Only triggers when the first part contains a digit (metric/number indicator).
 // Detects "Label — Body" or "Label: Body" in flat two-column content.
 // Used to auto-populate ПІДПИС (gray) + trim КОЛОНКА (white) at generation time.
-// The source's answer, when it has one. A Google Slides brief writes a marker by making
-// it bigger or bold; markerSlots carries that decision per slot. A Google Docs brief has
-// no such formatting (markerSlots undefined) — there the shape of the line is all we have.
-function slotHasMarker(slide: { markerSlots?: string[] }, slotName: string, firstLine: string): boolean {
-  if (slide.markerSlots) return slide.markerSlots.includes(slotName)
+// Is this column's first line a marker? Four answers, strongest first — because the same
+// brief writes the same-looking column both ways and no single signal covers it:
+//
+//   1. list markup     the items carry bullets / dashes / trailing ";" — if the first line
+//                      carries the same mark it IS an item, if it is clean it stands above
+//                      them. Deterministic, and it settles the two columns that formatting
+//                      could not (sheet 7 "…10 місяців;" vs sheet 4 "Викладачі/Голови…").
+//   2. brief formatting the author made it bigger or bold (markerSlots, gslides only)
+//   3. the model        neither of the above says anything — the question is about meaning
+//                      ("a category for the lines below" vs "the first of equal items"),
+//                      so the mapping model answers it (llmMarkers)
+//   4. shape            fallback for Docs briefs, which carry no formatting at all
+//
+// The shape guard applies on top of all four at the call sites: a marker is never a
+// sentence.
+function slotHasMarker(
+  slide: { markerSlots?: string[]; llmMarkers?: string[] },
+  slotName: string,
+  firstLine: string,
+  fullText?: string,
+): boolean {
+  const signal = fullText ? listMarkerSignal(fullText) : null
+  if (signal === 'enumeration') return false
+  if (signal === 'header') return true
+  if (slide.markerSlots?.includes(slotName)) return true
+  if (slide.llmMarkers?.includes(slotName)) return true
+  if (slide.markerSlots || slide.llmMarkers) return false
   return isColumnLabel(firstLine)
 }
 
@@ -4134,7 +4157,7 @@ export async function buildPresentation(
       // lines are all one size in the source is a plain enumeration: nothing in it is a
       // heading, so nothing gets promoted to one.
       const firstLine   = processed[tok].split('\n')[0] ?? ''
-      const headerSplit = slotHasMarker(plan.slides[i], tok, firstLine)
+      const headerSplit = slotHasMarker(plan.slides[i], tok, firstLine, processed[tok])
         ? splitCardHeader(processed[tok])
         : null
       processed[tok] = headerSplit
@@ -5122,7 +5145,7 @@ export async function buildPresentation(
       // grey as a whole, rather than pretending its first sentence is a heading.
       const marked = nlIdx > 0 &&
         isColumnLabel(colText.slice(0, nlIdx)) &&
-        slotHasMarker(plan.slides[i], `КОЛОНКА_${k}`, colText.slice(0, nlIdx))
+        slotHasMarker(plan.slides[i], `КОЛОНКА_${k}`, colText.slice(0, nlIdx), colText)
       if (marked) {
         fixedRangeStyleRequests.push({
           updateTextStyle: {
