@@ -63,6 +63,10 @@ function timelineLayoutMetrics(titleText: string): { titleContentH: number; text
 // still the floor, so a short column looks exactly as it does today.
 const _FLAT_TITLE_H    = 245   // create-master: flat-column ЗАГОЛОВОК box height
 const _FLAT_LABEL_BAND = 89    // ПІДПИС_N band above the columns (451→540 in the master)
+// Of that band, this much is the label BOX; the rest is the gap down to the column. The
+// font search used to measure the whole 89px band while the master box stayed 50px tall,
+// so a two-line label was sized for room it did not have (85px of text in a 50px box).
+const _FLAT_LABEL_BOX  = 70
 const _FLAT_COL_Y_DEF  = 540   // master column top = the smallest area, never worse
 const _FLAT_LABEL_H    = 50    // ПІДПИС_N box height in the master
 
@@ -1856,9 +1860,13 @@ function buildBentoRowLayoutRequests(
       if (Math.abs(elW - (cw + 2 * _INSET)) > TOL) continue
       if (elY < _PAD + _FLAT_TITLE_H - TOL) continue     // anything inside the title zone
 
-      const isLabel = Math.abs(elH - (_FLAT_LABEL_H + 2 * _INSET)) < TOL
+      const isLabel = Math.abs(elH - (_FLAT_LABEL_H + 2 * _INSET)) < TOL ||
+                      Math.abs(elH - (_FLAT_LABEL_BOX + 2 * _INSET)) < TOL
       if (isLabel) {
-        reqs.push(makeElemTransform(el.objectId, elX, textY - _FLAT_LABEL_BAND - _INSET, elW, elH, sW, sH))
+        reqs.push(makeElemTransform(
+          el.objectId, elX, textY - _FLAT_LABEL_BAND - _INSET,
+          elW, _FLAT_LABEL_BOX + 2 * _INSET, sW, sH,
+        ))
       } else {
         reqs.push(makeElemTransform(el.objectId, elX, textY - _INSET, elW, textH + 2 * _INSET, sW, sH))
       }
@@ -2966,12 +2974,31 @@ function buildColumnsFlexRequests(
   const _CF_GAP   = 50
   const _CF_X0    = _PAD        // 100
   const _CF_UW    = _UW         // 1720
-  const _CF_NUM_Y = 451         // matches four_columns_paren label Y
   const _CF_NUM_H = 60
-  const _CF_COL_Y = 540
-  const _CF_COL_H = _H_SLIDE - _PAD - _CF_COL_Y  // 440
 
   const colW = Math.floor((_CF_UW - (n - 1) * _CF_GAP) / n)
+
+  // These boxes are created here, not inherited from the master, so their size and their
+  // font must be decided together — the old code wrote a hard-coded 18pt into a fixed
+  // 440px box. That held while columns_flex was a niche pick for short lists; as the
+  // default carrier for 2–4 columns it overflowed by up to +496px.
+  // Same two variables and same order as everywhere else: the area grows first (up to
+  // TITLE_GAP under the title zone, minus the "(N)" band), then the font gives way.
+  const innerW  = colW - 2 * _INSET
+  const maxAreaH = flatColumnsMaxH('two_columns_labeled')  // 486 — same band above
+  let pt = 22
+  for (; pt > 10; pt--) {
+    if (colTexts.every(t => textFitsParagraphs(t, innerW, maxAreaH, pt))) break
+  }
+  const neededH = Math.ceil(Math.max(...colTexts.map(t => measuredTextHeight(t, innerW, pt))))
+  const colY    = Math.min(_FLAT_COL_Y_DEF, Math.max(flatColumnsTopMin('two_columns_labeled'), _H - _PAD - neededH))
+  const colH    = _H - _PAD - colY
+  const numY    = colY - _FLAT_LABEL_BAND
+  console.log(
+    `[columns_flex-fit] n=${n} colW=${colW} | font=${pt}pt | text_h=${neededH} | ` +
+    `top ${_FLAT_COL_Y_DEF}→${colY} | area=${colH}px`,
+  )
+
   const reqs: object[] = []
 
   // Delete template column text boxes
@@ -3000,7 +3027,7 @@ function buildColumnsFlexRequests(
             },
             transform: {
               scaleX: 1, shearX: 0, translateX: _eL(cx),
-              shearY: 0, scaleY: 1, translateY: _eL(_CF_NUM_Y),
+              shearY: 0, scaleY: 1, translateY: _eL(numY),
               unit: 'EMU',
             },
           },
@@ -3032,11 +3059,11 @@ function buildColumnsFlexRequests(
             pageObjectId: pageId,
             size: {
               width:  { magnitude: _eL(colW), unit: 'EMU' },
-              height: { magnitude: _eL(_CF_COL_H), unit: 'EMU' },
+              height: { magnitude: _eL(colH), unit: 'EMU' },
             },
             transform: {
               scaleX: 1, shearX: 0, translateX: _eL(cx),
-              shearY: 0, scaleY: 1, translateY: _eL(_CF_COL_Y),
+              shearY: 0, scaleY: 1, translateY: _eL(colY),
               unit: 'EMU',
             },
           },
@@ -3047,7 +3074,7 @@ function buildColumnsFlexRequests(
         updateTextStyle: {
           objectId: colId,
           style: {
-            fontSize: { magnitude: 18, unit: 'PT' },
+            fontSize: { magnitude: pt, unit: 'PT' },
             bold: false,
             foregroundColor: { opaqueColor: { rgbColor: { red: 1, green: 1, blue: 1 } } },
             weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
@@ -3065,6 +3092,10 @@ function buildColumnsFlexRequests(
         },
       },
     )
+    // The air between items is part of the height the font was chosen against — write it,
+    // or the list reads as one canvas (docs/rules/typography.md) and the measurement and
+    // the file disagree again, this time in our favour and just as wrong.
+    if (hasListItems(colTexts[k])) reqs.push(listParagraphStyleRequest(colId, pt))
   }
 
   return reqs
@@ -4598,10 +4629,10 @@ export async function buildPresentation(
       // two_columns_labeled ПІДПИС_N master box is a nominal 50px tag, not the real
       // available height — the label actually has the full gap down to where КОЛОНКА_N
       // starts (y=451→540=89px) before it visually collides with the body text below.
-      if (compId === 'two_columns_labeled' && /^ПІДПИС_\d$/.test(slotName)) elH = 89
+      if (compId === 'two_columns_labeled' && /^ПІДПИС_\d$/.test(slotName)) elH = _FLAT_LABEL_BOX
       if (!elW || !elH) continue
       const innerW = Math.max(1, elW - 2 * _INSET)
-      const innerH = compId === 'two_columns_labeled' && /^ПІДПИС_\d$/.test(slotName) ? elH : Math.max(1, elH - 2 * _INSET)
+      const innerH = Math.max(1, elH - (compId === 'two_columns_labeled' && /^ПІДПИС_\d$/.test(slotName) ? 0 : 2 * _INSET))
 
       // Read default pt from template element's text style
       const defaultPt = (el.shape?.text?.textElements ?? [])
