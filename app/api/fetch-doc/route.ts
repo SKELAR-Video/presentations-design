@@ -59,10 +59,15 @@ function isIconFontRun(te: slides_v1.Schema$TextElement): boolean {
   return ICON_FONT_RE.test(family)
 }
 
+// A grouped element is a DESIGN grouping, not a content one: three columns a designer
+// selected and hit Ctrl+G are still three columns. Merging their text into one block
+// destroyed that before the LLM ever saw the slide — brief sheet "Цільові групи" arrived
+// as a single 12-line blob and could only be rendered as one column instead of three.
+// Groups are flattened into their leaves by flattenElements() below, so this function
+// only ever sees a leaf; the branch stays as a guard for a group that reaches it anyway.
 function extractElementBlocks(el: slides_v1.Schema$PageElement): string[] {
   if (el.elementGroup?.children?.length) {
-    const merged = el.elementGroup.children.flatMap(extractElementBlocks).filter(Boolean)
-    return merged.length ? [merged.join('\n')] : []
+    return el.elementGroup.children.flatMap(extractElementBlocks).filter(Boolean)
   }
   const textElements = el.shape?.text?.textElements ?? []
   const lines: (string | null)[] = []  // null = blank paragraph (block separator)
@@ -98,19 +103,38 @@ function extractElementBlocks(el: slides_v1.Schema$PageElement): string[] {
   return blocks
 }
 
+// A leaf page element with its absolute horizontal placement — groups are unwrapped, so
+// three columns inside a group are three leaves standing side by side, exactly as they
+// look on the slide. Child transforms are relative to their group, hence the composition.
+type Leaf = { el: slides_v1.Schema$PageElement; x: number; w: number }
+
+function flattenElements(
+  elements: slides_v1.Schema$PageElement[],
+  parentX = 0,
+  parentScaleX = 1,
+): Leaf[] {
+  const out: Leaf[] = []
+  for (const el of elements) {
+    const scaleX = (el.transform?.scaleX ?? 1) * parentScaleX
+    const x      = parentX + (el.transform?.translateX ?? 0) * parentScaleX
+    if (el.elementGroup?.children?.length) {
+      out.push(...flattenElements(el.elementGroup.children, x, scaleX))
+    } else {
+      out.push({ el, x, w: (el.size?.width?.magnitude ?? 0) * scaleX })
+    }
+  }
+  return out
+}
+
 // Groups page elements by horizontal position so the LLM can see "these boxes sit
 // side-by-side = columns" instead of guessing from text alone. Elements spanning most
 // of the slide width (titles, full-width bodies) are excluded from clustering — their
 // wide, centered bounding box would otherwise land "between" real columns when sorted
 // by x and falsely split a clean 2-column layout into three groups.
 // Returns one column index (or null = no clear column signal) per input element, same order.
-function assignColumns(elements: slides_v1.Schema$PageElement[], slideWidthEmu: number): (number | null)[] {
+function assignColumns(elements: Leaf[], slideWidthEmu: number): (number | null)[] {
   type Item = { idx: number; x: number; w: number }
-  const items: Item[] = elements.map((el, idx) => {
-    const w = (el.size?.width?.magnitude ?? 0) * (el.transform?.scaleX ?? 1)
-    const x = (el.transform?.translateX ?? 0) + w / 2
-    return { idx, x, w }
-  })
+  const items: Item[] = elements.map((leaf, idx) => ({ idx, x: leaf.x + leaf.w / 2, w: leaf.w }))
   const WIDE_THRESHOLD = slideWidthEmu * 0.6
   const candidates = items.filter(it => it.w > 0 && it.w <= WIDE_THRESHOLD)
   if (candidates.length < 2) return elements.map(() => null)
@@ -140,12 +164,12 @@ async function extractSlides(
   const res = await slidesApi.presentations.get({ presentationId: id })
   const slideWidthEmu = res.data.pageSize?.width?.magnitude ?? 9144000
   return (res.data.slides ?? []).map((slide, i) => {
-    const elements = slide.pageElements ?? []
+    const elements = flattenElements(slide.pageElements ?? [])
     const columnByEl = assignColumns(elements, slideWidthEmu)
     const texts: string[] = []
     const columns: (number | null)[] = []
-    elements.forEach((el, ei) => {
-      const blocks = extractElementBlocks(el).filter(Boolean)
+    elements.forEach((leaf, ei) => {
+      const blocks = extractElementBlocks(leaf.el).filter(Boolean)
       if (!blocks.length) return
       if (blocks.length === 1) {
         texts.push(blocks[0])
