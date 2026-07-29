@@ -120,3 +120,15 @@ export function listMarkerSignal(text: string): 'enumeration' | 'header' | null 
   if (markedRest < Math.ceil(rest.length / 2)) return null   // not a marked list at all
   return isMarkedItem(lines[0]) ? 'enumeration' : 'header'
 }
+
+// A marker names WHO or WHAT the block is about ("Викладачі/Голови студпарламентів",
+// "Студенти", "«Зіркові» учні шкіл"). A line that names an ACTION is one of the actions —
+// an item, however short it is. That is the only thing separating "Підтримка проявів
+// бренду" (an activity among activities) from markers of the same length and word count;
+// no measurement of the line can do it, but its grammar can: Ukrainian verbal nouns end
+// in -ння / -ття / -ація / -ка.
+const _ACTION_SUFFIX = /(ння|ття|ація|ізація|ка)$/i
+export function looksLikeAction(line: string): boolean {
+  const first = line.trim().replace(/^[«"'(\[]+/, '').split(/[\s/]+/)[0] ?? ''
+  return first.length >= 7 && _ACTION_SUFFIX.test(first)
+}

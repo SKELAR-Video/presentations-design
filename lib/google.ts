@@ -5,7 +5,7 @@ import { PHASE0_COMPOSITIONS, getComposition } from './compositions'
 import { validateDeck, type ValidationReport } from './validator'
 import { fixOverflowSlots } from './anthropic'
 import { autoPushIfPass } from './auto-push'
-import { listMarkerSignal } from './columns'
+import { listMarkerSignal, looksLikeAction } from './columns'
 import {
   renderedHeight, renderedHeightUniform, wrappedLines,
   LIST_ITEM_GAP_EM, FIT_MARGIN,
@@ -742,9 +742,12 @@ function slotHasMarker(
   // between compositions (КОЛОНКА_1 ↔ КАРТКА_1), the column it refers to does not.
   const key = slotName.match(/_(\d+)$/)?.[1] ?? slotName
   if (slide.markerSlots?.includes(key)) return true
-  if (slide.llmMarkers?.includes(key)) return true
+  // The model's answer is accepted unless the line names an action — it read "Підтримка
+  // проявів бренду" as a category over three other activities. The brief's own formatting
+  // (above) is never second-guessed this way; only the judgement call is.
+  if (slide.llmMarkers?.includes(key)) return !looksLikeAction(firstLine)
   if (slide.markerSlots || slide.llmMarkers) return false
-  return isColumnLabel(firstLine)
+  return isColumnLabel(firstLine) && !looksLikeAction(firstLine)
 }
 
 // Does the first line work as the column's marker? A marker is a short noun phrase

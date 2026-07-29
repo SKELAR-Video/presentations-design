@@ -4,7 +4,7 @@
 
 import { validatePlan, checkContentCoverage, checkSourceColumns } from '../lib/validator'
 import { applyCoverageFallback, missingSourceLines } from '../lib/coverage'
-import { applyColumnCapacityFallback, countSourceColumns, listMarkerSignal } from '../lib/columns'
+import { applyColumnCapacityFallback, countSourceColumns, listMarkerSignal, looksLikeAction } from '../lib/columns'
 import type { SlidePlan } from '../lib/types'
 import { renderedHeight, renderedHeightUniform, FIT_MARGIN } from '../lib/textfit'
 
@@ -761,6 +761,49 @@ run('Fixture 2 — run 2', fixture2)
       console.log(`  ${correct ? '✅' : '❌'} ${label}: ${got ?? 'сигналу нема'}${correct ? '' : ` ← очікувалось ${expected}`}`)
     }
     console.log(`  → ${ok ? '✅ розмітка списку вирішує там, де кегль мовчить' : '❌ WRONG'}`)
+  }
+
+  // ─── Fixture 14 — every marker decision in this brief, in one table ─────────
+  // The seven real first lines and the answer each must get. Length and word count are
+  // printed too, to keep it obvious that neither separates them.
+  console.log('\n=== Fixture 14 — маркер: усі реальні випадки брифу ===')
+  {
+    type C = { label: string; first: string; text: string; want: boolean }
+    const cases: C[] = [
+      { label: 'аркуш 7 кол.1 (перелік із «;»)', first: 'Ambassador fee - фіксована сума на 10 місяців;',
+        text: 'Ambassador fee - фіксована сума на 10 місяців;\nДоступ до бази знань SKELAR;\nЗапрошення на закриті події;', want: false },
+      { label: 'аркуш 7 кол.2 (дія серед дій)', first: 'Підтримка проявів бренду',
+        text: 'Підтримка проявів бренду\nВідбір талановитих студентів\nОрганізація взаємодії зі спільнотою', want: false },
+      { label: 'аркуш 4 кол.1', first: '«Зіркові» учні шкіл',
+        text: '«Зіркові» учні шкіл\nПереможці олімпіад, МАН і конкурсів\nЕкстернат за успіхи в навчанні', want: true },
+      { label: 'аркуш 4 кол.2', first: 'Найкращі на курсі',
+        text: 'Найкращі на курсі\nПереможці конкурсів та змагань\nДипломи з відзнакою', want: true },
+      { label: 'аркуш 4 кол.3', first: 'Викладачі/Голови студпарламентів',
+        text: 'Викладачі/Голови студпарламентів\nПрофільні спеціальності\nВикладають в кількох вузах', want: true },
+      { label: 'аркуш 11 кол.1', first: 'Загальні',
+        text: 'Загальні\nКинь виклик собі та доведи, що ти найкращий\nТвій ріст залежить від тебе', want: true },
+      { label: 'аркуш 11 кол.2', first: 'Студенти',
+        text: 'Студенти\nОтримуй fast-track у компанію\nПрацюй з глобальними ринками', want: true },
+    ]
+    // The model answers true for every column it is asked about; the deterministic layers
+    // are what must produce the right answer anyway.
+    const decide = (c: C) => {
+      const signal = listMarkerSignal(c.text)
+      if (signal === 'enumeration') return false
+      if (signal === 'header') return true
+      return !looksLikeAction(c.first)     // llmMarkers said true
+    }
+    let ok = true
+    for (const c of cases) {
+      const got = decide(c)
+      const correct = got === c.want
+      ok &&= correct
+      console.log(
+        `  ${correct ? '✅' : '❌'} ${c.label.padEnd(32)} ${String(c.first.length).padStart(2)} симв./` +
+        `${c.first.split(/\s+/).length} сл. → ${got ? 'мітка' : 'не мітка'}${correct ? '' : ` ← очікувалось ${c.want ? 'мітка' : 'не мітка'}`}`,
+      )
+    }
+    console.log(`  → ${ok ? '✅ усі сім випадків брифу вирішуються правильно' : '❌ WRONG'}`)
   }
 
   // ─── Fixture 10 — a blank line is height, not free space ────────────────────
