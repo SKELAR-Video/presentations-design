@@ -65,7 +65,16 @@ const _SUB_SCALE   = [48, 36, 28, 22, 18, 14] as const
 const _SUB_RATIO   = 0.7
 const _SUB_MIN_PT  = 14
 const _SUB_GAP     = 60         // = TITLE_GAP; title zone → subtitle → content, same everywhere
-function subtitlePt(titlePt: number): number {
+// Line counting for a subtitle: heading-scale text, so the body ruler's 0.5 is too
+// optimistic here as well. 0.62 reproduces what Slides actually did with the 68-character
+// subtitle on slide 20 — three lines at 28pt, where 0.5 predicted two.
+const _SUB_WRAP_CHAR_W = 0.62
+// A subtitle is a sentence under a title, not a second title. Past two lines it stops
+// reading as one and starts crowding the content: on slide 20 it grew to three lines at
+// 28pt (246px) and left the columns with almost no air above them.
+const _SUB_MAX_LINES = 2
+
+function subtitleRatioPt(titlePt: number): number {
   const target = titlePt * _SUB_RATIO
   let best = _SUB_MIN_PT
   let bestDiff = Infinity
@@ -74,6 +83,28 @@ function subtitlePt(titlePt: number): number {
     if (diff < bestDiff) { bestDiff = diff; best = pt }
   }
   return Math.max(_SUB_MIN_PT, Math.min(best, titlePt - 4))
+}
+
+// The same trade the bento row makes, one level up: the free space below the subtitle is
+// not negotiable, so when the sentence is too long for its size, the SIZE gives way. It
+// steps down the scale until it fits _SUB_MAX_LINES, never below half the title.
+function subtitlePtFor(text: string, titlePt: number): number {
+  const start = subtitleRatioPt(titlePt)
+  const floor = Math.max(_SUB_MIN_PT, Math.round(titlePt / 2))
+  if (!text.trim()) return start
+  let pt = start
+  for (const step of _SUB_SCALE) {
+    if (step > start || step < floor) continue
+    pt = step
+    if (wrappedLines(text.trim(), _TITLE_W, step, _SUB_WRAP_CHAR_W) <= _SUB_MAX_LINES) break
+  }
+  return pt
+}
+
+// Height as it will actually render, at the subtitle's own wrap factor.
+function subtitleHeight(text: string, pt: number): number {
+  if (!text.trim()) return 0
+  return Math.ceil(wrappedLines(text.trim(), _TITLE_W, pt, _SUB_WRAP_CHAR_W) * pt * 2.667 * 1.1)
 }
 
 // Gap between the title and its subtitle. Proportional, not fixed: both sizes move
@@ -150,7 +181,7 @@ function subtitleY(slots: Record<string, string>, titlePt: number): number {
 function subtitleBand(compId: string, slots: Record<string, string>, titlePt: number): number {
   const text = (slots['ПІДЗАГОЛОВОК'] ?? '').trim()
   if (!text) return 0
-  const subH    = Math.ceil(measuredTextHeight(text, _TITLE_W, subtitlePt(titlePt)))
+  const subH    = subtitleHeight(text, subtitlePtFor(text, titlePt))
   const withSub = subtitleY(slots, titlePt) + subH + _SUB_GAP
   const baseTop = titleZoneBottom(compId) + _SUB_GAP
   return Math.max(0, withSub - baseTop)
@@ -177,8 +208,8 @@ function buildSubtitleRequests(
   theme: string,
   slots: Record<string, string>,
 ): object[] {
-  const pt = subtitlePt(titlePt)
-  const h  = Math.ceil(measuredTextHeight(text, _TITLE_W, pt))
+  const pt = subtitlePtFor(text, titlePt)
+  const h  = subtitleHeight(text, pt)
   const y  = subtitleY(slots, titlePt)
   const id = `sub_${slideIdx}`
   const fg = theme === 'red'
@@ -4436,7 +4467,7 @@ export async function buildPresentation(
       pageId, i, addNbsp(text), compId, titlePt, plan.theme, plan.slides[i].slots,
     ))
     console.log(
-      `[subtitle] slide ${i + 1} (${compId}): title=${titlePt}pt → subtitle=${subtitlePt(titlePt)}pt | ` +
+      `[subtitle] slide ${i + 1} (${compId}): title=${titlePt}pt → subtitle=${subtitlePtFor(text, titlePt)}pt | ` +
       `band=${subtitleBand(compId, plan.slides[i].slots, titlePt)}px`,
     )
   }
