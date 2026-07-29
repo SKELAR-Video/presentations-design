@@ -679,6 +679,14 @@ function getLogoWordmarkUrl(): string {
 // Only triggers when the first part contains a digit (metric/number indicator).
 // Detects "Label — Body" or "Label: Body" in flat two-column content.
 // Used to auto-populate ПІДПИС (gray) + trim КОЛОНКА (white) at generation time.
+// The source's answer, when it has one. A Google Slides brief writes a marker by making
+// it bigger or bold; markerSlots carries that decision per slot. A Google Docs brief has
+// no such formatting (markerSlots undefined) — there the shape of the line is all we have.
+function slotHasMarker(slide: { markerSlots?: string[] }, slotName: string, firstLine: string): boolean {
+  if (slide.markerSlots) return slide.markerSlots.includes(slotName)
+  return isColumnLabel(firstLine)
+}
+
 // Does the first line work as the column's marker? A marker is a short noun phrase
 // ("Залучення талантів", "Репутація"), not a sentence. Greying a full sentence just
 // because it happens to be first invents a hierarchy that is not in the content.
@@ -4091,7 +4099,13 @@ export async function buildPresentation(
       // (e.g. "Залучення талантів") out first so it can be styled as a header (white +
       // bigger, see the FIXED_RANGE requests below) instead of looking like just
       // another list item.
-      const headerSplit = splitCardHeader(processed[tok])
+      // …and only when the brief itself marked that line (slotHasMarker). A column whose
+      // lines are all one size in the source is a plain enumeration: nothing in it is a
+      // heading, so nothing gets promoted to one.
+      const firstLine   = processed[tok].split('\n')[0] ?? ''
+      const headerSplit = slotHasMarker(plan.slides[i], tok, firstLine)
+        ? splitCardHeader(processed[tok])
+        : null
       processed[tok] = headerSplit
         ? `${headerSplit.header}\n${headerSplit.bodyLines.join('\v')}`
         : preprocessBentoText(processed[tok])
@@ -5075,7 +5089,10 @@ export async function buildPresentation(
       const grey  = { foregroundColor: { opaqueColor: { rgbColor: _AG_MUTED_RGB } } }
       // Marker present → it is grey and the items stay white. No marker → the column is
       // grey as a whole, rather than pretending its first sentence is a heading.
-      if (nlIdx > 0 && isColumnLabel(colText.slice(0, nlIdx))) {
+      const marked = nlIdx > 0 &&
+        isColumnLabel(colText.slice(0, nlIdx)) &&
+        slotHasMarker(plan.slides[i], `КОЛОНКА_${k}`, colText.slice(0, nlIdx))
+      if (marked) {
         fixedRangeStyleRequests.push({
           updateTextStyle: {
             objectId: objId, style: grey, fields: 'foregroundColor',

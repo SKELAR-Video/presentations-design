@@ -24,6 +24,10 @@ export type Slide = {
   // the deck", which stays green when three columns are flattened into one. This is what
   // source_columns_covered compares the rendered slide against.
   sourceColumns?: number
+  // Slot names whose SOURCE fragment marked its first line as a heading (bigger/bold in
+  // the brief). Undefined for Google Docs briefs, which carry no such formatting — there
+  // the old heuristic still decides.
+  markerSlots?: string[]
 }
 
 export type SlidePlan = {

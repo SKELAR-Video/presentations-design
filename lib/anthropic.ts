@@ -373,6 +373,15 @@ JSON з рівно ${slides.length} елементами в "slides".`
         if (text) slots[slotName] = text
       }
 
+      // Which slots inherited a marker from their source fragment (first index wins when
+      // several fragments were joined).
+      const markerSlots: string[] = []
+      for (const [slotName, ref] of Object.entries(a.assignment ?? {})) {
+        const idx = Array.isArray(ref) ? ref[0] : ref
+        if (typeof idx !== 'number') continue
+        if (source.markers?.[idx]) markerSlots.push(slotName)
+      }
+
       const composition = applyMappingGuards(a.composition || 'title_body', slots, i + 1)
       const slide: Slide = {
         id: `slide_${i + 1}`,
@@ -381,6 +390,7 @@ JSON з рівно ${slides.length} елементами в "slides".`
         flags: {},
         fragments: sourceLines(source),
         sourceColumns: countSourceColumns(source),
+        markerSlots: source.markers ? markerSlots : undefined,
       }
       return applyTitleFallback(applyColumnCapacityFallback(slide, source, i + 1), source)
     })

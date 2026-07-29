@@ -40,6 +40,11 @@ export type SourceSlide = {
   // like a column label and lands in ПІДПИС_N, which is how "Викладачі, голови
   // студпарламентів" ended up captioning a column instead of the slide.
   subtitles: boolean[]
+  // true when the SOURCE itself marks this block's first line as a heading — a larger
+  // font (or bold) than the lines under it. Whether a line is a marker is the author's
+  // decision, written into the brief; guessing it from length made "Підтримка проявів
+  // бренду" a heading in a list where every line is an item.
+  markers: boolean[]
 }
 
 // Recursively extracts a shape's text as one or more BLOCKS. Bulleted paragraphs get a
@@ -110,6 +115,29 @@ function extractElementBlocks(el: slides_v1.Schema$PageElement): string[] {
   }
   if (block.length) blocks.push(block.join('\n'))
   return blocks
+}
+
+// Does this shape's first paragraph stand out from the rest — bigger, or bold where the
+// rest is not? That is the brief's own way of saying "this line is the marker".
+const _MARKER_PT_DELTA = 1
+function hasSourceMarker(el: slides_v1.Schema$PageElement): boolean {
+  const paras: Array<{ pt: number; bold: boolean; text: string }> = []
+  let cur: { pt: number; bold: boolean; text: string } | null = null
+  for (const te of el.shape?.text?.textElements ?? []) {
+    if (te.paragraphMarker) { cur = { pt: 0, bold: false, text: '' }; paras.push(cur); continue }
+    const run = te.textRun
+    if (!run?.content || !cur) continue
+    cur.text += run.content
+    cur.pt = Math.max(cur.pt, run.style?.fontSize?.magnitude ?? 0)
+    cur.bold = cur.bold || run.style?.bold === true
+  }
+  const filled = paras.filter(p => p.text.trim())
+  if (filled.length < 2) return false
+  const first = filled[0]
+  const rest  = filled.slice(1)
+  const restPt = Math.max(...rest.map(p => p.pt))
+  if (first.pt && restPt && first.pt >= restPt + _MARKER_PT_DELTA) return true
+  return first.bold && !rest.some(p => p.bold)
 }
 
 // A leaf page element with its absolute horizontal placement — groups are unwrapped, so
@@ -215,6 +243,7 @@ async function extractSlides(
     const texts: string[] = []
     const columns: (number | null)[] = []
     const subtitles: boolean[] = []
+    const markers: boolean[] = []
     elements.forEach((leaf, ei) => {
       const blocks = extractElementBlocks(leaf.el).filter(Boolean)
       if (!blocks.length) return
@@ -222,6 +251,7 @@ async function extractSlides(
         texts.push(blocks[0])
         columns.push(columnByEl[ei])
         subtitles.push(subtitleByEl[ei])
+        markers.push(hasSourceMarker(leaf.el))
         return
       }
       // One shape, multiple blank-line-separated blocks (e.g. two named categories
@@ -231,9 +261,10 @@ async function extractSlides(
         texts.push(block)
         columns.push(bi)
         subtitles.push(false)
+        markers.push(false)
       })
     })
-    return { index: i, texts, columns, subtitles }
+    return { index: i, texts, columns, subtitles, markers }
   })
 }
 
