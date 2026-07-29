@@ -96,8 +96,15 @@ function checkTextOverflow(slide: slides_v1.Schema$Page): CheckResult {
     // Same function the generator picks fonts with (lib/textfit.ts). The generator keeps
     // FIT_MARGIN of slack, this asks the bare question — "does it actually spill?" — so a
     // pass here is not a coincidence of two similar formulas but the same answer twice.
+    // ALL paragraphs are measured, blank ones included: a blank line between two groups
+    // is drawn, so it counts. `filled` only decides whether this box is in scope.
+    const measurable = paras.filter((p, i) => p.text.trim() || i < paras.length - 1)
     const needed = renderedHeight(
-      filled.map(p => ({ text: p.text, pt: p.pt || 14, spaceBelowPt: p.spaceBelow })),
+      measurable.map(p => ({
+        text: p.text,
+        pt: p.pt || filled[0]?.pt || 14,   // a blank paragraph carries no run of its own
+        spaceBelowPt: p.spaceBelow,
+      })),
       innerW,
     )
 

@@ -53,7 +53,12 @@ export function renderedHeight(paras: Para[], wPx: number): number {
   for (const p of paras) {
     // \v is a soft break inside one paragraph — still starts its own line
     for (const seg of p.text.replace(/\n$/, '').split('\v')) {
-      h += wrappedLines(seg, wPx, p.pt) * ptToPx(p.pt) * LINE_FACTOR
+      // An EMPTY paragraph is not free: the blank line between two groups
+      // (formatTitleBodyText joins them with "\n\n") is drawn as a full line box and
+      // carries its own spaceBelow. Both the font search and the validator used to drop
+      // blank paragraphs before measuring, so every group separator was height that
+      // nobody paid for — and the text left its box on a slide that "fit".
+      h += Math.max(1, wrappedLines(seg, wPx, p.pt)) * ptToPx(p.pt) * LINE_FACTOR
     }
     h += ptToPx(p.spaceBelowPt)
   }
@@ -63,7 +68,9 @@ export function renderedHeight(paras: Para[], wPx: number): number {
 // Same, for text that is uniform in size — the common case at font-picking time.
 // `listGaps` mirrors hasListItems(): items separated by \n or \v get air between them.
 export function renderedHeightUniform(text: string, wPx: number, pt: number, listGaps: boolean): number {
-  const items = text.split(/[\n\v]/).filter(s => s.trim())
+  // Blank segments are kept: "group one\n\ngroup two" is three paragraphs on screen, and
+  // the empty one in the middle occupies a line. Only a trailing newline is dropped.
+  const items = text.replace(/[\n\v]+$/, '').split(/[\n\v]/)
   const paras: Para[] = items.map(t => ({
     text: t,
     pt,

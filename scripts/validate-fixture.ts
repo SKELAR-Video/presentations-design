@@ -653,4 +653,34 @@ run('Fixture 2 — run 2', fixture2)
     )
     console.log(`  → ${gained && monotonic && noOverflow ? '✅ a taller area buys a bigger font, and it still fits' : '❌ WRONG'}`)
   }
+
+  // ─── Fixture 10 — a blank line is height, not free space ────────────────────
+  // formatTitleBodyText joins groups with "\n\n", so the written text really does contain
+  // empty paragraphs, and Slides draws each as a full line box with its own spaceBelow.
+  // Both the font search and text_overflow used to drop blank paragraphs before measuring,
+  // so every group separator was height nobody paid for: title_photo slides overflowed by
+  // +157px and +243px while the search believed they fit.
+  console.log('\n=== Fixture 10 — blank paragraphs count as rendered height ===')
+  {
+    const W = 765, PT = 18
+    const groups = [
+      'Перша група\vперший пункт групи\vдругий пункт групи',
+      'Друга група\vще один пункт\vі ще один',
+      'Третя група\vостанній пункт',
+    ]
+    const withBlanks = groups.join('\n\n')     // what is actually written
+    const noBlanks   = groups.join('\n')       // what the old measurement effectively saw
+
+    const hWith = renderedHeightUniform(withBlanks, W, PT, true)
+    const hNo   = renderedHeightUniform(noBlanks, W, PT, true)
+    const perBlank = (1.1 + 0.5) * PT * 2.667  // one line box + one spaceBelow
+    const expected = 2 * perBlank              // two separators
+    const diff = hWith - hNo
+    const ok = Math.abs(diff - expected) < 2 && hWith > hNo
+    console.log(
+      `  3 groups, 2 blank lines @${PT}pt: with=${Math.round(hWith)}px | without=${Math.round(hNo)}px | ` +
+      `diff=${Math.round(diff)}px | expected≈${Math.round(expected)}px`,
+    )
+    console.log(`  → ${ok ? '✅ the blank line is charged, at exactly one line box + its gap' : '❌ WRONG'}`)
+  }
 }

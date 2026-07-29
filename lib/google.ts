@@ -4371,9 +4371,16 @@ export async function buildPresentation(
   }
 
   // ── title_photo: title + body ТЕКСТ auto-shrink ─────────────────────────────
-  // Left half: _LTW=830px wide. Title zone h=_TP_TITLE_H=341px. Body zone below.
-  // Body textY ≈ _PAD + _TP_TITLE_H + TITLE_GAP = 100+341+60 = 501; textMaxH ≈ 1080-100-501 = 479px.
-  const _TP_BODY_MAX_H = _H_SLIDE - _PAD - (_PAD + _TP_TITLE_H + TITLE_GAP)  // ~479px
+  // The box the font was chosen for and the box the text was written into were not the
+  // same box: the search used a computed zone (830 wide × 479 high) while the master's
+  // ТЕКСТ box is 765 × 400 at y=440 and nothing ever resized it. Everything the search
+  // granted between those two rectangles left the box on screen (+157px and +243px on
+  // deck slides 11 and 15).
+  // Now both use the real one: the master's x/width, from its y down to the page margin.
+  const _TP_BODY_X    = 100                              // create-master: ТЕКСТ box x
+  const _TP_BODY_W    = 765                              // create-master: ТЕКСТ box width
+  const _TP_BODY_Y    = 440                              // create-master: ТЕКСТ box y (title zone bottom)
+  const _TP_BODY_MAX_H = _H_SLIDE - _PAD - _TP_BODY_Y    // 540 — down to the page margin
   for (let i = 0; i < plan.slides.length; i++) {
     if (plan.slides[i].composition !== 'title_photo') continue
     const pageId = planPageIds[i]
@@ -4389,7 +4396,7 @@ export async function buildPresentation(
     let bodyPt = _TB_BODY_STEPS[0]
     if (bodyText) {
       for (const pt of _TB_BODY_STEPS) {
-        if (textFitsParagraphs(bodyText, _LTW, _TP_BODY_MAX_H, pt)) { bodyPt = pt; break }
+        if (textFitsParagraphs(bodyText, _TP_BODY_W, _TP_BODY_MAX_H, pt)) { bodyPt = pt; break }
       }
       // Typography hierarchy guard: ТЕКСТ must be strictly smaller than ЗАГОЛОВОК.
       if (bodyPt >= titlePt) {
@@ -4417,6 +4424,19 @@ export async function buildPresentation(
         })
       }
       if (elText.includes('{{ТЕКСТ}}') && bodyText) {
+        // Give the box the zone the font was chosen for: master x/width, master y, down
+        // to the page margin. Without this the search keeps measuring 540px of room the
+        // box does not have (the master stops 140px short at y=840).
+        if (el.size && el.transform) {
+          const sW = el.size.width?.magnitude  ?? 0
+          const sH = el.size.height?.magnitude ?? 0
+          requests.push(makeElemTransform(
+            el.objectId,
+            _TP_BODY_X - _INSET, _TP_BODY_Y - _INSET,
+            _TP_BODY_W + 2 * _INSET, _TP_BODY_MAX_H + 2 * _INSET,
+            sW, sH,
+          ))
+        }
         requests.push({
           updateTextStyle: {
             objectId: el.objectId,
