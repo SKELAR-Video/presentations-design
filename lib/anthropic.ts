@@ -392,16 +392,21 @@ JSON з рівно ${slides.length} елементами в "slides".`
 
       // Which slots inherited a marker from their source fragment (first index wins when
       // several fragments were joined).
+      // Recorded by COLUMN INDEX, not by slot name. A variant renames КОЛОНКА_1 to
+      // КАРТКА_1 (and mapping guards rename three→four columns), so a name-keyed decision
+      // silently stopped matching: slide 2 and slide 4 of the same sheet, same text, and
+      // only the two_columns one kept its marker.
+      const slotIndex = (name: string) => name.match(/_(\d+)$/)?.[1] ?? name
       const markerSlots: string[] = []
       for (const [slotName, ref] of Object.entries(a.assignment ?? {})) {
         const idx = Array.isArray(ref) ? ref[0] : ref
         if (typeof idx !== 'number') continue
-        if (source.markers?.[idx]) markerSlots.push(slotName)
+        if (source.markers?.[idx]) markerSlots.push(slotIndex(slotName))
       }
 
       const llmMarkers = Object.entries(a.markers ?? {})
         .filter(([, v]) => v === true)
-        .map(([k]) => k)
+        .map(([k]) => slotIndex(k))
 
       const composition = applyMappingGuards(a.composition || 'title_body', slots, i + 1)
       const slide: Slide = {

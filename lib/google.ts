@@ -735,8 +735,11 @@ function slotHasMarker(
   const signal = fullText ? listMarkerSignal(fullText) : null
   if (signal === 'enumeration') return false
   if (signal === 'header') return true
-  if (slide.markerSlots?.includes(slotName)) return true
-  if (slide.llmMarkers?.includes(slotName)) return true
+  // Both lists are keyed by column index for exactly this reason: the slot's NAME changes
+  // between compositions (КОЛОНКА_1 ↔ КАРТКА_1), the column it refers to does not.
+  const key = slotName.match(/_(\d+)$/)?.[1] ?? slotName
+  if (slide.markerSlots?.includes(key)) return true
+  if (slide.llmMarkers?.includes(key)) return true
   if (slide.markerSlots || slide.llmMarkers) return false
   return isColumnLabel(firstLine)
 }
