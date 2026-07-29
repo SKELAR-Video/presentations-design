@@ -52,6 +52,121 @@ function timelineLayoutMetrics(titleText: string): { titleContentH: number; text
   return { titleContentH, textY, textH: _H - _PAD - textY }
 }
 
+// ─── Slide subtitle (ПІДЗАГОЛОВОК on column layouts) ─────────────────────────
+// A standalone sentence under the title, in MUTED grey, smaller than the title. The brief
+// writes it as a full-width block between the title and the columns; without a slot of its
+// own it was landing in ПІДПИС_N and captioning a column it had nothing to do with.
+//
+// Size is a RATIO, not a number: the title itself moves (44→28 on columns, 36 on
+// title_body, up to 66 on sections), so a fixed pt would read differently on every slide.
+// 0.7 × title, snapped to the allowed scale, floor 14pt:
+//   44→28   40→28   36→22   32→22   28→18   66→48
+const _SUB_SCALE   = [48, 36, 28, 22, 18, 14] as const
+const _SUB_RATIO   = 0.7
+const _SUB_MIN_PT  = 14
+const _SUB_GAP     = 60         // = TITLE_GAP; title zone → subtitle → content, same everywhere
+function subtitlePt(titlePt: number): number {
+  const target = titlePt * _SUB_RATIO
+  let best = _SUB_MIN_PT
+  let bestDiff = Infinity
+  for (const pt of _SUB_SCALE) {
+    const diff = Math.abs(pt - target)
+    if (diff < bestDiff) { bestDiff = diff; best = pt }
+  }
+  return Math.max(_SUB_MIN_PT, Math.min(best, titlePt - 4))
+}
+
+// Where the title zone ends per family — the subtitle hangs TITLE_GAP below it, and the
+// content another TITLE_GAP below the subtitle.
+// The title pt these masters actually use — the ratio is taken from it.
+function titlePtFor(compId: string): number {
+  if (compId === 'two_columns_labeled' || compId === 'two_columns_plain' ||
+      compId === 'three_columns_num' || compId === 'columns_flex' ||
+      compId === 'four_columns_paren' || compId === 'four_columns_bubble') return 44
+  return compId === 'two_columns' ? 32 : 28
+}
+
+function titleZoneBottom(compId: string): number {
+  if (compId === 'two_columns_labeled' || compId === 'two_columns_plain' ||
+      compId === 'three_columns_num' || compId === 'columns_flex' ||
+      compId === 'four_columns_paren' || compId === 'four_columns_bubble') {
+    return _PAD + _FLAT_TITLE_H      // 345 — big 44pt title zone
+  }
+  return _PAD + _TH                  // 200 — 28/32pt row title
+}
+
+// Height the subtitle occupies (0 when there is none), including the gap below it. This is
+// what every content-top calculation has to move down by: the user's rule is that the
+// subtitle keeps its size and the columns give way, never the other way round.
+function subtitleBand(compId: string, slots: Record<string, string>, titlePt: number): number {
+  const text = (slots['ПІДЗАГОЛОВОК'] ?? '').trim()
+  if (!text) return 0
+  const pt = subtitlePt(titlePt)
+  return Math.ceil(measuredTextHeight(text, _TITLE_W, pt)) + _SUB_GAP
+}
+
+// Creates the subtitle box itself: full title width, MUTED grey (PINK on red), sitting
+// TITLE_GAP under the title zone. The master has no box for it — these compositions never
+// had a subtitle — so it is built from scratch, like the columns_flex columns.
+function buildSubtitleRequests(
+  pageId: string,
+  slideIdx: number,
+  text: string,
+  compId: string,
+  titlePt: number,
+  theme: string,
+): object[] {
+  const pt = subtitlePt(titlePt)
+  const h  = Math.ceil(measuredTextHeight(text, _TITLE_W, pt))
+  const y  = titleZoneBottom(compId) + _SUB_GAP
+  const id = `sub_${slideIdx}`
+  const fg = theme === 'red'
+    ? { red: 0xFC / 255, green: 0xCA / 255, blue: 0xCA / 255 }   // PINK on red
+    : _BADGE_FG                                                 // MUTED on dark
+  return [
+    {
+      createShape: {
+        objectId: id,
+        shapeType: 'TEXT_BOX',
+        elementProperties: {
+          pageObjectId: pageId,
+          size: {
+            width:  { magnitude: _eL(_TITLE_W + 2 * _INSET), unit: 'EMU' },
+            height: { magnitude: _eL(h + 2 * _INSET), unit: 'EMU' },
+          },
+          transform: {
+            scaleX: 1, shearX: 0, translateX: _eL(_PAD - _INSET),
+            shearY: 0, scaleY: 1, translateY: _eL(y - _INSET),
+            unit: 'EMU',
+          },
+        },
+      },
+    },
+    { insertText: { objectId: id, insertionIndex: 0, text } },
+    {
+      updateTextStyle: {
+        objectId: id,
+        style: {
+          fontSize: { magnitude: pt, unit: 'PT' },
+          bold: false,
+          foregroundColor: { opaqueColor: { rgbColor: fg } },
+          weightedFontFamily: { fontFamily: 'Inter', weight: 500 },
+        },
+        fields: 'fontSize,bold,foregroundColor,weightedFontFamily',
+        textRange: { type: 'ALL' },
+      },
+    },
+    {
+      updateParagraphStyle: {
+        objectId: id,
+        style: { lineSpacing: 90 },
+        fields: 'lineSpacing',
+        textRange: { type: 'ALL' },
+      },
+    },
+  ]
+}
+
 // ─── Flat column families ────────────────────────────────────────────────────
 // Columns with no card behind the text (two_columns_plain / two_columns_labeled). The
 // master parks them at a fixed y=540 — 195px below the title zone, spacing drawn for a
@@ -76,12 +191,12 @@ const _FLAT_LABEL_H    = 50    // ПІДПИС_N box height in the master
 
 // The highest the columns may go: TITLE_GAP below the title zone, plus the label band for
 // the labelled variant (its ПІДПИС rides along, keeping its 89px band).
-function flatColumnsTopMin(compId: string): number {
-  const firstContentY = _PAD + _FLAT_TITLE_H + TITLE_GAP           // 405
+function flatColumnsTopMin(compId: string, subBand = 0): number {
+  const firstContentY = _PAD + _FLAT_TITLE_H + _SUB_GAP + subBand  // 405 (+ subtitle)
   return compId === 'two_columns_labeled' ? firstContentY + _FLAT_LABEL_BAND : firstContentY
 }
-function flatColumnsMaxH(compId: string): number {
-  return _H - _PAD - flatColumnsTopMin(compId)
+function flatColumnsMaxH(compId: string, subBand = 0): number {
+  return _H - _PAD - flatColumnsTopMin(compId, subBand)
 }
 
 // `ctx` carries what a composition needs to know its REAL text area. Timelines need the
@@ -1756,7 +1871,9 @@ function buildBentoRowLayoutRequests(
     }
     const contentCardH  = maxTextH + 2 * _INN + 2 * VERT_PAD_ROW
     const desiredRowY   = _H - _PAD - Math.max(contentCardH, _BOTTOM_BENTO_H_DEFAULT)
-    const rowY = Math.max(desiredRowY, _CY)   // _CY = 300 is the hard floor
+    const subBand  = subtitleBand(compId, processedSlots, titlePtFor(compId))
+    const topFloor = Math.max(_CY, titleZoneBottom(compId) + _SUB_GAP + subBand)
+    const rowY = Math.max(desiredRowY, topFloor)   // _CY = 300, plus the subtitle if any
     const cardH = _H - _PAD - rowY
 
     // four_columns_num: always numbered; four_columns/bento_bottom_4: never numbered;
@@ -1843,9 +1960,10 @@ function buildBentoRowLayoutRequests(
     // A group header is one step larger than its list (computeHeaderPt) — ask for that
     // step too, so the box is not sized for a font the header does not use.
     const headerSlack = Math.ceil(lineH(BENTO_MAX_PT[compId] ?? 22) * 0.25)
-    const textY = Math.min(
-      _FLAT_COL_Y_DEF,
-      Math.max(flatColumnsTopMin(compId), _H - _PAD - maxTextH - headerSlack),
+    const topMin = flatColumnsTopMin(compId, subtitleBand(compId, processedSlots, titlePtFor(compId)))
+    const textY = Math.max(
+      topMin,
+      Math.min(_FLAT_COL_Y_DEF, _H - _PAD - maxTextH - headerSlack),
     )
     const textH = _H - _PAD - textY
 
@@ -2974,6 +3092,7 @@ function buildColumnsFlexRequests(
   n: number,
   colTexts: string[],
   templateColIds: (string | undefined)[],
+  subBand = 0,
 ): object[] {
   const _CF_GAP   = 50
   const _CF_X0    = _PAD        // 100
@@ -2989,13 +3108,16 @@ function buildColumnsFlexRequests(
   // Same two variables and same order as everywhere else: the area grows first (up to
   // TITLE_GAP under the title zone, minus the "(N)" band), then the font gives way.
   const innerW  = colW - 2 * _INSET
-  const maxAreaH = flatColumnsMaxH('two_columns_labeled')  // 486 — same band above
+  const maxAreaH = flatColumnsMaxH('two_columns_labeled', subBand)  // 486 − subtitle, same band above
   let pt = 22
   for (; pt > 10; pt--) {
     if (colTexts.every(t => textFitsParagraphs(t, innerW, maxAreaH, pt))) break
   }
   const neededH = Math.ceil(Math.max(...colTexts.map(t => measuredTextHeight(t, innerW, pt))))
-  const colY    = Math.min(_FLAT_COL_Y_DEF, Math.max(flatColumnsTopMin('two_columns_labeled'), _H - _PAD - neededH))
+  const colY    = Math.max(
+    flatColumnsTopMin('two_columns_labeled', subBand),
+    Math.min(_FLAT_COL_Y_DEF, _H - _PAD - neededH),
+  )
   const colH    = _H - _PAD - colY
   const numY    = colY - _FLAT_LABEL_BAND
   console.log(
@@ -4138,6 +4260,26 @@ export async function buildPresentation(
   }
 
 
+  // ── ПІДЗАГОЛОВОК: a standalone sentence under the title, MUTED, 0.7 × title ──
+  // Only for the compositions whose geometry knows how to make room for it (their content
+  // top already moves down by subtitleBand). A slot rendered nowhere is silent content
+  // loss, which is why the other families do not offer it at all.
+  for (let i = 0; i < plan.slides.length; i++) {
+    const compId = plan.slides[i].composition
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    const comp = getComposition(compId)
+    if (!comp?.slots.some(sl => sl.name === 'ПІДЗАГОЛОВОК')) continue
+    const text = (plan.slides[i].slots['ПІДЗАГОЛОВОК'] ?? '').trim()
+    if (!text) continue
+    const titlePt = titlePtFor(compId)
+    requests.push(...buildSubtitleRequests(pageId, i, addNbsp(text), compId, titlePt, plan.theme))
+    console.log(
+      `[subtitle] slide ${i + 1} (${compId}): title=${titlePt}pt → subtitle=${subtitlePt(titlePt)}pt | ` +
+      `band=${subtitleBand(compId, plan.slides[i].slots, titlePt)}px`,
+    )
+  }
+
   // ── columns_flex: delete template columns, build N dynamic white columns + gray "(N)" labels ──
   for (let i = 0; i < plan.slides.length; i++) {
     if (plan.slides[i].composition !== 'columns_flex') continue
@@ -4153,7 +4295,10 @@ export async function buildPresentation(
     }
     const n = colTexts.length
     if (n < 2) continue
-    requests.push(...buildColumnsFlexRequests(pageId, n, colTexts, templateColIds))
+    requests.push(...buildColumnsFlexRequests(
+      pageId, n, colTexts, templateColIds,
+      subtitleBand('columns_flex', slots, titlePtFor('columns_flex')),
+    ))
     console.log(`[columns_flex] slide ${i + 1}: ${n} columns, colW=${Math.floor((1720 - (n - 1) * 50) / n)}px`)
   }
 

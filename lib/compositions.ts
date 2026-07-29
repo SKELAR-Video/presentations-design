@@ -46,6 +46,7 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark', 'red'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 70, style: 'h2', optional: true },
+      { name: 'ПІДЗАГОЛОВОК', type: 'text', max_chars: 200, style: 'body', optional: true },
       { name: 'КОЛОНКА_1', type: 'text', max_chars: 450, style: 'body' },
       { name: 'КОЛОНКА_2', type: 'text', max_chars: 450, style: 'body' },
     ],
@@ -57,6 +58,7 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 200, style: 'h1' },
+      { name: 'ПІДЗАГОЛОВОК', type: 'text', max_chars: 200, style: 'body', optional: true },
       { name: 'ПІДПИС_1', type: 'text', max_chars: 90, style: 'caption', optional: true },
       { name: 'ПІДПИС_2', type: 'text', max_chars: 90, style: 'caption', optional: true },
       { name: 'КОЛОНКА_1', type: 'text', max_chars: 350, style: 'body' },
@@ -70,6 +72,7 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 200, style: 'h1' },
+      { name: 'ПІДЗАГОЛОВОК', type: 'text', max_chars: 200, style: 'body', optional: true },
       { name: 'КОЛОНКА_1', type: 'text', max_chars: 350, style: 'body' },
       { name: 'КОЛОНКА_2', type: 'text', max_chars: 350, style: 'body' },
     ],
@@ -81,6 +84,7 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark', 'red'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 60, style: 'h2' },
+      { name: 'ПІДЗАГОЛОВОК', type: 'text', max_chars: 200, style: 'body', optional: true },
       { name: 'КОЛОНКА_1', type: 'text', max_chars: 300, style: 'body' },
       { name: 'КОЛОНКА_2', type: 'text', max_chars: 300, style: 'body' },
       { name: 'КОЛОНКА_3', type: 'text', max_chars: 300, style: 'body' },
@@ -93,6 +97,7 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 60, style: 'h2' },
+      { name: 'ПІДЗАГОЛОВОК', type: 'text', max_chars: 200, style: 'body', optional: true },
       { name: 'КАРТКА_1', type: 'text', max_chars: 200, style: 'body' },
       { name: 'КАРТКА_2', type: 'text', max_chars: 200, style: 'body' },
       { name: 'КАРТКА_3', type: 'text', max_chars: 200, style: 'body' },
@@ -106,6 +111,7 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 80, style: 'h2' },
+      { name: 'ПІДЗАГОЛОВОК', type: 'text', max_chars: 200, style: 'body', optional: true },
       { name: 'КОЛОНКА_1', type: 'text', max_chars: 220, style: 'body' },
       { name: 'КОЛОНКА_2', type: 'text', max_chars: 220, style: 'body' },
       { name: 'КОЛОНКА_3', type: 'text', max_chars: 220, style: 'body' },
@@ -141,6 +147,7 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 60, style: 'h2' },
+      { name: 'ПІДЗАГОЛОВОК', type: 'text', max_chars: 200, style: 'body', optional: true },
       { name: 'КОЛОНКА_1', type: 'text', max_chars: 200, style: 'body' },
       { name: 'КОЛОНКА_2', type: 'text', max_chars: 200, style: 'body' },
       { name: 'КОЛОНКА_3', type: 'text', max_chars: 200, style: 'body' },
@@ -154,6 +161,7 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 80, style: 'h2' },
+      { name: 'ПІДЗАГОЛОВОК', type: 'text', max_chars: 200, style: 'body', optional: true },
       { name: 'КОЛОНКА_1', type: 'text', max_chars: 200, style: 'body' },
       { name: 'КОЛОНКА_2', type: 'text', max_chars: 200, style: 'body' },
       { name: 'КОЛОНКА_3', type: 'text', max_chars: 200, style: 'body' },
@@ -167,6 +175,7 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 60, style: 'h2' },
+      { name: 'ПІДЗАГОЛОВОК', type: 'text', max_chars: 200, style: 'body', optional: true },
       { name: 'КОЛОНКА_1', type: 'text', max_chars: 150, style: 'body' },
       { name: 'КОЛОНКА_2', type: 'text', max_chars: 150, style: 'body' },
       { name: 'КОЛОНКА_3', type: 'text', max_chars: 150, style: 'body' },
@@ -180,6 +189,7 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 60, style: 'h2' },
+      { name: 'ПІДЗАГОЛОВОК', type: 'text', max_chars: 200, style: 'body', optional: true },
       { name: 'КОЛОНКА_1', type: 'text', max_chars: 150, style: 'body' },
       { name: 'КОЛОНКА_2', type: 'text', max_chars: 150, style: 'body' },
       { name: 'КОЛОНКА_3', type: 'text', max_chars: 150, style: 'body' },
@@ -193,6 +203,7 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 60, style: 'h1' },
+      { name: 'ПІДЗАГОЛОВОК', type: 'text', max_chars: 200, style: 'body', optional: true },
       // Same budget as the fixed-capacity columns it now stands in for: 300 at 2–3
       // columns, 200 at 4 (calibrated to the same 10pt floor — see docs/rules/bento.md).
       // The old 140 was set when columns_flex was a niche choice; as the default carrier

@@ -31,7 +31,16 @@ function getOAuth2Client(accessToken: string) {
 // empty ones filtered out together) — texts stays pure verbatim text (unchanged
 // contract: mapSlides1to1 copies source.texts[idx] verbatim into slots), columns is
 // a side-channel hint for the LLM about which fragments sit visually side-by-side.
-export type SourceSlide = { index: number; texts: string[]; columns: (number | null)[] }
+export type SourceSlide = {
+  index: number
+  texts: string[]
+  columns: (number | null)[]
+  // true for a fragment that sits full-width between the title and the columns — the
+  // brief's own way of writing a slide subtitle. Without this signal it reads exactly
+  // like a column label and lands in ПІДПИС_N, which is how "Викладачі, голови
+  // студпарламентів" ended up captioning a column instead of the slide.
+  subtitles: boolean[]
+}
 
 // Recursively extracts a shape's text as one or more BLOCKS. Bulleted paragraphs get a
 // "• " (nested: "  • ") prefix from paragraphMarker.bullet — otherwise a header line +
@@ -106,24 +115,60 @@ function extractElementBlocks(el: slides_v1.Schema$PageElement): string[] {
 // A leaf page element with its absolute horizontal placement — groups are unwrapped, so
 // three columns inside a group are three leaves standing side by side, exactly as they
 // look on the slide. Child transforms are relative to their group, hence the composition.
-type Leaf = { el: slides_v1.Schema$PageElement; x: number; w: number }
+type Leaf = { el: slides_v1.Schema$PageElement; x: number; y: number; w: number; h: number }
 
 function flattenElements(
   elements: slides_v1.Schema$PageElement[],
   parentX = 0,
+  parentY = 0,
   parentScaleX = 1,
+  parentScaleY = 1,
 ): Leaf[] {
   const out: Leaf[] = []
   for (const el of elements) {
     const scaleX = (el.transform?.scaleX ?? 1) * parentScaleX
+    const scaleY = (el.transform?.scaleY ?? 1) * parentScaleY
     const x      = parentX + (el.transform?.translateX ?? 0) * parentScaleX
+    const y      = parentY + (el.transform?.translateY ?? 0) * parentScaleY
     if (el.elementGroup?.children?.length) {
-      out.push(...flattenElements(el.elementGroup.children, x, scaleX))
+      out.push(...flattenElements(el.elementGroup.children, x, y, scaleX, scaleY))
     } else {
-      out.push({ el, x, w: (el.size?.width?.magnitude ?? 0) * scaleX })
+      out.push({
+        el, x, y,
+        w: (el.size?.width?.magnitude  ?? 0) * scaleX,
+        h: (el.size?.height?.magnitude ?? 0) * scaleY,
+      })
     }
   }
   return out
+}
+
+// Which leaves are the slide's subtitle: a full-width block sitting BELOW the title and
+// ABOVE the columns. That is how this brief writes a subtitle, and it is a placement
+// fact, not a guess about the wording — a line like "Викладачі, голови студпарламентів"
+// is indistinguishable from a column label by text alone, which is exactly where it kept
+// landing. Requires real columns on the slide: without them "below the title" is just
+// body text.
+const SUBTITLE_MAX_CHARS = 200
+function assignSubtitles(
+  leaves: Leaf[],
+  columnByEl: (number | null)[],
+  slideWidthEmu: number,
+): boolean[] {
+  const withText = leaves.map((l, i) => ({ l, i })).filter(({ l }) => extractElementBlocks(l.el).join('').trim())
+  const columnTops = withText.filter(({ i }) => columnByEl[i] !== null).map(({ l }) => l.y)
+  if (columnTops.length < 2) return leaves.map(() => false)
+  const columnTop = Math.min(...columnTops)
+  const titleBottom = Math.min(...withText.map(({ l }) => l.y + l.h))  // topmost block's bottom
+
+  const WIDE = slideWidthEmu * 0.6
+  return leaves.map((leaf, i) => {
+    if (columnByEl[i] !== null) return false
+    if (leaf.w <= WIDE) return false                       // narrow → it is a column, not a subtitle
+    if (leaf.y + leaf.h <= titleBottom) return false        // the title itself
+    if (leaf.y >= columnTop) return false                   // below the columns → a footnote, not a subtitle
+    return extractElementBlocks(leaf.el).join(' ').trim().length <= SUBTITLE_MAX_CHARS
+  })
 }
 
 // Groups page elements by horizontal position so the LLM can see "these boxes sit
@@ -166,14 +211,17 @@ async function extractSlides(
   return (res.data.slides ?? []).map((slide, i) => {
     const elements = flattenElements(slide.pageElements ?? [])
     const columnByEl = assignColumns(elements, slideWidthEmu)
+    const subtitleByEl = assignSubtitles(elements, columnByEl, slideWidthEmu)
     const texts: string[] = []
     const columns: (number | null)[] = []
+    const subtitles: boolean[] = []
     elements.forEach((leaf, ei) => {
       const blocks = extractElementBlocks(leaf.el).filter(Boolean)
       if (!blocks.length) return
       if (blocks.length === 1) {
         texts.push(blocks[0])
         columns.push(columnByEl[ei])
+        subtitles.push(subtitleByEl[ei])
         return
       }
       // One shape, multiple blank-line-separated blocks (e.g. two named categories
@@ -182,9 +230,10 @@ async function extractSlides(
       blocks.forEach((block, bi) => {
         texts.push(block)
         columns.push(bi)
+        subtitles.push(false)
       })
     })
-    return { index: i, texts, columns }
+    return { index: i, texts, columns, subtitles }
   })
 }
 
