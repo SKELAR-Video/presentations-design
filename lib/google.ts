@@ -654,6 +654,16 @@ function getLogoWordmarkUrl(): string {
 // Only triggers when the first part contains a digit (metric/number indicator).
 // Detects "Label — Body" or "Label: Body" in flat two-column content.
 // Used to auto-populate ПІДПИС (gray) + trim КОЛОНКА (white) at generation time.
+// Does the first line work as the column's marker? A marker is a short noun phrase
+// ("Залучення талантів", "Репутація"), not a sentence. Greying a full sentence just
+// because it happens to be first invents a hierarchy that is not in the content.
+function isColumnLabel(line: string): boolean {
+  const t = line.trim()
+  if (!t || t.length > 40) return false
+  if (/[.!?…]$/.test(t)) return false
+  return t.split(/\s+/).filter(Boolean).length <= 5
+}
+
 function extractColumnLabel(text: string): { label: string; body: string } | null {
   const hasLetter = /[a-zA-Zа-яА-ЯіІїЇєЄ'ʼ]/
   const emDash = text.search(/ [—–] /)  // em dash or en dash surrounded by spaces
@@ -3893,7 +3903,7 @@ export async function buildPresentation(
   //   two_columns / bento_right_* → normalize "Label: Body" → "Label — Body" only
   const _hasLetter = /[a-zA-Zа-яА-ЯіІїЇєЄ'ʼ]/
   for (const slide of plan.slides) {
-    const comp = slide.composition
+    let comp = slide.composition
     if (comp === 'two_columns_labeled' || comp === 'two_columns_plain') {
       for (const k of [1, 2]) {
         const col = (slide.slots[`КОЛОНКА_${k}`] ?? '').trim()
@@ -3906,6 +3916,17 @@ export async function buildPresentation(
         } else if (comp === 'two_columns_plain') {
           slide.slots[`КОЛОНКА_${k}`] = `${split.label}\n${split.body}`
         }
+      }
+      // Labels live in ПІДПИС_N only when the source wrote them as "Label — Body". When
+      // they are simply the column's first line (this brief's shape), ПІДПИС stays empty
+      // and the labelled layout draws the whole column in one white size — the marker
+      // becomes indistinguishable from the items under it. That design is not offered:
+      // the slide falls back to two_columns_plain, which greys the marker in place.
+      if (comp === 'two_columns_labeled' &&
+          ![1, 2].some(k => (slide.slots[`ПІДПИС_${k}`] ?? '').trim())) {
+        console.log(`[label-fallback] ${slide.id}: two_columns_labeled without ПІДПИС → two_columns_plain`)
+        slide.composition = 'two_columns_plain'
+        comp = 'two_columns_plain'
       }
     } else if (comp === 'two_columns' || comp.startsWith('bento_right_')) {
       // For these compositions: colon→em-dash normalization only (no gray-label rendering)
@@ -5002,18 +5023,28 @@ export async function buildPresentation(
     if (!pageId) continue
     for (const k of [1, 2]) {
       const colText = (plan.slides[i].slots[`КОЛОНКА_${k}`] ?? '').trim()
-      const nlIdx = colText.indexOf('\n')
-      if (nlIdx <= 0) continue
+      if (!colText) continue
       const objId = slotObjectIds[i]?.[`КОЛОНКА_${k}`]
       if (!objId) continue
-      fixedRangeStyleRequests.push({
-        updateTextStyle: {
-          objectId: objId,
-          style: { foregroundColor: { opaqueColor: { rgbColor: _AG_MUTED_RGB } } },
-          fields: 'foregroundColor',
-          textRange: { type: 'FIXED_RANGE', startIndex: 0, endIndex: nlIdx },
-        },
-      })
+      const nlIdx = colText.indexOf('\n')
+      const grey  = { foregroundColor: { opaqueColor: { rgbColor: _AG_MUTED_RGB } } }
+      // Marker present → it is grey and the items stay white. No marker → the column is
+      // grey as a whole, rather than pretending its first sentence is a heading.
+      if (nlIdx > 0 && isColumnLabel(colText.slice(0, nlIdx))) {
+        fixedRangeStyleRequests.push({
+          updateTextStyle: {
+            objectId: objId, style: grey, fields: 'foregroundColor',
+            textRange: { type: 'FIXED_RANGE', startIndex: 0, endIndex: nlIdx },
+          },
+        })
+      } else {
+        fixedRangeStyleRequests.push({
+          updateTextStyle: {
+            objectId: objId, style: grey, fields: 'foregroundColor',
+            textRange: { type: 'ALL' },
+          },
+        })
+      }
     }
   }
 
