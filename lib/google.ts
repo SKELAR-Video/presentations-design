@@ -62,11 +62,15 @@ function timelineLayoutMetrics(titleText: string): { titleContentH: number; text
 // first (it costs nothing), the font gives way only after. The area can only grow — 540 is
 // still the floor, so a short column looks exactly as it does today.
 const _FLAT_TITLE_H    = 245   // create-master: flat-column ЗАГОЛОВОК box height
-const _FLAT_LABEL_BAND = 89    // ПІДПИС_N band above the columns (451→540 in the master)
+const _FLAT_LABEL_BAND = 120   // ПІДПИС_N band above the columns (was 89 in the master)
 // Of that band, this much is the label BOX; the rest is the gap down to the column. The
 // font search used to measure the whole 89px band while the master box stayed 50px tall,
 // so a two-line label was sized for room it did not have (85px of text in a 50px box).
-const _FLAT_LABEL_BOX  = 70
+// A label is a short category, but it is allowed to wrap to a second line, and at the
+// 10pt floor two lines plus their gap measure 85px — a 50px master box (or the 70px first
+// guess) can only ever overflow. The box is what the font search measures, so it has to be
+// the size that fits the floor; the remaining 20px of the band is the gap to the column.
+const _FLAT_LABEL_BOX  = 100
 const _FLAT_COL_Y_DEF  = 540   // master column top = the smallest area, never worse
 const _FLAT_LABEL_H    = 50    // ПІДПИС_N box height in the master
 
@@ -3059,11 +3063,11 @@ function buildColumnsFlexRequests(
             pageObjectId: pageId,
             size: {
               width:  { magnitude: _eL(colW), unit: 'EMU' },
-              height: { magnitude: _eL(colH), unit: 'EMU' },
+              height: { magnitude: _eL(colH + 2 * _INSET), unit: 'EMU' },
             },
             transform: {
               scaleX: 1, shearX: 0, translateX: _eL(cx),
-              shearY: 0, scaleY: 1, translateY: _eL(colY),
+              shearY: 0, scaleY: 1, translateY: _eL(colY - _INSET),
               unit: 'EMU',
             },
           },
