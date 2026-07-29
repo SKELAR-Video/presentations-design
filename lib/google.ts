@@ -105,6 +105,15 @@ function subtitleBand(compId: string, slots: Record<string, string>, titlePt: nu
   return Math.ceil(measuredTextHeight(text, _TITLE_W, pt)) + _SUB_GAP
 }
 
+// The compositions whose geometry makes room for a subtitle (their content top moves down
+// by subtitleBand). Everything else either has no room or renders its own.
+const _SUBTITLE_COMPS = new Set([
+  'two_columns', 'two_columns_labeled', 'two_columns_plain',
+  'three_columns', 'three_columns_num',
+  'four_columns', 'four_columns_num', 'four_columns_paren', 'four_columns_bubble',
+  'bento_bottom_4', 'columns_flex',
+])
+
 // Creates the subtitle box itself: full title width, MUTED grey (PINK on red), sitting
 // TITLE_GAP under the title zone. The master has no box for it — these compositions never
 // had a subtitle — so it is built from scratch, like the columns_flex columns.
@@ -204,22 +213,26 @@ function flatColumnsMaxH(compId: string, subBand = 0): number {
 // without it they fall back to the narrowest/shortest worst case, as before.
 function bentoDims(
   compId: string,
-  ctx?: { titleText?: string; tokenIdx?: number },
+  ctx?: { titleText?: string; tokenIdx?: number; subBand?: number },
 ): { w: number; h: number } | null {
+  // A subtitle takes its height out of the content area. The layout already knew that;
+  // the font search did not, so it kept choosing a size for a card 200px taller than the
+  // one being drawn (text 418px in a 230px box). Same band, both sides.
+  const sub = ctx?.subBand ?? 0
   // h = usable inner height inside the TEXT_BOX (after _INN padding on each side).
   // Layout places TEXT_BOX at offset _INN from card edge (then _INSET-compensated),
   // so inner content height = cardH - 2*_INN — must match pickBentoPt's height check.
   if (compId === 'two_columns') {
     const cw = Math.floor((_UW - _GAP) / 2)
-    return { w: cw - 2 * _INN, h: _CH - 2 * _INN }
+    return { w: cw - 2 * _INN, h: _CH - 2 * _INN - sub }
   }
   if (compId === 'two_columns_labeled' || compId === 'two_columns_plain') {
     const cw = Math.floor((_UW - 50) / 2)  // 50px gap, no INN (flat layout)
-    return { w: cw, h: flatColumnsMaxH(compId) }
+    return { w: cw, h: flatColumnsMaxH(compId, sub) }
   }
   if (compId === 'three_columns') {
     const cw = Math.floor((_UW - 2 * _GAP) / 3)
-    return { w: cw - 2 * _INN, h: _CH - 2 * _INN }
+    return { w: cw - 2 * _INN, h: _CH - 2 * _INN - sub }
   }
   if (compId === 'bento_right_2') {
     const cardH = Math.floor((_RBH - _GAP) / 2)
@@ -236,7 +249,7 @@ function bentoDims(
   }
   if (compId === 'three_columns_num') {
     const cw = Math.floor((_UW - 2 * 50) / 3)  // 540 — no card INN padding
-    return { w: cw, h: _H - _PAD - 540 }        // {w: 540, h: 440}
+    return { w: cw, h: _H - _PAD - 540 - sub }
   }
   if (compId === 'three_columns_timeline' || compId === 'two_columns_timeline') {
     const isThree = compId === 'three_columns_timeline'
@@ -248,11 +261,11 @@ function bentoDims(
   }
   if (compId === 'bento_bottom_4' || compId === 'four_columns' || compId === 'four_columns_num') {
     const cw = Math.floor((_UW - 3 * _GAP) / 4)  // 407
-    return { w: cw - 2 * _INN, h: _CH - 2 * _INN }  // {w: 347, h: 620}
+    return { w: cw - 2 * _INN, h: _CH - 2 * _INN - sub }
   }
   if (compId === 'four_columns_paren' || compId === 'four_columns_bubble') {
     const cw = Math.floor((_UW - 3 * 50) / 4)  // 392 — flat style, gap=50, no card INN padding
-    return { w: cw, h: _H - _PAD - 540 }        // {w: 392, h: 440}
+    return { w: cw, h: _H - _PAD - 540 - sub }
   }
   return null
 }
@@ -1494,7 +1507,8 @@ function pickBentoCardPts(compId: string, slots: Record<string, string>): Record
   // Per-token dims: timeline columns differ in width and their height depends on this
   // slide's own title. Everything else returns the same box for every token.
   const titleText = slots['ЗАГОЛОВОК'] ?? ''
-  const dimsOf = (tokenIdx: number) => bentoDims(compId, { titleText, tokenIdx })
+  const subBand   = subtitleBand(compId, slots, titlePtFor(compId))
+  const dimsOf = (tokenIdx: number) => bentoDims(compId, { titleText, tokenIdx, subBand })
   const dims   = dimsOf(tokens ? tokens.length - 1 : 0)  // narrowest/shortest, for diagnostics
   if (!dims || !tokens || !maxPt) return null
   // 1pt-granularity search (not the coarse BENTO_SCALE steps) — the longest text should
@@ -4268,8 +4282,11 @@ export async function buildPresentation(
     const compId = plan.slides[i].composition
     const pageId = planPageIds[i]
     if (!pageId) continue
-    const comp = getComposition(compId)
-    if (!comp?.slots.some(sl => sl.name === 'ПІДЗАГОЛОВОК')) continue
+    // Explicit list, not "any composition with the slot": cover / section / closing have
+    // carried a ПІДЗАГОЛОВОК of their own since day one and draw it themselves. Matching
+    // on the slot name put a second, uninvited subtitle box on the closing slide — 1500
+    // characters of it, ending 256px below the bottom of the page.
+    if (!_SUBTITLE_COMPS.has(compId)) continue
     const text = (plan.slides[i].slots['ПІДЗАГОЛОВОК'] ?? '').trim()
     if (!text) continue
     const titlePt = titlePtFor(compId)
