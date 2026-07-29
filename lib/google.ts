@@ -746,7 +746,10 @@ function slotHasMarker(
   // проявів бренду" as a category over three other activities. The brief's own formatting
   // (above) is never second-guessed this way; only the judgement call is.
   if (slide.llmMarkers?.includes(key)) return !looksLikeAction(firstLine)
-  if (slide.markerSlots || slide.llmMarkers) return false
+  // No markup, no formatting, and the model said nothing — which is indistinguishable
+  // from the model saying "no". Silence used to mean "no marker", and that is how sheet 4
+  // lost all three of its headings. The deterministic reading decides instead: a line
+  // shaped like a marker that does not name an action IS one.
   return isColumnLabel(firstLine) && !looksLikeAction(firstLine)
 }
 
@@ -3295,6 +3298,7 @@ function buildColumnsFlexRequests(
   colTexts: string[],
   templateColIds: (string | undefined)[],
   subBand = 0,
+  markerCols: boolean[] = [],
 ): object[] {
   const _CF_GAP   = 50
   const _CF_X0    = _PAD        // 100
@@ -3424,6 +3428,20 @@ function buildColumnsFlexRequests(
     // or the list reads as one canvas (docs/rules/typography.md) and the measurement and
     // the file disagree again, this time in our favour and just as wrong.
     if (hasListItems(colTexts[k])) reqs.push(listParagraphStyleRequest(colId, pt))
+    // Marker, if this column has one: grey first line over white items — the same
+    // convention the other flat columns use. columns_flex drew every line in one white
+    // size, so a column that opened with "«Зіркові» учні шкіл" read as a flat list.
+    const cfFirstNl = colTexts[k].indexOf('\n')
+    if (cfFirstNl > 0 && markerCols?.[k]) {
+      reqs.push({
+        updateTextStyle: {
+          objectId: colId,
+          style: { foregroundColor: { opaqueColor: { rgbColor: _MUTED_CF } } },
+          fields: 'foregroundColor',
+          textRange: { type: 'FIXED_RANGE', startIndex: 0, endIndex: cfFirstNl },
+        },
+      })
+    }
   }
 
   return reqs
@@ -4528,6 +4546,12 @@ export async function buildPresentation(
     requests.push(...buildColumnsFlexRequests(
       pageId, n, colTexts, templateColIds,
       subtitleBand('columns_flex', slots, titlePtFor('columns_flex')),
+      colTexts.map((t, k) => {
+        const first = t.split('\n')[0] ?? ''
+        return t.includes('\n') &&
+          isColumnLabel(first) &&
+          slotHasMarker(plan.slides[i], `КОЛОНКА_${k + 1}`, first, t)
+      }),
     ))
     console.log(`[columns_flex] slide ${i + 1}: ${n} columns, colW=${Math.floor((1720 - (n - 1) * 50) / n)}px`)
   }
