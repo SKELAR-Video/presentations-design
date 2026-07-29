@@ -6,7 +6,7 @@ import { validateDeck, type ValidationReport } from './validator'
 import { fixOverflowSlots } from './anthropic'
 import { autoPushIfPass } from './auto-push'
 import {
-  renderedHeight, renderedHeightUniform,
+  renderedHeight, renderedHeightUniform, wrappedLines,
   LIST_ITEM_GAP_EM, FIT_MARGIN,
   type Para,
 } from './textfit'
@@ -84,8 +84,18 @@ function subtitlePt(titlePt: number): number {
 // ×0.6 on top of the quarter-line: the measured gap was reading larger than it looks,
 // because a line box is taller than the glyphs inside it (see titleTextBottom).
 function titleSubGap(titlePt: number): number {
-  return Math.round(0.25 * 0.6 * titlePt * 2.667 * 1.1)
+  return Math.round(0.25 * 0.72 * titlePt * 2.667 * 1.1)
 }
+
+// Width factor for counting TITLE lines. The body ruler's 0.5 is right for 14–22pt text
+// and too optimistic for a 44pt heading in Cyrillic caps: it read "Підтримка талановитих
+// учнів" as one line where Slides wraps it to two, and the subtitle was placed on top of
+// the title's second line. Anchors from real decks at 44pt in a 1610px box:
+//   "Амбасадорська програма" (22 chars) — one line   → needs < 0.62
+//   "Підтримка талановитих учнів" (27)  — two lines  → needs > 0.51
+// 0.58 sits between them; a title guessed one line too tall only lowers the subtitle a
+// little, while guessing one line too short puts text over text.
+const _TITLE_WRAP_CHAR_W = 0.58
 
 // A line box is not the text: at lineSpacing 90% the glyphs occupy about 0.85 of it, the
 // rest is leading above the cap height and below the descender. Measuring the title's
@@ -103,7 +113,7 @@ function titleTextBottom(titleText: string, titlePt: number): number {
   const text = titleText.trim()
   if (!text) return _PAD
   const lineBox = titlePt * 2.667 * 1.1
-  const lines   = Math.max(1, Math.round(renderedHeightUniform(text, _TITLE_W, titlePt, false) / lineBox))
+  const lines   = Math.max(1, wrappedLines(text, _TITLE_W, titlePt, _TITLE_WRAP_CHAR_W))
   // full line boxes for every line but the last, then only the visible part of the last
   return _PAD + Math.ceil((lines - 1) * lineBox + _GLYPH_OF_LINE * lineBox)
 }
