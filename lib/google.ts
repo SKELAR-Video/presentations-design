@@ -2776,7 +2776,7 @@ function expandPlanWithVariants(plan: SlidePlan): {
   const expandedSlides: SlidePlan['slides'] = []
   const variantMap = new Map<number, VariantInfo>()
 
-  for (const slide of plan.slides) {
+  for (let slide of plan.slides) {
     // Drop two-column slides with no ЗАГОЛОВОК whose column values already appear in other slides.
     // This removes AI-generated fragments that duplicate content from a bento_bottom_4 slide.
     if (
@@ -2795,6 +2795,26 @@ function expandPlanWithVariants(plan: SlidePlan): {
       if (allCoveredElsewhere) continue
     }
 
+    // A column label (ПІДПИС_N) and a slide subtitle are the same thing twice: two
+    // horizontal bands stacked above the columns, saying "this is what the block below is
+    // about". Together they cost 344px of the 575 available and leave the columns unable
+    // to fit their content at any font — sheet 9 needed 299px in the 230px that were left.
+    // With a subtitle present the label is folded into its column ("Підпис — тіло", the
+    // same move remapSlotsForVariant already makes), and no ПІДПИС-carrying layout is
+    // offered as a variant.
+    const hasSubtitle = (slide.slots['ПІДЗАГОЛОВОК'] ?? '').trim().length > 0
+    const carriesLabel = (compId: string) =>
+      (getComposition(compId)?.slots ?? []).some(sl => /^ПІДПИС_\d/.test(sl.name))
+    if (hasSubtitle && carriesLabel(slide.composition)) {
+      const plain = 'two_columns_plain'
+      console.log(`[subtitle-vs-label] slide ${slide.id}: ${slide.composition} → ${plain} (підпис склеєно з колонкою)`)
+      slide = {
+        ...slide,
+        composition: plain,
+        slots: remapSlotsForVariant(slide.slots, slide.composition, plain),
+      }
+    }
+
     const group = VARIANT_GROUPS.find(g => g.includes(slide.composition))
     if (!group) {
       expandedSlides.push(slide)
@@ -2806,6 +2826,7 @@ function expandPlanWithVariants(plan: SlidePlan): {
     // two_columns) are intentional layout differences — those drops are allowed.
     const validVariants = group.filter(varComp => {
       if (varComp === slide.composition) return true  // original always valid
+      if (hasSubtitle && carriesLabel(varComp)) return false
       const remapped = remapSlotsForVariant(slide.slots, slide.composition, varComp)
       const remappedVals = new Set(Object.values(remapped).filter(v => (v ?? '').trim()))
       const targetComp = getComposition(varComp)
