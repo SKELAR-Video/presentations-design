@@ -302,7 +302,10 @@ function labelMetrics(slots: Record<string, string>): { pt: number; boxH: number
   for (const step of _FLAT_LABEL_STEPS) {
     if (labels.every(t => textFitsParagraphs(t, w, _FLAT_LABEL_BOX_MAX, step))) { pt = step; break }
   }
-  const needed = Math.ceil(Math.max(...labels.map(t => measuredTextHeight(t, w, pt))))
+  // Sized WITH the margin the fit check will apply: a box exactly as tall as the text
+  // fails its own 95% check, and the marker then drops a step for nothing — that is how
+  // 14pt labels came out at 10pt in a box built for 14.
+  const needed = Math.ceil(Math.max(...labels.map(t => measuredTextHeight(t, w, pt))) / FIT_MARGIN)
   const boxH   = Math.min(_FLAT_LABEL_BOX_MAX, Math.max(_FLAT_LABEL_BOX, needed))
   return { pt, boxH, band: boxH + _FLAT_LABEL_GAP }
 }
@@ -3800,7 +3803,13 @@ export async function buildPresentation(
       }
       const isAgendaSlide = slide.composition.startsWith('agenda_')
       const title = (slide.slots['ЗАГОЛОВОК'] ?? '').trim()
-      if (!isAgendaSlide && title && title === prevFinalTitle) {
+      // …unless the brief itself heads this sheet that way. The dedupe exists for titles
+      // that PROPAGATE (a section heading reused by the content slide after it); a sheet
+      // that carries the heading in its own source lines is the author repeating himself,
+      // and deleting it leaves the slide with no head at all — which is what happened to
+      // the second "Цільові групи" sheet.
+      const titleFromSource = (slide.fragments ?? []).some(f => f.trim() === title)
+      if (!isAgendaSlide && title && title === prevFinalTitle && !titleFromSource) {
         delete slide.slots['ЗАГОЛОВОК']
         prevFinalTitle = undefined  // this slide now has no title — next slide is compared to null
       } else {
