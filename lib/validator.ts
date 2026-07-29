@@ -181,6 +181,40 @@ function checkFont(slide: slides_v1.Schema$Page): CheckResult {
   return { check: 'font_inter_medium', pass: fails.length === 0, detail: fails.slice(0, 5).join('; ') || undefined }
 }
 
+// ─── source_columns_covered ───────────────────────────────────────────────────
+// "1 аркуш = 1 слайд" was only ever checked as text: content_coverage asks whether a line
+// exists somewhere in the deck. It stays green while three columns are flattened into
+// one — nothing is missing, the structure is. That is exactly what happened to the sheet
+// "Цільові групи": three grouped columns arrived as one blob and rendered as two columns.
+//
+// This asks the structural question instead: the sheet had N columns of real content —
+// does the slide built from it carry N places to put them?
+//   carried = distinct КОЛОНКА_n / КАРТКА_n indices that are filled,
+//             or 1 when the composition has a single body slot (title_body & friends).
+// A variant is allowed to look different, never to hold less.
+export function checkSourceColumns(planSlide: SlidePlan['slides'][number]): CheckResult {
+  const want = planSlide.sourceColumns ?? 0
+  if (want < 2) return { check: 'source_columns_covered', pass: true, detail: 'n/a' }
+
+  const indices = new Set<string>()
+  let hasBody = false
+  for (const [name, value] of Object.entries(planSlide.slots)) {
+    if (!value || !value.trim()) continue
+    const m = name.match(/^(?:КОЛОНКА|КАРТКА)_(\d+)/)
+    if (m) { indices.add(m[1]); continue }
+    if (name === 'ЗАГОЛОВОК' || name.startsWith('ЗОБРАЖЕННЯ') || name.startsWith('ПІДПИС')) continue
+    hasBody = true
+  }
+  const carried = indices.size || (hasBody ? 1 : 0)
+
+  return {
+    check: 'source_columns_covered',
+    pass: carried >= want,
+    detail: `source_columns=${want} | carried=${carried} (${planSlide.composition})` +
+      (carried >= want ? '' : ' → структуру аркуша втрачено: колонки склеєні в один слот'),
+  }
+}
+
 function checkMaxChars(slots: Record<string, string>, compId: string): CheckResult {
   // Agenda items are auto-truncated at generation time — static check would always false-positive
   if (compId.startsWith('agenda_')) return { check: 'max_chars', pass: true, detail: 'agenda — truncated at generation' }
@@ -868,6 +902,7 @@ export async function validateDeck(
     // Flat-list rules (plan-level, always run)
     checks.push(checkNoLiteralAsterisk(planSlide.slots))
     checks.push(checkNoDuplicateTitle(plan, i))
+    checks.push(checkSourceColumns(planSlide))
 
     if (compId === 'kpi_cards') {
       const comp = getComposition('kpi_cards')

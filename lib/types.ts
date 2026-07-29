@@ -19,6 +19,11 @@ export type Slide = {
   // index) so it survives expandPlanWithVariants reordering/duplication, and read by
   // the deck-level content_coverage check to catch silently dropped content.
   fragments?: string[]
+  // How many distinct columns the SOURCE sheet actually had (side-by-side blocks with
+  // real content). Structure, not text: content_coverage asks "is this line anywhere in
+  // the deck", which stays green when three columns are flattened into one. This is what
+  // source_columns_covered compares the rendered slide against.
+  sourceColumns?: number
 }
 
 export type SlidePlan = {

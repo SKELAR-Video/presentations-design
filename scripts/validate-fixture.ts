@@ -2,7 +2,7 @@
 // Run: npx ts-node --skip-project scripts/validate-fixture.ts
 // Verifies: no_literal_asterisk, no_duplicate_title, badge_item_max_chars
 
-import { validatePlan, checkContentCoverage } from '../lib/validator'
+import { validatePlan, checkContentCoverage, checkSourceColumns } from '../lib/validator'
 import { applyCoverageFallback, missingSourceLines } from '../lib/coverage'
 import type { SlidePlan } from '../lib/types'
 import { renderedHeight, renderedHeightUniform, FIT_MARGIN } from '../lib/textfit'
@@ -652,6 +652,44 @@ run('Fixture 2 — run 2', fixture2)
       `grew=${gained ? '✓' : '✗'} monotonic=${monotonic ? '✓' : '✗'} no_overflow=${noOverflow ? '✓' : '✗'}`,
     )
     console.log(`  → ${gained && monotonic && noOverflow ? '✅ a taller area buys a bigger font, and it still fits' : '❌ WRONG'}`)
+  }
+
+  // ─── Fixture 11 — 1 аркуш = 1 слайд, structurally ───────────────────────────
+  // The real case: brief sheet "Цільові групи" has three columns, the slide built from it
+  // carried two. content_coverage stayed green (no line was missing), because it asks
+  // about text and this is about structure.
+  console.log('\n=== Fixture 11 — source_columns_covered (3 колонки в ТЗ) ===')
+  {
+    const three = {
+      id: 'slide_4', composition: 'three_columns', flags: {}, sourceColumns: 3,
+      slots: { ЗАГОЛОВОК: 'Цільові групи', КОЛОНКА_1: 'a', КОЛОНКА_2: 'b', КОЛОНКА_3: 'c' },
+    }
+    const two = {
+      id: 'slide_4', composition: 'two_columns', flags: {}, sourceColumns: 3,
+      slots: { ЗАГОЛОВОК: 'Цільові групи', КОЛОНКА_1: 'a+b', КОЛОНКА_2: 'c' },
+    }
+    const flat = {
+      id: 'slide_4', composition: 'title_body', flags: {}, sourceColumns: 3,
+      slots: { ЗАГОЛОВОК: 'Цільові групи', ТЕКСТ: 'a b c' },
+    }
+    const noise = {
+      id: 'slide_9', composition: 'title_body', flags: {}, sourceColumns: 1,
+      slots: { ЗАГОЛОВОК: 'Заголовок', ТЕКСТ: 'один потік тексту' },
+    }
+    const cases: Array<[string, any, boolean]> = [
+      ['3 колонки → three_columns (3 слоти)', three, true],
+      ['3 колонки → two_columns (2 слоти)',   two,   false],
+      ['3 колонки → title_body (1 слот)',     flat,  false],
+      ['1 колонка → title_body (не в scope)', noise, true],
+    ]
+    let ok = true
+    for (const [label, slide, expectPass] of cases) {
+      const r = checkSourceColumns(slide)
+      const correct = r.pass === expectPass
+      ok &&= correct
+      console.log(`  ${r.pass ? '✅ PASS' : '❌ FAIL'} — ${label}: ${r.detail} ${correct ? '' : '← ОЧІКУВАЛОСЬ ІНШЕ'}`)
+    }
+    console.log(`  → ${ok ? '✅ структурна втрата колонок ловиться до того, як її побачить людина' : '❌ WRONG'}`)
   }
 
   // ─── Fixture 10 — a blank line is height, not free space ────────────────────
