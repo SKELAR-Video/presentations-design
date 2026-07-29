@@ -4641,6 +4641,28 @@ export async function buildPresentation(
     if (!slide) continue
 
     const bentoTokens = BENTO_TOKENS[compId] ?? []
+
+    // Group headers are a row too: one size for all of them, the tightest card deciding.
+    // Sized per card, a four-item card had room for the full +8 while its five-item
+    // neighbour only had room for +4 — two headings of the same rank at 24pt and 20pt.
+    const headerTokens = bentoTokens.filter(t =>
+      (bentoHeaderSlots.get(i)?.has(t) ?? false) && (pSlots[t] ?? '').includes('\n'))
+    let groupHeaderPt: number | null = null
+    for (const t of headerTokens) {
+      const d = bentoDims(compId, {
+        titleText: pSlots['ЗАГОЛОВОК'] ?? '',
+        tokenIdx: bentoTokens.indexOf(t),
+        subBand: subtitleBand(compId, pSlots, titlePtFor(compId)),
+      })
+      if (!d) continue
+      const cardPt = cardPts[t] ?? (BENTO_MIN_PT[compId] ?? 10)
+      const hp = computeHeaderPt(pSlots[t] ?? '', d, cardPt, BENTO_MAX_PT[compId] ?? cardPt)
+      groupHeaderPt = groupHeaderPt === null ? hp : Math.min(groupHeaderPt, hp)
+    }
+    if (groupHeaderPt !== null && headerTokens.length > 1) {
+      console.log(`[bento-header] slide ${i + 1} (${compId}): group header=${groupHeaderPt}pt across ${headerTokens.length} cards`)
+    }
+
     for (const el of slide.pageElements ?? []) {
       if (!el.objectId) continue
       const elText = (el.shape?.text?.textElements ?? [])
@@ -4720,12 +4742,7 @@ export async function buildPresentation(
         if (hasHeader) {
           const headerLen = Math.min(headerNlIdx, actualLen)
           if (headerLen > 0) {
-            const hDims  = bentoDims(compId, {
-              titleText: pSlots['ЗАГОЛОВОК'] ?? '',
-              tokenIdx: bentoTokens.indexOf(matchedToken),
-            })
-            const hMaxPt = BENTO_MAX_PT[compId] ?? pt
-            const headerPt = hDims ? computeHeaderPt(slotValue, hDims, pt, hMaxPt) : pt
+            const headerPt = groupHeaderPt ?? pt
             const style: { foregroundColor: object; fontSize?: object } = {
               foregroundColor: { opaqueColor: { rgbColor: _WHITE } },
             }
