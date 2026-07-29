@@ -179,7 +179,13 @@ export async function GET(request: NextRequest) {
     const notes = getSlideNotes(slide)
     const textBoxes: ShapeInfo[] = []
 
-    for (const el of slide.pageElements ?? []) {
+    // Grouped elements are still elements: a designer's Ctrl+G hid whole columns from
+    // this report (and from anything built on it), which is why a brief's column
+    // formatting could not be inspected at all. Children carry their own transforms.
+    const flatten = (els: slides_v1.Schema$PageElement[]): slides_v1.Schema$PageElement[] =>
+      els.flatMap(e => (e.elementGroup?.children?.length ? flatten(e.elementGroup.children) : [e]))
+
+    for (const el of flatten(slide.pageElements ?? [])) {
       if (!el.shape) continue
       if (!el.objectId || !el.size || !el.transform) continue
 
