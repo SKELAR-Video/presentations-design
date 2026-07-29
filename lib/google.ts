@@ -76,8 +76,28 @@ function subtitlePt(titlePt: number): number {
   return Math.max(_SUB_MIN_PT, Math.min(best, titlePt - 4))
 }
 
-// Where the title zone ends per family — the subtitle hangs TITLE_GAP below it, and the
-// content another TITLE_GAP below the subtitle.
+// Gap between the title and its subtitle. Proportional, not fixed: both sizes move
+// (44→28 on flat columns, 32→22 on rows, 66→48 on sections), and a constant that looks
+// right under 44pt looks like a hole under 28pt. A quarter of the title's line height —
+// half of what a full TITLE_GAP would be, which is what the eye asked for:
+//   44pt → 32px   40pt → 29px   32pt → 23px   28pt → 21px   66pt → 48px
+function titleSubGap(titlePt: number): number {
+  return Math.round(0.25 * titlePt * 2.667 * 1.1)
+}
+
+// Bottom of the TITLE TEXT — not of the title zone. The zone is a fixed 245px (flat) or
+// 100px (rows) box; a one-line title leaves most of it empty, so measuring from the zone
+// made the visual gap depend on how long the title happened to be. That is exactly the
+// "distances walk between slides" the eye caught.
+function titleTextBottom(titleText: string, titlePt: number): number {
+  const h = titleText.trim()
+    ? Math.ceil(renderedHeightUniform(titleText.trim(), _TITLE_W, titlePt, false))
+    : 0
+  return _PAD + h
+}
+
+// Where the title zone ends per family — the content sits TITLE_GAP below it when there
+// is no subtitle.
 // The title pt these masters actually use — the ratio is taken from it.
 function titlePtFor(compId: string): number {
   if (compId === 'two_columns_labeled' || compId === 'two_columns_plain' ||
@@ -98,11 +118,20 @@ function titleZoneBottom(compId: string): number {
 // Height the subtitle occupies (0 when there is none), including the gap below it. This is
 // what every content-top calculation has to move down by: the user's rule is that the
 // subtitle keeps its size and the columns give way, never the other way round.
+function subtitleY(slots: Record<string, string>, titlePt: number): number {
+  return titleTextBottom(slots['ЗАГОЛОВОК'] ?? '', titlePt) + titleSubGap(titlePt)
+}
+
+// How much LOWER the content has to start because of the subtitle, relative to where it
+// would start without one. Zero when the subtitle fits inside the slack the fixed title
+// zone already had — a one-line title plus a one-line subtitle costs the columns nothing.
 function subtitleBand(compId: string, slots: Record<string, string>, titlePt: number): number {
   const text = (slots['ПІДЗАГОЛОВОК'] ?? '').trim()
   if (!text) return 0
-  const pt = subtitlePt(titlePt)
-  return Math.ceil(measuredTextHeight(text, _TITLE_W, pt)) + _SUB_GAP
+  const subH    = Math.ceil(measuredTextHeight(text, _TITLE_W, subtitlePt(titlePt)))
+  const withSub = subtitleY(slots, titlePt) + subH + _SUB_GAP
+  const baseTop = titleZoneBottom(compId) + _SUB_GAP
+  return Math.max(0, withSub - baseTop)
 }
 
 // The compositions whose geometry makes room for a subtitle (their content top moves down
@@ -124,10 +153,11 @@ function buildSubtitleRequests(
   compId: string,
   titlePt: number,
   theme: string,
+  slots: Record<string, string>,
 ): object[] {
   const pt = subtitlePt(titlePt)
   const h  = Math.ceil(measuredTextHeight(text, _TITLE_W, pt))
-  const y  = titleZoneBottom(compId) + _SUB_GAP
+  const y  = subtitleY(slots, titlePt)
   const id = `sub_${slideIdx}`
   const fg = theme === 'red'
     ? { red: 0xFC / 255, green: 0xCA / 255, blue: 0xCA / 255 }   // PINK on red
@@ -4311,7 +4341,9 @@ export async function buildPresentation(
     const text = (plan.slides[i].slots['ПІДЗАГОЛОВОК'] ?? '').trim()
     if (!text) continue
     const titlePt = titlePtFor(compId)
-    requests.push(...buildSubtitleRequests(pageId, i, addNbsp(text), compId, titlePt, plan.theme))
+    requests.push(...buildSubtitleRequests(
+      pageId, i, addNbsp(text), compId, titlePt, plan.theme, plan.slides[i].slots,
+    ))
     console.log(
       `[subtitle] slide ${i + 1} (${compId}): title=${titlePt}pt → subtitle=${subtitlePt(titlePt)}pt | ` +
       `band=${subtitleBand(compId, plan.slides[i].slots, titlePt)}px`,
