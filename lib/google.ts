@@ -81,19 +81,31 @@ function subtitlePt(titlePt: number): number {
 // right under 44pt looks like a hole under 28pt. A quarter of the title's line height —
 // half of what a full TITLE_GAP would be, which is what the eye asked for:
 //   44pt → 32px   40pt → 29px   32pt → 23px   28pt → 21px   66pt → 48px
+// ×0.6 on top of the quarter-line: the measured gap was reading larger than it looks,
+// because a line box is taller than the glyphs inside it (see titleTextBottom).
 function titleSubGap(titlePt: number): number {
-  return Math.round(0.25 * titlePt * 2.667 * 1.1)
+  return Math.round(0.25 * 0.6 * titlePt * 2.667 * 1.1)
 }
+
+// A line box is not the text: at lineSpacing 90% the glyphs occupy about 0.85 of it, the
+// rest is leading above the cap height and below the descender. Measuring the title's
+// bottom at the bottom of its line box therefore carried that phantom strip into every
+// gap below it — bigger fonts, bigger phantom, which is why the spacing looked different
+// on slides whose title size differed. Only the LAST line's leading matters; the ones
+// above it are real spacing between the title's own lines.
+const _GLYPH_OF_LINE = 0.85
 
 // Bottom of the TITLE TEXT — not of the title zone. The zone is a fixed 245px (flat) or
 // 100px (rows) box; a one-line title leaves most of it empty, so measuring from the zone
 // made the visual gap depend on how long the title happened to be. That is exactly the
 // "distances walk between slides" the eye caught.
 function titleTextBottom(titleText: string, titlePt: number): number {
-  const h = titleText.trim()
-    ? Math.ceil(renderedHeightUniform(titleText.trim(), _TITLE_W, titlePt, false))
-    : 0
-  return _PAD + h
+  const text = titleText.trim()
+  if (!text) return _PAD
+  const lineBox = titlePt * 2.667 * 1.1
+  const lines   = Math.max(1, Math.round(renderedHeightUniform(text, _TITLE_W, titlePt, false) / lineBox))
+  // full line boxes for every line but the last, then only the visible part of the last
+  return _PAD + Math.ceil((lines - 1) * lineBox + _GLYPH_OF_LINE * lineBox)
 }
 
 // Where the title zone ends per family — the content sits TITLE_GAP below it when there
