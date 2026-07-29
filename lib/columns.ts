@@ -80,3 +80,21 @@ export function applyColumnCapacityFallback(slide: Slide, source: SourceColumns,
   )
   return { ...slide, composition: 'columns_flex', slots }
 }
+
+// A sheet's heading belongs on the slide built from that sheet. The prompt forbids
+// repeating a ЗАГОЛОВОК on adjacent slides, and when a brief legitimately reuses one
+// ("Цільові групи" on two sheets in a row) the model obeyed the ban by dropping the title
+// altogether — the slide came out headless. The ban is about inventing repetition, not
+// about erasing what the source says, so the heading is put back deterministically.
+export function applyTitleFallback(
+  slide: Slide,
+  source: SourceColumns,
+  titleMaxChars = 80,
+): Slide {
+  if ((slide.slots['ЗАГОЛОВОК'] ?? '').trim()) return slide
+  const first = (source.texts[0] ?? '').trim()
+  if (!first || first.includes('\n') || first.length > titleMaxChars) return slide
+  const used = Object.values(slide.slots).some(v => (v ?? '').includes(first))
+  if (used) return slide
+  return { ...slide, slots: { ...slide.slots, ЗАГОЛОВОК: first } }
+}

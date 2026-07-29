@@ -246,18 +246,43 @@ const _FLAT_LABEL_BAND = 120   // ПІДПИС_N band above the columns (was 89 
 // 10pt floor two lines plus their gap measure 85px — a 50px master box (or the 70px first
 // guess) can only ever overflow. The box is what the font search measures, so it has to be
 // the size that fits the floor; the remaining 20px of the band is the gap to the column.
-const _FLAT_LABEL_BOX  = 100
-const _FLAT_COL_Y_DEF  = 540   // master column top = the smallest area, never worse
-const _FLAT_LABEL_H    = 50    // ПІДПИС_N box height in the master
+const _FLAT_LABEL_BOX     = 100   // minimum — the master's own look for a one-line marker
+const _FLAT_LABEL_BOX_MAX = 150   // two lines at 22pt fit here
+const _FLAT_LABEL_GAP     = 20    // box → column
+const _FLAT_LABEL_STEPS   = [22, 18, 14, 10] as const
+const _FLAT_COL_Y_DEF     = 540   // master column top = the smallest area, never worse
+const _FLAT_LABEL_H       = 50    // ПІДПИС_N box height in the master
+
+// The markers of a row are one row: same size for all of them, chosen by the tightest —
+// sized apart, "Що даємо / (крім стипендії)" landed at 10pt beside "Що отримуємо" at 22pt.
+// And the box grows before the font shrinks, as everywhere else: equalising inside a
+// fixed 100px box answers the wrong question, dragging both markers to 10pt instead of
+// letting the two-line one have its second line.
+function labelMetrics(slots: Record<string, string>): { pt: number; boxH: number; band: number } {
+  const labels = Object.entries(slots)
+    .filter(([k, v]) => /^ПІДПИС_\d$/.test(k) && (v ?? '').trim())
+    .map(([, v]) => v.trim())
+  if (!labels.length) {
+    return { pt: _FLAT_LABEL_STEPS[0], boxH: _FLAT_LABEL_BOX, band: _FLAT_LABEL_BOX + _FLAT_LABEL_GAP }
+  }
+  const w = Math.floor((_UW - 50) / 2)
+  let pt = _FLAT_LABEL_STEPS[_FLAT_LABEL_STEPS.length - 1]
+  for (const step of _FLAT_LABEL_STEPS) {
+    if (labels.every(t => textFitsParagraphs(t, w, _FLAT_LABEL_BOX_MAX, step))) { pt = step; break }
+  }
+  const needed = Math.ceil(Math.max(...labels.map(t => measuredTextHeight(t, w, pt))))
+  const boxH   = Math.min(_FLAT_LABEL_BOX_MAX, Math.max(_FLAT_LABEL_BOX, needed))
+  return { pt, boxH, band: boxH + _FLAT_LABEL_GAP }
+}
 
 // The highest the columns may go: TITLE_GAP below the title zone, plus the label band for
 // the labelled variant (its ПІДПИС rides along, keeping its 89px band).
-function flatColumnsTopMin(compId: string, subBand = 0): number {
+function flatColumnsTopMin(compId: string, subBand = 0, labelBand = _FLAT_LABEL_BAND): number {
   const firstContentY = _PAD + _FLAT_TITLE_H + _SUB_GAP + subBand  // 405 (+ subtitle)
-  return compId === 'two_columns_labeled' ? firstContentY + _FLAT_LABEL_BAND : firstContentY
+  return compId === 'two_columns_labeled' ? firstContentY + labelBand : firstContentY
 }
-function flatColumnsMaxH(compId: string, subBand = 0): number {
-  return _H - _PAD - flatColumnsTopMin(compId, subBand)
+function flatColumnsMaxH(compId: string, subBand = 0, labelBand = _FLAT_LABEL_BAND): number {
+  return _H - _PAD - flatColumnsTopMin(compId, subBand, labelBand)
 }
 
 // `ctx` carries what a composition needs to know its REAL text area. Timelines need the
@@ -2041,7 +2066,12 @@ function buildBentoRowLayoutRequests(
     // A group header is one step larger than its list (computeHeaderPt) — ask for that
     // step too, so the box is not sized for a font the header does not use.
     const headerSlack = Math.ceil(lineH(BENTO_MAX_PT[compId] ?? 22) * 0.25)
-    const topMin = flatColumnsTopMin(compId, subtitleBand(compId, processedSlots, titlePtFor(compId)))
+    const lm = labelMetrics(processedSlots)
+    const topMin = flatColumnsTopMin(
+      compId,
+      subtitleBand(compId, processedSlots, titlePtFor(compId)),
+      lm.band,
+    )
     const textY = Math.max(
       topMin,
       Math.min(_FLAT_COL_Y_DEF, _H - _PAD - maxTextH - headerSlack),
@@ -2063,12 +2093,11 @@ function buildBentoRowLayoutRequests(
       if (Math.abs(elW - (cw + 2 * _INSET)) > TOL) continue
       if (elY < _PAD + _FLAT_TITLE_H - TOL) continue     // anything inside the title zone
 
-      const isLabel = Math.abs(elH - (_FLAT_LABEL_H + 2 * _INSET)) < TOL ||
-                      Math.abs(elH - (_FLAT_LABEL_BOX + 2 * _INSET)) < TOL
+      const isLabel = elH <= _FLAT_LABEL_BOX_MAX + 2 * _INSET + TOL
       if (isLabel) {
         reqs.push(makeElemTransform(
-          el.objectId, elX, textY - _FLAT_LABEL_BAND - _INSET,
-          elW, _FLAT_LABEL_BOX + 2 * _INSET, sW, sH,
+          el.objectId, elX, textY - lm.band - _INSET,
+          elW, lm.boxH + 2 * _INSET, sW, sH,
         ))
       } else {
         reqs.push(makeElemTransform(el.objectId, elX, textY - _INSET, elW, textH + 2 * _INSET, sW, sH))
@@ -4896,10 +4925,11 @@ export async function buildPresentation(
       // two_columns_labeled ПІДПИС_N master box is a nominal 50px tag, not the real
       // available height — the label actually has the full gap down to where КОЛОНКА_N
       // starts (y=451→540=89px) before it visually collides with the body text below.
-      if (compId === 'two_columns_labeled' && /^ПІДПИС_\d$/.test(slotName)) elH = _FLAT_LABEL_BOX
+      const isFlatLabel = compId === 'two_columns_labeled' && /^ПІДПИС_\d$/.test(slotName)
+      if (isFlatLabel) elH = labelMetrics(slots).boxH
       if (!elW || !elH) continue
       const innerW = Math.max(1, elW - 2 * _INSET)
-      const innerH = Math.max(1, elH - (compId === 'two_columns_labeled' && /^ПІДПИС_\d$/.test(slotName) ? 0 : 2 * _INSET))
+      const innerH = Math.max(1, elH - (isFlatLabel ? 0 : 2 * _INSET))
 
       // Read default pt from template element's text style
       const defaultPt = (el.shape?.text?.textElements ?? [])
@@ -4907,12 +4937,22 @@ export async function buildPresentation(
         ?.textRun?.style?.fontSize?.magnitude ?? 18
 
       const steps = (FONT_STEPS as readonly number[]).filter(s => s <= defaultPt)
+      // ПІДПИС_1 and ПІДПИС_2 are one row of markers: they must be one size, chosen by
+      // the tightest of them, exactly as the columns under them are. Sized apart, a
+      // two-line marker dropped to 10pt next to a one-line marker at 22pt.
+      // Markers are sized as a row by labelMetrics — one pt for all of them, box grown
+      // first. Everything else answers only for itself.
+      const labelPeers = isFlatLabel
+        ? Object.entries(slots)
+            .filter(([k, v]) => /^ПІДПИС_\d$/.test(k) && (v ?? '').trim())
+            .map(([, v]) => v)
+        : [slotValue]
       let chosenPt: number | null = null
       for (const pt of steps) {
         // Paragraph-aware: textFits() collapses \n/\v to spaces, so an 11-item list looked
         // like one flowing paragraph and kept a font far too large for the forced line
         // starts and the gaps between them.
-        if (textFitsParagraphs(slotValue, innerW, innerH, pt)) { chosenPt = pt; break }
+        if (labelPeers.every(t => textFitsParagraphs(t, innerW, innerH, pt))) { chosenPt = pt; break }
       }
       if (chosenPt === null) chosenPt = steps[steps.length - 1] ?? 10
       logWordFit(`${compId}/${slotName}`, slotValue, innerW, chosenPt)

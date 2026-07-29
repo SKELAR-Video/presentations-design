@@ -735,7 +735,11 @@ function checkNoDuplicateTitle(plan: SlidePlan, slideIndex: number): CheckResult
   }
   const cur  = (plan.slides[slideIndex].slots['ЗАГОЛОВОК'] ?? '').trim()
   const prev = (plan.slides[slideIndex - 1].slots['ЗАГОЛОВОК'] ?? '').trim()
-  const dup  = Boolean(cur && cur === prev)
+  // The rule bans INVENTED repetition. When the brief itself heads two sheets the same
+  // way, repeating it is 1:1 fidelity — and treating it as an error is what made the
+  // model drop the second title entirely, leaving a headless slide.
+  const fromSource = (plan.slides[slideIndex].fragments ?? []).some(f => f.trim() === cur)
+  const dup  = Boolean(cur && cur === prev && !fromSource)
   return {
     check: 'no_duplicate_title',
     pass: !dup,

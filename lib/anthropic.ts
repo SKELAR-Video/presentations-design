@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { PHASE0_COMPOSITIONS } from './compositions'
 import type { Slide, SlidePlan, Theme } from './types'
 import { applyCoverageFallback, looseNorm, missingSourceLines } from './coverage'
-import { countSourceColumns, applyColumnCapacityFallback } from './columns'
+import { countSourceColumns, applyColumnCapacityFallback, applyTitleFallback } from './columns'
 import type { SourceSlide } from '@/app/api/fetch-doc/route'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -382,7 +382,7 @@ JSON з рівно ${slides.length} елементами в "slides".`
         fragments: sourceLines(source),
         sourceColumns: countSourceColumns(source),
       }
-      return applyColumnCapacityFallback(slide, source, i + 1)
+      return applyTitleFallback(applyColumnCapacityFallback(slide, source, i + 1), source)
     })
   }
 
