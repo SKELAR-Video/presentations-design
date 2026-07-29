@@ -2687,6 +2687,26 @@ function expandPlanWithVariants(plan: SlidePlan): {
       if (varComp === 'two_columns_labeled' && group.includes('two_columns_plain')) {
         if (!(remapped['ПІДПИС_1'] ?? '').trim() && !(remapped['ПІДПИС_2'] ?? '').trim()) return false
       }
+      // Check 3.5: a variant may look different, it may never hold FEWER columns. The
+      // variant groups are per-count silos, so this only bites for columns_flex — it can
+      // carry 2, 3 or 4, and its group-mates are all fixed at 3. Offering a 3-slot layout
+      // to a 4-column slide would drop the fourth column, which is the very loss
+      // columns_flex exists to prevent.
+      if (targetComp) {
+        const filledCols = new Set(
+          Object.entries(slide.slots)
+            .filter(([, v]) => (v ?? '').trim())
+            .map(([k]) => k.match(/^(?:КОЛОНКА|КАРТКА)_(\d+)/)?.[1])
+            .filter(Boolean),
+        ).size
+        const targetCols = new Set(
+          targetComp.slots
+            .map(s => s.name.match(/^(?:КОЛОНКА|КАРТКА)_(\d+)/)?.[1])
+            .filter(Boolean),
+        ).size
+        if (filledCols > 0 && targetCols > 0 && targetCols < filledCols) return false
+      }
+
       // Check 4: skip variants that physically cannot hold their remapped content —
       // each slot's own max_chars is already calibrated to what fits at minimum font.
       // Prevents e.g. offering title_photo when title_body's ТЕКСТ is too long for the

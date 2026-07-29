@@ -193,10 +193,14 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     themes: ['dark'],
     slots: [
       { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 60, style: 'h1' },
-      { name: 'КОЛОНКА_1', type: 'text', max_chars: 140, style: 'body' },
-      { name: 'КОЛОНКА_2', type: 'text', max_chars: 140, style: 'body' },
-      { name: 'КОЛОНКА_3', type: 'text', max_chars: 140, style: 'body', optional: true },
-      { name: 'КОЛОНКА_4', type: 'text', max_chars: 120, style: 'body', optional: true },
+      // Same budget as the fixed-capacity columns it now stands in for: 300 at 2–3
+      // columns, 200 at 4 (calibrated to the same 10pt floor — see docs/rules/bento.md).
+      // The old 140 was set when columns_flex was a niche choice; as the default carrier
+      // it would have rejected content the fixed layouts accept.
+      { name: 'КОЛОНКА_1', type: 'text', max_chars: 300, style: 'body' },
+      { name: 'КОЛОНКА_2', type: 'text', max_chars: 300, style: 'body' },
+      { name: 'КОЛОНКА_3', type: 'text', max_chars: 300, style: 'body', optional: true },
+      { name: 'КОЛОНКА_4', type: 'text', max_chars: 200, style: 'body', optional: true },
     ],
   },
   {

@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { PHASE0_COMPOSITIONS } from './compositions'
 import type { Slide, SlidePlan, Theme } from './types'
 import { applyCoverageFallback, looseNorm, missingSourceLines } from './coverage'
+import { countSourceColumns, applyColumnCapacityFallback } from './columns'
 import type { SourceSlide } from '@/app/api/fetch-doc/route'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -308,22 +309,6 @@ function applyMappingGuards(composition: string, slots: Record<string, string>, 
   return composition
 }
 
-// How many real columns this source sheet has. Counts distinct column tags (assigned by
-// fetch-doc from the boxes' horizontal placement), but only among fragments carrying
-// substantial text — a one-word label or a stray caption sitting beside a paragraph is
-// placement noise, not a column, and must not turn into a false FAIL.
-const _COL_MIN_CHARS = 40
-function countSourceColumns(source: SourceSlide): number {
-  const cols = new Set<number>()
-  source.texts.forEach((t, i) => {
-    const col = source.columns?.[i]
-    if (col === null || col === undefined) return
-    if (t.trim().length < _COL_MIN_CHARS) return
-    cols.add(col)
-  })
-  return cols.size
-}
-
 export async function mapSlides1to1(
   slides: SourceSlide[],
   theme: Theme,
@@ -387,7 +372,7 @@ JSON з рівно ${slides.length} елементами в "slides".`
       }
 
       const composition = applyMappingGuards(a.composition || 'title_body', slots, i + 1)
-      return {
+      const slide: Slide = {
         id: `slide_${i + 1}`,
         composition,
         slots,
@@ -395,6 +380,7 @@ JSON з рівно ${slides.length} елементами в "slides".`
         fragments: sourceLines(source),
         sourceColumns: countSourceColumns(source),
       }
+      return applyColumnCapacityFallback(slide, source, i + 1)
     })
   }
 

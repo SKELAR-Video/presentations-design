@@ -4,6 +4,7 @@
 
 import { validatePlan, checkContentCoverage, checkSourceColumns } from '../lib/validator'
 import { applyCoverageFallback, missingSourceLines } from '../lib/coverage'
+import { applyColumnCapacityFallback, countSourceColumns } from '../lib/columns'
 import type { SlidePlan } from '../lib/types'
 import { renderedHeight, renderedHeightUniform, FIT_MARGIN } from '../lib/textfit'
 
@@ -690,6 +691,49 @@ run('Fixture 2 — run 2', fixture2)
       console.log(`  ${r.pass ? '✅ PASS' : '❌ FAIL'} — ${label}: ${r.detail} ${correct ? '' : '← ОЧІКУВАЛОСЬ ІНШЕ'}`)
     }
     console.log(`  → ${ok ? '✅ структурна втрата колонок ловиться до того, як її побачить людина' : '❌ WRONG'}`)
+  }
+
+  // ─── Fixture 12 — columns are an auto-layout: 2–4, never fewer than the sheet ─
+  // The real sheet: "Цільові групи", three columns. Whatever layout the mapping picks,
+  // the slide must end up with three places to put them — columns_flex is the carrier
+  // that has as many columns as the content does.
+  console.log('\n=== Fixture 12 — column capacity fallback (2–4) ===')
+  {
+    const source = {
+      index: 3,
+      texts: [
+        'Цільові групи',
+        '“Зіркові” учні шкіл\nПереможці олімпіад, МАН і конкурсів',
+        'Найкращі на курсі\nПереможці конкурсів та змагань, беруть участь в обмінах',
+        'Викладачі/Голови студпарламентів\nПрофільні спеціальності, викладають в кількох вузах',
+      ],
+      columns: [null, 0, 1, 2],
+    }
+    const squeezed = {
+      id: 'slide_4', composition: 'two_columns', flags: {},
+      sourceColumns: countSourceColumns(source as any),
+      slots: {
+        ЗАГОЛОВОК: 'Цільові групи',
+        КОЛОНКА_1: source.texts[1] + '\n' + source.texts[2],   // two columns merged
+        КОЛОНКА_2: source.texts[3],
+      },
+    }
+    const fixed = applyColumnCapacityFallback(squeezed as any, source as any, 4)
+    const cols = Object.keys(fixed.slots).filter(k => /^КОЛОНКА_\d/.test(k) && fixed.slots[k].trim())
+    const allPresent = source.texts.every(t => Object.values(fixed.slots).some(v => String(v).includes(t)))
+    const ok = fixed.composition === 'columns_flex' && cols.length === 3 && allPresent
+    console.log(`  source_columns=${squeezed.sourceColumns} | було ${squeezed.composition} (2 слоти) → стало ${fixed.composition} (${cols.length})`)
+    console.log(`  усі фрагменти аркуша на місці: ${allPresent ? '✓' : '✗'}`)
+
+    // A sheet the layout already fits must be left completely alone.
+    const fine = {
+      id: 'slide_9', composition: 'three_columns', flags: {}, sourceColumns: 3,
+      slots: { ЗАГОЛОВОК: 'т', КОЛОНКА_1: 'a', КОЛОНКА_2: 'b', КОЛОНКА_3: 'c' },
+    }
+    const untouched = applyColumnCapacityFallback(fine as any, source as any, 9)
+    const same = untouched.composition === 'three_columns'
+    console.log(`  композиція, якій вистачає слотів, не чіпається: ${same ? '✓' : '✗'}`)
+    console.log(`  → ${ok && same ? '✅ колонок на слайді ніколи не менше, ніж в аркуші' : '❌ WRONG'}`)
   }
 
   // ─── Fixture 10 — a blank line is height, not free space ────────────────────
