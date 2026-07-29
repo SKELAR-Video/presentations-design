@@ -125,6 +125,7 @@ function hasSourceMarker(el: slides_v1.Schema$PageElement): boolean {
   let cur: { pt: number; bold: boolean; text: string } | null = null
   for (const te of el.shape?.text?.textElements ?? []) {
     if (te.paragraphMarker) { cur = { pt: 0, bold: false, text: '' }; paras.push(cur); continue }
+    if (isIconFontRun(te)) continue   // a decorative glyph is not the line's size
     const run = te.textRun
     if (!run?.content || !cur) continue
     cur.text += run.content

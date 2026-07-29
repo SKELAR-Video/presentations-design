@@ -58,6 +58,7 @@ type ParagraphFact = {
   text: string
   chars: number
   soft_breaks: number          // \v inside this paragraph = item breaks that are NOT paragraphs
+  fontSize_pt: number | null
   lineSpacing_pct: number | null
   spaceAbove_pt: number | null
   spaceBelow_pt: number | null
@@ -94,6 +95,7 @@ function readParagraphFacts(
         text: '',
         chars: 0,
         soft_breaks: 0,
+        fontSize_pt: null,
         lineSpacing_pct: st.lineSpacing ?? null,
         spaceAbove_pt: st.spaceAbove?.magnitude ?? null,
         spaceBelow_pt: st.spaceBelow?.magnitude ?? null,
@@ -104,6 +106,11 @@ function readParagraphFacts(
     const content: string = te.textRun?.content ?? te.autoText?.content ?? ''
     if (!content || !cur) continue
     cur.text += content
+    // Per-paragraph size: "the box has 20pt and 14pt somewhere in it" cannot answer
+    // "is the FIRST line the big one", which is the whole question when deciding
+    // whether the source marked a line as a heading.
+    const pt = te.textRun?.style?.fontSize?.magnitude
+    if (pt) cur.fontSize_pt = Math.max(cur.fontSize_pt ?? 0, pt)
   }
 
   for (const f of facts) {
