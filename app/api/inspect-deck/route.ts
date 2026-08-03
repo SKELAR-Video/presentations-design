@@ -59,6 +59,7 @@ type ParagraphFact = {
   chars: number
   soft_breaks: number          // \v inside this paragraph = item breaks that are NOT paragraphs
   fontSize_pt: number | null
+  bullet: boolean
   lineSpacing_pct: number | null
   spaceAbove_pt: number | null
   spaceBelow_pt: number | null
@@ -96,6 +97,7 @@ function readParagraphFacts(
         chars: 0,
         soft_breaks: 0,
         fontSize_pt: null,
+        bullet: !!te.paragraphMarker?.bullet,
         lineSpacing_pct: st.lineSpacing ?? null,
         spaceAbove_pt: st.spaceAbove?.magnitude ?? null,
         spaceBelow_pt: st.spaceBelow?.magnitude ?? null,

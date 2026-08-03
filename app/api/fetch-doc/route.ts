@@ -96,7 +96,13 @@ function extractElementBlocks(el: slides_v1.Schema$PageElement): string[] {
   for (const te of textElements) {
     if (te.paragraphMarker) {
       flush()
-      bulletLevel = te.paragraphMarker.bullet?.nestingLevel ?? null
+      // A first-level bullet carries no nestingLevel at all — Slides omits the field for
+      // level 0 — so reading the level as "is this bulleted" dropped every top-level
+      // bullet in the brief. The bullet's presence is the signal; the level is only its
+      // indent. (Zero "•" came out of a brief full of them, and every bulleted list then
+      // looked to the marker rules like plain lines.)
+      const bullet = te.paragraphMarker.bullet
+      bulletLevel = bullet ? (bullet.nestingLevel ?? 0) : null
       continue
     }
     if (isIconFontRun(te)) continue  // decorative icon glyph — skip this run's content
