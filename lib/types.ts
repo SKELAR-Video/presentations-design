@@ -31,6 +31,10 @@ export type Slide = {
   // The mapping model's read of the same question, used when neither the list markup nor
   // the brief's formatting answers it.
   llmMarkers?: string[]
+  // What the list's own markup said, per column index, read BEFORE the bullet characters
+  // were stripped from the text. Bullets are a signal, not content — they must not reach
+  // the slide, but their answer has to survive them.
+  signalMarkers?: Record<string, boolean>
 }
 
 export type SlidePlan = {

@@ -730,11 +730,14 @@ function getLogoWordmarkUrl(): string {
 // The shape guard applies on top of all four at the call sites: a marker is never a
 // sentence.
 function slotHasMarker(
-  slide: { markerSlots?: string[]; llmMarkers?: string[] },
+  slide: { markerSlots?: string[]; llmMarkers?: string[]; signalMarkers?: Record<string, boolean> },
   slotName: string,
   firstLine: string,
   fullText?: string,
 ): boolean {
+  const key0 = slotName.match(/_(\d+)$/)?.[1]
+  const recorded = key0 !== undefined ? slide.signalMarkers?.[key0] : undefined
+  if (recorded !== undefined) return recorded          // read before the bullets were stripped
   const signal = fullText ? listMarkerSignal(fullText) : null
   if (signal === 'enumeration') return false
   if (signal === 'header') return true
@@ -4061,6 +4064,33 @@ export async function buildPresentation(
   // it (number compaction, ПІДПИС de-duplication, label extraction). content_coverage
   // accepts a source line found in either state, so those rewrites don't read as loss.
   plan.preRenderSlots = plan.slides.flatMap(s => Object.values(s.slots))
+
+  // Step 2.85: read the list markup, then strip it.
+  // Bullets tell us whether the first line is one of the items ("• Цільові спеціальності"
+  // among bulleted lines) or stands above them. That answer is recorded per column index
+  // and the "• " prefixes are removed, because they are markup, not text — the bento path
+  // stripped them later anyway, while the flat columns and columns_flex would have drawn
+  // them on the slide.
+  for (const slide of plan.slides) {
+    const tokens = BENTO_TOKENS[slide.composition]
+      ?? (slide.composition === 'columns_flex' ? ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3', 'КОЛОНКА_4'] : [])
+    if (!tokens.length) continue
+    const decided: Record<string, boolean> = {}
+    for (const tok of tokens) {
+      const raw = (slide.slots[tok] ?? '')
+      if (!raw.trim()) continue
+      const signal = listMarkerSignal(raw)
+      const idx = tok.match(/_(\d+)$/)?.[1]
+      if (signal && idx) decided[idx] = signal === 'header'
+      slide.slots[tok] = raw
+        .split('\n')
+        .map(l => l.replace(/^\s*[•\-–—]\s+/, ''))
+        .join('\n')
+    }
+    if (Object.keys(decided).length) {
+      slide.signalMarkers = { ...(slide.signalMarkers ?? {}), ...decided }
+    }
+  }
 
   // Step 2.9: Auto-extract column labels for two_columns_labeled / two_columns_plain.
   // For "Label — Body" or "Label: Body" content in КОЛОНКА_N:
