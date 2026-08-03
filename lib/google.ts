@@ -2975,6 +2975,33 @@ function expandPlanWithVariants(plan: SlidePlan): {
     const hasSubtitle = (slide.slots['ПІДЗАГОЛОВОК'] ?? '').trim().length > 0
     const carriesLabel = (compId: string) =>
       (getComposition(compId)?.slots ?? []).some(sl => /^ПІДПИС_\d/.test(sl.name))
+
+    // A layout that cannot draw a subtitle must not be offered for a slide that has one.
+    // bento_right_* and the timelines are deliberately outside _SUBTITLE_COMPS (their
+    // cards run the full height of the slide), and offering them anyway is how the same
+    // sheet came out with the subtitle on one variant and silently without it on the next
+    // two — deck-level coverage stays green because the text does exist, on another slide.
+    if (hasSubtitle && !_SUBTITLE_COMPS.has(slide.composition)) {
+      const g = VARIANT_GROUPS.find(gr => gr.includes(slide.composition))
+      const target = g?.find(c => _SUBTITLE_COMPS.has(c))
+      if (target) {
+        console.log(`[subtitle-capable] slide ${slide.id}: ${slide.composition} → ${target} (несе ПІДЗАГОЛОВОК)`)
+        slide = {
+          ...slide,
+          composition: target,
+          slots: remapSlotsForVariant(slide.slots, slide.composition, target),
+        }
+      } else {
+        // Whole group unable to draw one (title_body / title_photo). Rather than drop the
+        // sentence, it joins the body text — the slide reads the same, and nothing is lost.
+        const body = (slide.slots['ТЕКСТ'] ?? '').trim()
+        const sub  = (slide.slots['ПІДЗАГОЛОВОК'] ?? '').trim()
+        const slots = { ...slide.slots, ТЕКСТ: body ? `${sub}\n${body}` : sub }
+        delete slots['ПІДЗАГОЛОВОК']
+        console.log(`[subtitle-capable] slide ${slide.id}: ${slide.composition} не несе ПІДЗАГОЛОВОК → текст приєднано до ТЕКСТ`)
+        slide = { ...slide, slots }
+      }
+    }
     if (hasSubtitle && carriesLabel(slide.composition)) {
       const plain = 'two_columns_plain'
       console.log(`[subtitle-vs-label] slide ${slide.id}: ${slide.composition} → ${plain} (підпис склеєно з колонкою)`)
@@ -2997,6 +3024,7 @@ function expandPlanWithVariants(plan: SlidePlan): {
     const validVariants = group.filter(varComp => {
       if (varComp === slide.composition) return true  // original always valid
       if (hasSubtitle && carriesLabel(varComp)) return false
+      if (hasSubtitle && !_SUBTITLE_COMPS.has(varComp)) return false
       const remapped = remapSlotsForVariant(slide.slots, slide.composition, varComp)
       const remappedVals = new Set(Object.values(remapped).filter(v => (v ?? '').trim()))
       const targetComp = getComposition(varComp)
