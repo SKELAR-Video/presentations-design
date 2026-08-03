@@ -4065,6 +4065,37 @@ export async function buildPresentation(
   // accepts a source line found in either state, so those rewrites don't read as loss.
   plan.preRenderSlots = plan.slides.flatMap(s => Object.values(s.slots))
 
+  // Step 2.84: a number the layout is going to draw must not also stand in the text.
+  // The brief writes its steps as "01" / "Відбір" / description; the numbered layouts draw
+  // that 01 themselves, in their own big type, so leaving it in the card printed it twice.
+  // Stripped only where the layout really numbers — elsewhere the digit IS the content.
+  {
+    const drawsOwnNumbers = (compId: string, titleText: string, n: number): boolean => {
+      if (compId.endsWith('_num')) return true
+      if (compId === 'columns_flex' || compId === 'four_columns_paren' || compId === 'four_columns_bubble') return true
+      return !!titleText && findCardinalInTitle(titleText) === n
+    }
+    const LEADING_NUMBER = /^\s*\(?\s*0?\d{1,2}\s*[.)]?\s*$/
+    for (const slide of plan.slides) {
+      const tokens = BENTO_TOKENS[slide.composition]
+        ?? (slide.composition === 'columns_flex' ? ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3', 'КОЛОНКА_4'] : [])
+      const filled = tokens.filter(t => (slide.slots[t] ?? '').trim())
+      if (!filled.length) continue
+      if (!drawsOwnNumbers(slide.composition, (slide.slots['ЗАГОЛОВОК'] ?? '').trim(), filled.length)) continue
+      filled.forEach((tok, ci) => {
+        const lines = (slide.slots[tok] ?? '').split('\n')
+        if (lines.length < 2 || !LEADING_NUMBER.test(lines[0])) return
+        // …and only when the digit is this card's ORDINAL. A card that opens with a
+        // figure of its own ("15" over "студентів отримали роботу") keeps it — the number
+        // being removed has to be the same number the layout is about to draw.
+        const value = parseInt(lines[0].replace(/\D/g, ''), 10)
+        if (value !== ci + 1) return
+        console.log(`[number-dedup] ${slide.id}/${tok}: прибрано «${lines[0].trim()}» — номер малює макет`)
+        slide.slots[tok] = lines.slice(1).join('\n')
+      })
+    }
+  }
+
   // Step 2.85: read the list markup, then strip it.
   // Bullets tell us whether the first line is one of the items ("• Цільові спеціальності"
   // among bulleted lines) or stands above them. That answer is recorded per column index
