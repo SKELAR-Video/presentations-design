@@ -153,11 +153,25 @@ function titleTextBottom(titleText: string, titlePt: number): number {
 // Where the title zone ends per family — the content sits TITLE_GAP below it when there
 // is no subtitle.
 // The title pt these masters actually use — the ratio is taken from it.
-function titlePtFor(compId: string): number {
+function titlePtFor(compId: string, titleText?: string): number {
   if (compId === 'two_columns_labeled' || compId === 'two_columns_plain' ||
       compId === 'three_columns_num' || compId === 'columns_flex' ||
       compId === 'four_columns_paren' || compId === 'four_columns_bubble') return 44
+  // bento_right_* titles shrink with their own word-fit search, so the master's number
+  // would be a fiction here — ask the same function the title itself goes through.
+  if (compId.startsWith('bento_right_')) {
+    return titleText?.trim() ? pickTitlePt(titleText.trim(), _LTW) : TITLE_PT_STEPS[0]
+  }
   return compId === 'two_columns' ? 32 : 28
+}
+
+// Body text never comes closer than 20% below the title. Without a ceiling the fit search
+// simply takes whatever room is free, and on a short slide it ended up at 36pt under a
+// 40pt heading — the two read as one size and the slide loses its hierarchy (deck
+// 1JVYC…tAek, slides 27/28/29: 32/28, 44/36, 40/36).
+const _HIERARCHY_RATIO = 0.8
+function hierarchyCapPt(titlePt: number, floorPt: number): number {
+  return Math.max(floorPt, Math.floor(titlePt * _HIERARCHY_RATIO))
 }
 
 function titleZoneBottom(compId: string): number {
@@ -1609,12 +1623,15 @@ function buildTitleBodyFloatRequests(
       if (textFitsParagraphs(bodyText, _UW, textMaxH, pt)) { bodyPt = pt; break }
     }
   }
-  // Typography hierarchy guard: body must be strictly smaller than title.
-  if (bodyPt >= opts.titlePt) {
-    const lower = _TB_BODY_STEPS.find(pt => pt < opts.titlePt)
-    if (lower !== undefined) {
-      console.log(`[title-body-hierarchy] bodyPt ${bodyPt} → ${lower} (title fixed=${opts.titlePt}pt)`)
-      bodyPt = lower
+  // Typography hierarchy: body stays at least 20% below the title, not merely below it.
+  {
+    const cap = hierarchyCapPt(opts.titlePt, _TB_BODY_STEPS[_TB_BODY_STEPS.length - 1])
+    if (bodyPt > cap) {
+      const lower = _TB_BODY_STEPS.find(pt => pt <= cap)
+      if (lower !== undefined) {
+        console.log(`[title-body-hierarchy] bodyPt ${bodyPt} → ${lower} (title=${opts.titlePt}pt, cap=${cap})`)
+        bodyPt = lower
+      }
     }
   }
   console.log(`[title-body-fit] slot=${bodySlot} bodyLen=${bodyText.length} | chosen_font=${bodyPt}`)
@@ -1707,6 +1724,11 @@ function pickBentoCardPts(compId: string, slots: Record<string, string>): Record
     groupPt = Math.min(groupPt, cardPt)  // group = tightest of per-card maxes
   }
   groupPt = Math.max(groupPt, minPt)    // floor
+  const cap = hierarchyCapPt(titlePtFor(compId, titleText), minPt)
+  if (groupPt > cap) {
+    console.log(`[hierarchy] ${compId}: group ${groupPt}pt → ${cap}pt (заголовок ${titlePtFor(compId, titleText)}pt)`)
+    groupPt = cap
+  }
 
   // Step 2: apply uniform groupPt to all filled cards + diagnostic
   const result: Record<string, number> = {}
@@ -4719,24 +4741,8 @@ export async function buildPresentation(
     const pSlots  = bentoProcessedSlots.get(i) ?? plan.slides[i].slots
     const cardPts = pickBentoCardPts(compId, pSlots)
     if (cardPts === null) continue
-    // Typography hierarchy guard for bento_right_2: title shrinks to min 28pt but
-    // cards can reach 36pt — enforce card pt strictly less than actual title pt.
-    if (compId === 'bento_right_2') {
-      const tText = (pSlots['ЗАГОЛОВОК'] ?? '').trim()
-      if (tText) {
-        const titlePt = pickTitlePt(tText, _LTW)
-        const brScale = (BENTO_SCALE as readonly number[]).filter(s => s <= (BENTO_MAX_PT[compId] ?? 36))
-        for (const key of Object.keys(cardPts)) {
-          if (cardPts[key] >= titlePt) {
-            const lower = brScale.find(s => s < titlePt)
-            if (lower !== undefined) {
-              console.log(`[bento-right-hierarchy] card ${key}: ${cardPts[key]} → ${lower} (title=${titlePt}pt)`)
-              cardPts[key] = lower
-            }
-          }
-        }
-      }
-    }
+    // bento_right_2's older "card < title" guard is gone: hierarchyCapPt inside
+    // pickBentoCardPts caps every card family at 80% of its title, not merely below it.
     expectedCardPts.set(i, cardPts)
 
     const slide = updatedSlides.find(s => s.objectId === pageId)
@@ -4944,12 +4950,15 @@ export async function buildPresentation(
       for (const pt of _TB_BODY_STEPS) {
         if (textFitsParagraphs(bodyText, _TP_BODY_W, _TP_BODY_MAX_H, pt)) { bodyPt = pt; break }
       }
-      // Typography hierarchy guard: ТЕКСТ must be strictly smaller than ЗАГОЛОВОК.
-      if (bodyPt >= titlePt) {
-        const lower = _TB_BODY_STEPS.find(pt => pt < titlePt)
-        if (lower !== undefined) {
-          console.log(`[title-photo-hierarchy] bodyPt ${bodyPt} → ${lower} (title=${titlePt}pt)`)
-          bodyPt = lower
+      // Same 20% rule as everywhere else.
+      {
+        const cap = hierarchyCapPt(titlePt, _TB_BODY_STEPS[_TB_BODY_STEPS.length - 1])
+        if (bodyPt > cap) {
+          const lower = _TB_BODY_STEPS.find(pt => pt <= cap)
+          if (lower !== undefined) {
+            console.log(`[title-photo-hierarchy] bodyPt ${bodyPt} → ${lower} (title=${titlePt}pt, cap=${cap})`)
+            bodyPt = lower
+          }
         }
       }
       console.log(`[title-photo-fit] bodyLen=${bodyText.length} | chosen_font=${bodyPt}`)
