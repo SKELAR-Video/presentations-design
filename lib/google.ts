@@ -2981,7 +2981,13 @@ function expandPlanWithVariants(plan: SlidePlan): {
     // cards run the full height of the slide), and offering them anyway is how the same
     // sheet came out with the subtitle on one variant and silently without it on the next
     // two — deck-level coverage stays green because the text does exist, on another slide.
-    if (hasSubtitle && !_SUBTITLE_COMPS.has(slide.composition)) {
+    // …but not for the compositions that own a ПІДЗАГОЛОВОК slot and draw it themselves
+    // (cover, section, closing). They are outside _SUBTITLE_COMPS because their subtitle
+    // is rendered by their own layout, not because they cannot carry one — and moving that
+    // text into a ТЕКСТ slot they do not have is how a closing slide lost 622 characters.
+    const ownsSubtitleSlot = (getComposition(slide.composition)?.slots ?? [])
+      .some(sl => sl.name === 'ПІДЗАГОЛОВОК')
+    if (hasSubtitle && !ownsSubtitleSlot && !_SUBTITLE_COMPS.has(slide.composition)) {
       const g = VARIANT_GROUPS.find(gr => gr.includes(slide.composition))
       const target = g?.find(c => _SUBTITLE_COMPS.has(c))
       if (target) {
@@ -2991,9 +2997,12 @@ function expandPlanWithVariants(plan: SlidePlan): {
           composition: target,
           slots: remapSlotsForVariant(slide.slots, slide.composition, target),
         }
-      } else {
+      } else if ((getComposition(slide.composition)?.slots ?? []).some(sl => sl.name === 'ТЕКСТ')) {
         // Whole group unable to draw one (title_body / title_photo). Rather than drop the
         // sentence, it joins the body text — the slide reads the same, and nothing is lost.
+        // Only where a ТЕКСТ slot actually exists: writing into a slot the composition does
+        // not have is not a rescue, it is the same loss with a different name (badges,
+        // agenda_*, cover_title_only have neither).
         const body = (slide.slots['ТЕКСТ'] ?? '').trim()
         const sub  = (slide.slots['ПІДЗАГОЛОВОК'] ?? '').trim()
         const slots: Record<string, string> = { ...slide.slots, ТЕКСТ: body ? `${sub}\n${body}` : sub }
