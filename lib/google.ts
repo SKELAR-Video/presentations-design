@@ -2996,7 +2996,7 @@ function expandPlanWithVariants(plan: SlidePlan): {
         // sentence, it joins the body text — the slide reads the same, and nothing is lost.
         const body = (slide.slots['ТЕКСТ'] ?? '').trim()
         const sub  = (slide.slots['ПІДЗАГОЛОВОК'] ?? '').trim()
-        const slots = { ...slide.slots, ТЕКСТ: body ? `${sub}\n${body}` : sub }
+        const slots: Record<string, string> = { ...slide.slots, ТЕКСТ: body ? `${sub}\n${body}` : sub }
         delete slots['ПІДЗАГОЛОВОК']
         console.log(`[subtitle-capable] slide ${slide.id}: ${slide.composition} не несе ПІДЗАГОЛОВОК → текст приєднано до ТЕКСТ`)
         slide = { ...slide, slots }
