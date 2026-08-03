@@ -323,6 +323,19 @@ function flatColumnsMaxH(compId: string, subBand = 0, labelBand = _FLAT_LABEL_BA
 // `ctx` carries what a composition needs to know its REAL text area. Timelines need the
 // slide's title (height) and which column this is (the two columns differ in width);
 // without it they fall back to the narrowest/shortest worst case, as before.
+// How much of a card the auto-numbering takes from its text. The layout moves the text
+// down by _NUM_TEXT_TOP (or the 3-card variant) and pads the bottom, so a numbered card
+// holds visibly less than an unnumbered one — while bentoDims kept reporting the full
+// card. That gap is where slide 9's third card overflowed: the font was chosen for 213px
+// of room in a box that ended up with 94.
+function numberBandPx(compId: string, titleText: string | undefined, n: number): number {
+  const numbered = compId.endsWith('_num') ||
+    (!!titleText?.trim() && findCardinalInTitle(titleText) === n)
+  if (!numbered) return 0
+  const top = compId.startsWith('bento_right_') && n >= 3 ? _NUM_TEXT_TOP_3 : _NUM_TEXT_TOP
+  return top - _NUM_PAD   // (cardH − 2·_INN) − (cardH − top − _NUM_PAD − 2·_INSET)
+}
+
 function bentoDims(
   compId: string,
   ctx?: { titleText?: string; tokenIdx?: number; subBand?: number },
@@ -336,7 +349,7 @@ function bentoDims(
   // so inner content height = cardH - 2*_INN — must match pickBentoPt's height check.
   if (compId === 'two_columns') {
     const cw = Math.floor((_UW - _GAP) / 2)
-    return { w: cw - 2 * _INN, h: _CH - 2 * _INN - sub }
+    return { w: cw - 2 * _INN, h: _CH - 2 * _INN - sub - numberBandPx(compId, ctx?.titleText, 2) }
   }
   if (compId === 'two_columns_labeled' || compId === 'two_columns_plain') {
     const cw = Math.floor((_UW - 50) / 2)  // 50px gap, no INN (flat layout)
@@ -344,20 +357,20 @@ function bentoDims(
   }
   if (compId === 'three_columns') {
     const cw = Math.floor((_UW - 2 * _GAP) / 3)
-    return { w: cw - 2 * _INN, h: _CH - 2 * _INN - sub }
+    return { w: cw - 2 * _INN, h: _CH - 2 * _INN - sub - numberBandPx(compId, ctx?.titleText, 3) }
   }
   if (compId === 'bento_right_2') {
     const cardH = Math.floor((_RBH - _GAP) / 2)
-    return { w: _RBW - 2 * _INN, h: cardH - 2 * _INN }
+    return { w: _RBW - 2 * _INN, h: cardH - 2 * _INN - numberBandPx(compId, ctx?.titleText, 2) }
   }
   if (compId === 'bento_right_3') {
     const cardH = Math.floor((_RBH - 2 * _GAP) / 3)
-    return { w: _RBW - 2 * _INN, h: cardH - 2 * _INN }
+    return { w: _RBW - 2 * _INN, h: cardH - 2 * _INN - numberBandPx(compId, ctx?.titleText, 3) }
   }
   if (compId === 'bento_right_2x2') {
     const cellW = Math.floor((_RBW - _GAP) / 2)
     const cellH = Math.floor((_RBH - _GAP) / 2)
-    return { w: cellW - 2 * _INN, h: cellH - 2 * _INN }
+    return { w: cellW - 2 * _INN, h: cellH - 2 * _INN - numberBandPx(compId, ctx?.titleText, 4) }
   }
   if (compId === 'three_columns_num') {
     const cw = Math.floor((_UW - 2 * 50) / 3)  // 540 — no card INN padding
@@ -373,7 +386,7 @@ function bentoDims(
   }
   if (compId === 'bento_bottom_4' || compId === 'four_columns' || compId === 'four_columns_num') {
     const cw = Math.floor((_UW - 3 * _GAP) / 4)  // 407
-    return { w: cw - 2 * _INN, h: _CH - 2 * _INN - sub }
+    return { w: cw - 2 * _INN, h: _CH - 2 * _INN - sub - numberBandPx(compId, ctx?.titleText, 4) }
   }
   if (compId === 'four_columns_paren' || compId === 'four_columns_bubble') {
     const cw = Math.floor((_UW - 3 * 50) / 4)  // 392 — flat style, gap=50, no card INN padding
