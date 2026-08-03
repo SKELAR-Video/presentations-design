@@ -272,6 +272,30 @@ function reattachOrphanCaptions(composition: string, slots: Record<string, strin
 }
 
 // Corrects common LLM slot-naming mistakes — runs in both 1to1 and free-form paths.
+// КОЛОНКА_N and КАРТКА_N are the same column under two names — which name is right
+// depends on the composition, and the model does not always pick the one its composition
+// declares. A four_columns slide holding КАРТКА_1..4 renders nothing: the template has no
+// such tokens, and content_integrity reports four slots' worth of text lost (deck
+// 1JVYC…tAek, slides 17/18/20/21 — every four-column variant of one sheet, while the
+// bento_right_2x2 variant of the SAME slots was fine, because there КАРТКА_N is correct).
+// Renaming by index is safe: the index says which column, the prefix only says which
+// family, and no composition declares both.
+function normalizeIndexedSlots(composition: string, slots: Record<string, string>, slideNum: number): void {
+  const comp = PHASE0_COMPOSITIONS.find(c => c.id === composition)
+  if (!comp) return
+  const declared = new Set(comp.slots.map(sl => sl.name))
+  for (const key of Object.keys(slots)) {
+    if (declared.has(key)) continue
+    const m = key.match(/^(КОЛОНКА|КАРТКА)_(\d+)$/)
+    if (!m) continue
+    const alt = `${m[1] === 'КОЛОНКА' ? 'КАРТКА' : 'КОЛОНКА'}_${m[2]}`
+    if (!declared.has(alt) || (slots[alt] ?? '').trim()) continue
+    console.warn(`[slot-normalize] slide ${slideNum} (${composition}): ${key} → ${alt}`)
+    slots[alt] = slots[key]
+    delete slots[key]
+  }
+}
+
 function applyMappingGuards(composition: string, slots: Record<string, string>, slideNum: number): string {
   // Long-text guard: demote to title_body ONLY if a column/card slot genuinely doesn't
   // fit even at the composition's smallest allowed font (real geometry check, not a
@@ -325,6 +349,7 @@ function applyMappingGuards(composition: string, slots: Record<string, string>, 
   }
 
   reattachOrphanCaptions(composition, slots, slideNum)
+  normalizeIndexedSlots(composition, slots, slideNum)
   return composition
 }
 

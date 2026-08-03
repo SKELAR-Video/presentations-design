@@ -3118,11 +3118,24 @@ function expandPlanWithVariants(plan: SlidePlan): {
       const varComp = validVariants[vi]
       const newIdx = expandedSlides.length
       variantMap.set(newIdx, { variantIdx: vi + 1, totalVariants: validVariants.length })
+      // Same normalisation the mapping stage applies: whatever the remap table did or did
+      // not cover, a slot must end up under the name its target composition declares.
+      const varSlots = remapSlotsForVariant(slide.slots, slide.composition, varComp)
+      const declared = new Set((getComposition(varComp)?.slots ?? []).map(sl => sl.name))
+      for (const key of Object.keys(varSlots)) {
+        if (declared.has(key)) continue
+        const m = key.match(/^(КОЛОНКА|КАРТКА)_(\d+)$/)
+        if (!m) continue
+        const alt = `${m[1] === 'КОЛОНКА' ? 'КАРТКА' : 'КОЛОНКА'}_${m[2]}`
+        if (!declared.has(alt) || (varSlots[alt] ?? '').trim()) continue
+        varSlots[alt] = varSlots[key]
+        delete varSlots[key]
+      }
       expandedSlides.push({
         ...slide,
         id: `${slide.id}_v${vi + 1}`,
         composition: varComp,
-        slots: remapSlotsForVariant(slide.slots, slide.composition, varComp),
+        slots: varSlots,
         flags: { ...(slide.flags ?? {}) },
       })
     }

@@ -3,6 +3,7 @@
 // Verifies: no_literal_asterisk, no_duplicate_title, badge_item_max_chars
 
 import { validatePlan, checkContentCoverage, checkSourceColumns } from '../lib/validator'
+import { PHASE0_COMPOSITIONS } from '../lib/compositions'
 import { applyCoverageFallback, missingSourceLines } from '../lib/coverage'
 import { applyColumnCapacityFallback, countSourceColumns, listMarkerSignal, looksLikeAction } from '../lib/columns'
 import type { SlidePlan } from '../lib/types'
@@ -734,6 +735,44 @@ run('Fixture 2 — run 2', fixture2)
     const same = untouched.composition === 'three_columns'
     console.log(`  композиція, якій вистачає слотів, не чіпається: ${same ? '✓' : '✗'}`)
     console.log(`  → ${ok && same ? '✅ колонок на слайді ніколи не менше, ніж в аркуші' : '❌ WRONG'}`)
+  }
+
+  // ─── Fixture 15 — a column keeps its content when the slot name is wrong ────
+  // КОЛОНКА_N and КАРТКА_N are the same column under two names; which one is right depends
+  // on the composition. A four_columns slide holding КАРТКА_1..4 renders nothing at all.
+  console.log('\n=== Fixture 15 — назва слота під композицію ===')
+  {
+    const declaredOf = (id: string) =>
+      new Set((PHASE0_COMPOSITIONS.find(c => c.id === id)?.slots ?? []).map(sl => sl.name))
+    const normalize = (comp: string, slots: Record<string, string>) => {
+      const declared = declaredOf(comp)
+      for (const key of Object.keys(slots)) {
+        if (declared.has(key)) continue
+        const m = key.match(/^(КОЛОНКА|КАРТКА)_(\d+)$/)
+        if (!m) continue
+        const alt = `${m[1] === 'КОЛОНКА' ? 'КАРТКА' : 'КОЛОНКА'}_${m[2]}`
+        if (!declared.has(alt) || (slots[alt] ?? '').trim()) continue
+        slots[alt] = slots[key]; delete slots[key]
+      }
+      return slots
+    }
+    const cases: Array<[string, string]> = [
+      ['four_columns', 'КАРТКА'], ['four_columns_num', 'КАРТКА'],
+      ['four_columns_paren', 'КАРТКА'], ['four_columns_bubble', 'КАРТКА'],
+      ['bento_right_2x2', 'КОЛОНКА'], ['three_columns', 'КАРТКА'], ['bento_right_3', 'КОЛОНКА'],
+    ]
+    let ok = true
+    for (const [comp, wrongPrefix] of cases) {
+      const n = comp.startsWith('bento_right_3') || comp.startsWith('three') ? 3 : 4
+      const slots: Record<string, string> = {}
+      for (let i = 1; i <= n; i++) slots[`${wrongPrefix}_${i}`] = `текст ${i}`
+      normalize(comp, slots)
+      const declared = declaredOf(comp)
+      const lost = Object.keys(slots).filter(k => !declared.has(k))
+      ok &&= lost.length === 0 && Object.keys(slots).length === n
+      console.log(`  ${lost.length ? '❌' : '✅'} ${comp.padEnd(20)} ${wrongPrefix}_1..${n} → ${Object.keys(slots).join(', ')}`)
+    }
+    console.log(`  → ${ok ? '✅ жодна колонка не лишається під іменем, якого композиція не знає' : '❌ WRONG'}`)
   }
 
   // ─── Fixture 13 — what counts as a marker: the list's own markup ────────────
