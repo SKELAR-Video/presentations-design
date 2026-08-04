@@ -23,6 +23,13 @@ const _BOTTOM_BENTO_H_DEFAULT = _H - _PAD - Math.floor(_H / 2)  // 440
 const _RBW = 860
 const _RBH = _H - 2 * _PAD  // 880
 
+// n items evenly spaced by gap across totalW — every card/column row shares this one
+// formula instead of each family re-deriving it inline (22 call sites had it copied by
+// hand; a gap or count typo in one would silently diverge from the rest).
+function colWidth(totalW: number, gap: number, n: number): number {
+  return Math.floor((totalW - (n - 1) * gap) / n)
+}
+
 // Bento card numbering layout (Figma: 98px number, 40px padding, 30px gap)
 const _NUM_PAD      = 11   // px from card edge to number box — matches _INN-_INSET so visual top = visual left = 30px
 const _NUM_H        = 100  // px height of number text box (fits 37pt single line)
@@ -36,7 +43,7 @@ const _NUM_FONT_PT_3  = 26
 const _NUM_TEXT_TOP_3 = _NUM_PAD + _NUM_H_3 + _NUM_GAP_3  // 130
 
 // kpi_cards card width (mirrors create-master kw formula)
-const _KW = Math.floor((_UW - 3 * _GAP) / 4)  // 407
+const _KW = colWidth(_UW, _GAP, 4)  // 407
 
 // Timeline layout: the dots — and the text below them — sit under the ACTUAL title, so a
 // one-line title leaves ~135px more text height than a three-line one. Single source of
@@ -361,7 +368,7 @@ function labelMetrics(slots: Record<string, string>): { pt: number; boxH: number
   if (!labels.length) {
     return { pt: _FLAT_LABEL_STEPS[0], boxH: _FLAT_LABEL_BOX, band: _FLAT_LABEL_BOX + _FLAT_LABEL_GAP }
   }
-  const w = Math.floor((_UW - 50) / 2)
+  const w = colWidth(_UW, 50, 2)
   let pt = _FLAT_LABEL_STEPS[_FLAT_LABEL_STEPS.length - 1]
   for (const step of _FLAT_LABEL_STEPS) {
     if (labels.every(t => textFitsParagraphs(t, w, _FLAT_LABEL_BOX_MAX, step))) { pt = step; break }
@@ -412,32 +419,32 @@ function bentoDims(
   // Layout places TEXT_BOX at offset _INN from card edge (then _INSET-compensated),
   // so inner content height = cardH - 2*_INN — must match pickBentoPt's height check.
   if (compId === 'two_columns') {
-    const cw = Math.floor((_UW - _GAP) / 2)
+    const cw = colWidth(_UW, _GAP, 2)
     return { w: cw - 2 * _INN, h: _CH - 2 * _INN - sub - numberBandPx(compId, ctx?.titleText, 2) }
   }
   if (compId === 'two_columns_labeled' || compId === 'two_columns_plain') {
-    const cw = Math.floor((_UW - 50) / 2)  // 50px gap, no INN (flat layout)
+    const cw = colWidth(_UW, 50, 2)  // 50px gap, no INN (flat layout)
     return { w: cw, h: flatColumnsMaxH(compId, sub, _FLAT_LABEL_BAND, ctx?.titleText) }
   }
   if (compId === 'three_columns') {
-    const cw = Math.floor((_UW - 2 * _GAP) / 3)
+    const cw = colWidth(_UW, _GAP, 3)
     return { w: cw - 2 * _INN, h: _CH - 2 * _INN - sub - numberBandPx(compId, ctx?.titleText, 3) }
   }
   if (compId === 'bento_right_2') {
-    const cardH = Math.floor((_RBH - _GAP) / 2)
+    const cardH = colWidth(_RBH, _GAP, 2)
     return { w: _RBW - 2 * _INN, h: cardH - 2 * _INN - numberBandPx(compId, ctx?.titleText, 2) }
   }
   if (compId === 'bento_right_3') {
-    const cardH = Math.floor((_RBH - 2 * _GAP) / 3)
+    const cardH = colWidth(_RBH, _GAP, 3)
     return { w: _RBW - 2 * _INN, h: cardH - 2 * _INN - numberBandPx(compId, ctx?.titleText, 3) }
   }
   if (compId === 'bento_right_2x2') {
-    const cellW = Math.floor((_RBW - _GAP) / 2)
-    const cellH = Math.floor((_RBH - _GAP) / 2)
+    const cellW = colWidth(_RBW, _GAP, 2)
+    const cellH = colWidth(_RBH, _GAP, 2)
     return { w: cellW - 2 * _INN, h: cellH - 2 * _INN - numberBandPx(compId, ctx?.titleText, 4) }
   }
   if (compId === 'three_columns_num') {
-    const cw = Math.floor((_UW - 2 * 50) / 3)  // 540 — no card INN padding
+    const cw = colWidth(_UW, 50, 3)  // 540 — no card INN padding
     return { w: cw, h: _H - _PAD - 540 - sub }
   }
   if (compId === 'three_columns_timeline' || compId === 'two_columns_timeline') {
@@ -449,11 +456,11 @@ function bentoDims(
     return { w, h: timelineLayoutMetrics(ctx.titleText).textH }
   }
   if (compId === 'bento_bottom_4' || compId === 'four_columns' || compId === 'four_columns_num') {
-    const cw = Math.floor((_UW - 3 * _GAP) / 4)  // 407
+    const cw = colWidth(_UW, _GAP, 4)  // 407
     return { w: cw - 2 * _INN, h: _CH - 2 * _INN - sub - numberBandPx(compId, ctx?.titleText, 4) }
   }
   if (compId === 'four_columns_paren' || compId === 'four_columns_bubble') {
-    const cw = Math.floor((_UW - 3 * 50) / 4)  // 392 — flat style, gap=50, no card INN padding
+    const cw = colWidth(_UW, 50, 4)  // 392 — flat style, gap=50, no card INN padding
     return { w: cw, h: _H - _PAD - 540 - sub }
   }
   return null
@@ -958,7 +965,7 @@ function computeKpiAdaptive(
 
   // ── Dynamic card width: row fills PAD → PAD+UW ───────────────────────────
   // n=1→1720, n=2→845, n=3→553, n=4→407
-  const cw = Math.floor((_UW - (n - 1) * _GAP) / n)
+  const cw = colWidth(_UW, _GAP, n)
   const cardTextW = cw - 2 * _INN
 
   // ── Body text: shrink font until there is enough room below for cards ─────
@@ -2115,7 +2122,7 @@ function buildBentoRowLayoutRequests(
   if (compId === 'two_columns' || compId === 'three_columns' || compId === 'bento_bottom_4' ||
       compId === 'four_columns' || compId === 'four_columns_num') {
     const n      = compId === 'two_columns' ? 2 : compId === 'three_columns' ? 3 : 4
-    const cw     = Math.floor((_UW - (n - 1) * _GAP) / n)
+    const cw     = colWidth(_UW, _GAP, n)
     const innerW = cw - 2 * _INN
 
     // Content-driven: bottom pins to 980, top defaults to center (540), expands up if needed.
@@ -2214,7 +2221,7 @@ function buildBentoRowLayoutRequests(
   // the ПІДПИС band (labelled variant) rides along above it. Bottom stays on the page
   // margin, top never rises past flatColumnsTopMin, never sinks below the master's 540.
   if (compId === 'two_columns_plain' || compId === 'two_columns_labeled') {
-    const cw      = Math.floor((_UW - 50) / 2)          // 835
+    const cw      = colWidth(_UW, 50, 2)          // 835
     const cardPts = pickBentoCardPts(compId, processedSlots)
 
     let maxTextH = 0
@@ -2282,20 +2289,20 @@ function buildBentoRowLayoutRequests(
     const innerW = _RBW - 2 * _INN  // 800
 
     // Grid-driven geometry: dimensions from constants, not from text content.
-    const cellW      = isGrid ? Math.floor((_RBW - _GAP) / 2) : _RBW
+    const cellW      = isGrid ? colWidth(_RBW, _GAP, 2) : _RBW
     const cellInnerW = cellW - 2 * _INN
 
     if (isGrid) {
       // Cell height = exactly half of right-column height (fills _PAD → _H-_PAD)
-      const cellH  = Math.floor((_RBH - _GAP) / 2)  // mCellH
+      const cellH  = colWidth(_RBH, _GAP, 2)  // mCellH
       const gridY  = _PAD  // top of grid = top of content zone
 
       // 2 rows of cells; fills _PAD → _PAD+_RBH exactly
       const totalGridH = 2 * cellH + _GAP
 
       // Master cell dims (for detection)
-      const mCellW = Math.floor((_RBW - _GAP) / 2)
-      const mCellH = Math.floor((_RBH - _GAP) / 2)
+      const mCellW = colWidth(_RBW, _GAP, 2)
+      const mCellH = colWidth(_RBH, _GAP, 2)
 
       const isNumbered2x2 = !!(pageId && slideIdx !== undefined && titleText && findCardinalInTitle(titleText) === 4)
       const gridTextTopOff = isNumbered2x2 ? _NUM_TEXT_TOP : (_INN - _INSET)
@@ -2366,8 +2373,8 @@ function buildBentoRowLayoutRequests(
     // Card height from grid constants. Last card absorbs floor() rounding so
     // bottom of last card = _PAD + _RBH = _H - _PAD exactly.
     const masterCardH = compId === 'bento_right_2'
-      ? Math.floor((_RBH - _GAP) / 2)
-      : Math.floor((_RBH - 2 * _GAP) / 3)
+      ? colWidth(_RBH, _GAP, 2)
+      : colWidth(_RBH, _GAP, 3)
     const colY = _PAD  // top of card column = slide top margin
 
     // Diagnostic
@@ -3220,7 +3227,7 @@ function expandPlanWithVariants(plan: SlidePlan): {
 
 function buildThreeColumnsNumRequests(pageId: string): object[] {
   const _3CN_GAP    = 50
-  const _3CN_COL_W  = Math.floor((_UW - 2 * _3CN_GAP) / 3)  // 540
+  const _3CN_COL_W  = colWidth(_UW, _3CN_GAP, 3)  // 540
   const _3CN_BUBBLE_D = 75
   const _3CN_BUBBLE_Y = 411
   const reqs: object[] = []
@@ -3432,7 +3439,7 @@ function buildColumnsFlexRequests(
   const _CF_UW    = _UW         // 1720
   const _CF_NUM_H = 60
 
-  const colW = Math.floor((_CF_UW - (n - 1) * _CF_GAP) / n)
+  const colW = colWidth(_CF_UW, _CF_GAP, n)
 
   // These boxes are created here, not inherited from the master, so their size and their
   // font must be decided together — the old code wrote a hard-coded 18pt into a fixed
@@ -3580,7 +3587,7 @@ function buildColumnsFlexRequests(
 // (gap=50px vs 30px) starting at y=540. Number indicators are created from scratch.
 const _FLAT4_LEFT    = 90    // left edge of first column (matches Figma)
 const _FLAT4_GAP     = 50    // wider gap for flat style
-const _FLAT4_CW      = Math.floor((_UW - 3 * _FLAT4_GAP) / 4)  // 392
+const _FLAT4_CW      = colWidth(_UW, _FLAT4_GAP, 4)  // 392
 const _FLAT4_TEXT_Y  = 540   // top of text columns
 const _FLAT4_TEXT_H  = _H - _PAD - _FLAT4_TEXT_Y   // 440
 const _FLAT4_PAREN_Y = 451   // y of "(1)" labels
