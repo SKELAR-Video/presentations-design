@@ -153,14 +153,25 @@ function titleTextBottom(titleText: string, titlePt: number): number {
 // Where the title zone ends per family — the content sits TITLE_GAP below it when there
 // is no subtitle.
 // The title pt these masters actually use — the ratio is taken from it.
+// Every column family sizes its title the same way now: the largest step whose longest
+// word still fits the full title width. The master's 32pt (two_columns) and 28pt
+// (three/four columns) were constants that ignored the slide — on a slide with 391px of
+// free room above the cards the heading sat at 32pt and half the zone stayed empty.
+const _DYNAMIC_TITLE_COMPS = new Set([
+  'two_columns', 'two_columns_labeled', 'two_columns_plain',
+  'three_columns', 'three_columns_num',
+  'four_columns', 'four_columns_num', 'four_columns_paren', 'four_columns_bubble',
+  'bento_bottom_4', 'columns_flex',
+])
+
 function titlePtFor(compId: string, titleText?: string): number {
-  if (compId === 'two_columns_labeled' || compId === 'two_columns_plain' ||
-      compId === 'three_columns_num' || compId === 'columns_flex' ||
-      compId === 'four_columns_paren' || compId === 'four_columns_bubble') return 44
-  // bento_right_* titles shrink with their own word-fit search, so the master's number
-  // would be a fiction here — ask the same function the title itself goes through.
+  // bento_right_* measures against its narrow left zone, everything else against the full
+  // width up to the logo.
   if (compId.startsWith('bento_right_')) {
     return titleText?.trim() ? pickTitlePt(titleText.trim(), _LTW) : TITLE_PT_STEPS[0]
+  }
+  if (_DYNAMIC_TITLE_COMPS.has(compId)) {
+    return titleText?.trim() ? pickTitlePt(titleText.trim(), _TITLE_W) : TITLE_PT_STEPS[0]
   }
   return compId === 'two_columns' ? 32 : 28
 }
@@ -174,13 +185,16 @@ function hierarchyCapPt(titlePt: number, floorPt: number): number {
   return Math.max(floorPt, Math.floor(titlePt * _HIERARCHY_RATIO))
 }
 
-function titleZoneBottom(compId: string): number {
+function titleZoneBottom(compId: string, titleText?: string): number {
+  if (_DYNAMIC_TITLE_COMPS.has(compId) && titleText?.trim()) {
+    return titleTextBottom(titleText, titlePtFor(compId, titleText))
+  }
   if (compId === 'two_columns_labeled' || compId === 'two_columns_plain' ||
       compId === 'three_columns_num' || compId === 'columns_flex' ||
       compId === 'four_columns_paren' || compId === 'four_columns_bubble') {
-    return _PAD + _FLAT_TITLE_H      // 345 — big 44pt title zone
+    return _PAD + _FLAT_TITLE_H      // 345 — master's zone, when there is no title text
   }
-  return _PAD + _TH                  // 200 — 28/32pt row title
+  return _PAD + _TH                  // 200
 }
 
 // Height the subtitle occupies (0 when there is none), including the gap below it. This is
@@ -326,12 +340,12 @@ function labelMetrics(slots: Record<string, string>): { pt: number; boxH: number
 
 // The highest the columns may go: TITLE_GAP below the title zone, plus the label band for
 // the labelled variant (its ПІДПИС rides along, keeping its 89px band).
-function flatColumnsTopMin(compId: string, subBand = 0, labelBand = _FLAT_LABEL_BAND): number {
-  const firstContentY = _PAD + _FLAT_TITLE_H + _SUB_GAP + subBand  // 405 (+ subtitle)
+function flatColumnsTopMin(compId: string, subBand = 0, labelBand = _FLAT_LABEL_BAND, titleText?: string): number {
+  const firstContentY = titleZoneBottom(compId, titleText) + _SUB_GAP + subBand
   return compId === 'two_columns_labeled' ? firstContentY + labelBand : firstContentY
 }
-function flatColumnsMaxH(compId: string, subBand = 0, labelBand = _FLAT_LABEL_BAND): number {
-  return _H - _PAD - flatColumnsTopMin(compId, subBand, labelBand)
+function flatColumnsMaxH(compId: string, subBand = 0, labelBand = _FLAT_LABEL_BAND, titleText?: string): number {
+  return _H - _PAD - flatColumnsTopMin(compId, subBand, labelBand, titleText)
 }
 
 // `ctx` carries what a composition needs to know its REAL text area. Timelines need the
@@ -367,7 +381,7 @@ function bentoDims(
   }
   if (compId === 'two_columns_labeled' || compId === 'two_columns_plain') {
     const cw = Math.floor((_UW - 50) / 2)  // 50px gap, no INN (flat layout)
-    return { w: cw, h: flatColumnsMaxH(compId, sub) }
+    return { w: cw, h: flatColumnsMaxH(compId, sub, _FLAT_LABEL_BAND, ctx?.titleText) }
   }
   if (compId === 'three_columns') {
     const cw = Math.floor((_UW - 2 * _GAP) / 3)
@@ -1701,7 +1715,7 @@ function pickBentoCardPts(compId: string, slots: Record<string, string>): Record
   // Per-token dims: timeline columns differ in width and their height depends on this
   // slide's own title. Everything else returns the same box for every token.
   const titleText = slots['ЗАГОЛОВОК'] ?? ''
-  const subBand   = subtitleBand(compId, slots, titlePtFor(compId))
+  const subBand   = subtitleBand(compId, slots, titlePtFor(compId, titleText))
   const dimsOf = (tokenIdx: number) => bentoDims(compId, { titleText, tokenIdx, subBand })
   const dims   = dimsOf(tokens ? tokens.length - 1 : 0)  // narrowest/shortest, for diagnostics
   if (!dims || !tokens || !maxPt) return null
@@ -2089,8 +2103,8 @@ function buildBentoRowLayoutRequests(
     }
     const contentCardH  = maxTextH + 2 * _INN + 2 * VERT_PAD_ROW
     const desiredRowY   = _H - _PAD - Math.max(contentCardH, _BOTTOM_BENTO_H_DEFAULT)
-    const subBand  = subtitleBand(compId, processedSlots, titlePtFor(compId))
-    const topFloor = Math.max(_CY, titleZoneBottom(compId) + _SUB_GAP + subBand)
+    const subBand  = subtitleBand(compId, processedSlots, titlePtFor(compId, (processedSlots['ЗАГОЛОВОК'] ?? '').trim()))
+    const topFloor = Math.max(_CY, titleZoneBottom(compId, titleText) + _SUB_GAP + subBand)
     const rowY = Math.max(desiredRowY, topFloor)   // _CY = 300, plus the subtitle if any
     const cardH = _H - _PAD - rowY
 
@@ -2179,10 +2193,12 @@ function buildBentoRowLayoutRequests(
     // step too, so the box is not sized for a font the header does not use.
     const headerSlack = Math.ceil(lineH(BENTO_MAX_PT[compId] ?? 22) * 0.25)
     const lm = labelMetrics(processedSlots)
+    const flatTitle = (processedSlots['ЗАГОЛОВОК'] ?? '').trim()
     const topMin = flatColumnsTopMin(
       compId,
-      subtitleBand(compId, processedSlots, titlePtFor(compId)),
+      subtitleBand(compId, processedSlots, titlePtFor(compId, flatTitle)),
       lm.band,
+      flatTitle,
     )
     const textY = Math.max(
       topMin,
@@ -4615,7 +4631,7 @@ export async function buildPresentation(
     if (!_SUBTITLE_COMPS.has(compId)) continue
     const text = (plan.slides[i].slots['ПІДЗАГОЛОВОК'] ?? '').trim()
     if (!text) continue
-    const titlePt = titlePtFor(compId)
+    const titlePt = titlePtFor(compId, (plan.slides[i].slots['ЗАГОЛОВОК'] ?? '').trim())
     requests.push(...buildSubtitleRequests(
       pageId, i, addNbsp(text), compId, titlePt, plan.theme, plan.slides[i].slots,
     ))
@@ -4708,6 +4724,31 @@ export async function buildPresentation(
     if (elW > _TITLE_W + 2 * _INSET + 4) {
       requests.push(makeElemTransform(titleObjId, elX, elY, _TITLE_W + 2 * _INSET, elH, sW, sH))
     }
+
+    // Column families: the heading takes the room the slide actually has. Its size comes
+    // from the same word-fit search every other title uses (cap 44pt), and its box is
+    // resized to the lines it needs — the master's 100px/32pt zone described the template,
+    // not the slide, and left 391px of free space above the cards unused.
+    const compIdT = plan.slides[i].composition
+    const titleTxt = (plan.slides[i].slots['ЗАГОЛОВОК'] ?? '').trim()
+    if (_DYNAMIC_TITLE_COMPS.has(compIdT) && titleTxt) {
+      const pt = titlePtFor(compIdT, titleTxt)
+      const h  = Math.ceil(
+        wrappedLines(titleTxt, _TITLE_W, pt, _TITLE_WRAP_CHAR_W) * pt * 2.667 * 1.1,
+      )
+      requests.push(
+        makeElemTransform(titleObjId, _PAD - _INSET, _PAD - _INSET, _TITLE_W + 2 * _INSET, h + 2 * _INSET, sW, sH),
+        {
+          updateTextStyle: {
+            objectId: titleObjId,
+            style: { fontSize: { magnitude: pt, unit: 'PT' }, bold: false },
+            fields: 'fontSize,bold',
+            textRange: { type: 'ALL' },
+          },
+        },
+      )
+      console.log(`[title-fit] slide ${i + 1} (${compIdT}): ${pt}pt, ${h}px`)
+    }
   }
 
   // ── Bento row layout: resize cards to content height, centre row in zone ─────
@@ -4760,7 +4801,7 @@ export async function buildPresentation(
       const d = bentoDims(compId, {
         titleText: pSlots['ЗАГОЛОВОК'] ?? '',
         tokenIdx: bentoTokens.indexOf(t),
-        subBand: subtitleBand(compId, pSlots, titlePtFor(compId)),
+        subBand: subtitleBand(compId, pSlots, titlePtFor(compId, (pSlots['ЗАГОЛОВОК'] ?? '').trim())),
       })
       if (!d) continue
       const cardPt = cardPts[t] ?? (BENTO_MIN_PT[compId] ?? 10)
