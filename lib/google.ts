@@ -1387,14 +1387,18 @@ function formatCurrentDate(): string {
   return `${dd}.${mm}.${d.getFullYear()}`
 }
 
-const COVER_TITLE_ONLY_PT = [66, 54, 44, 36, 28, 22] as const
+// Shared by every full-slide, no-subtitle title: cover_title_only/closing (here) and
+// section/section_red without a subtitle (pickSectionTitlePt below) — same box shape
+// (full slide height, no subtitle competing for room), so the same scale. Was two
+// identical arrays under two names.
+const _TITLE_ONLY_PT = [66, 54, 44, 36, 28, 22] as const
 function pickCoverTitleOnlyPt(text: string): number {
   const boxW = _UW                    // 1720
   const boxH = _H_SLIDE - 2 * _PAD   // 880
-  for (const pt of COVER_TITLE_ONLY_PT) {
+  for (const pt of _TITLE_ONLY_PT) {
     if (textFits(text, boxW, boxH, pt)) return pt
   }
-  return COVER_TITLE_ONLY_PT[COVER_TITLE_ONLY_PT.length - 1]
+  return _TITLE_ONLY_PT[_TITLE_ONLY_PT.length - 1]
 }
 
 // Date pill: width = 10 chars × 18pt × 2.667px/pt × 0.65 + 2×padding ≈ 350px
@@ -1604,14 +1608,13 @@ function buildBentoRightLeftColumnRequests(
 // With subtitle: ЗАГОЛОВОК fixed 44pt, height = _H1_FIXED_44 (260px). ПІДЗАГОЛОВОК at fixed y=420.
 // Without subtitle: ЗАГОЛОВОК dynamic up to 66pt, height computed from line count.
 const _SECTION_SUB_MAX = 160  // from create-master/route.ts
-const _SECTION_TITLE_PT = [66, 54, 44, 36, 28, 22] as const
 
 function pickSectionTitlePt(text: string): number {
   const availH = _H_SLIDE - 2 * _PAD  // 880
-  for (const pt of _SECTION_TITLE_PT) {
+  for (const pt of _TITLE_ONLY_PT) {
     if (textFits(text, _TITLE_W, availH, pt)) return pt
   }
-  return _SECTION_TITLE_PT[_SECTION_TITLE_PT.length - 1]
+  return _TITLE_ONLY_PT[_TITLE_ONLY_PT.length - 1]
 }
 
 function buildSectionFloatRequests(
