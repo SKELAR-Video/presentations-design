@@ -15,6 +15,12 @@ import {
 // ─── Bento font-size auto-shrink ─────────────────────────────────────────────
 // Layout constants must mirror create-master/route.ts
 const _PAD = 100, _UW = 1720, _GAP = 30, _INN = 30, _TH = 100, _TG = 100, _H = 1080
+// ЗАГОЛОВОК bottom → subtitle/body/dots top — the one fixed gap every composition family
+// uses below its title. Three places wrote this as their own literal 60 (a subtitle gap,
+// a body gap, a timeline-dot gap) instead of sharing it, so a future change to the gap
+// would need to be found and edited three times by hand. Must stay in sync with
+// compositions.ts float_gap.
+const TITLE_GAP = 60
 const _CY = _PAD + _TH + _TG
 const _CH = _H - _PAD - _CY
 // Bottom-bento default: cards top at center (H/2=540), bottom at H-PAD=980 → h=440
@@ -91,7 +97,7 @@ function timelineLayoutMetrics(titleText: string): { titlePt: number; titleConte
 const _SUB_SCALE   = [48, 36, 28, 22, 18, 14] as const
 const _SUB_RATIO   = 0.7
 const _SUB_MIN_PT  = 14
-const _SUB_GAP     = 60         // = TITLE_GAP; title zone → subtitle → content, same everywhere
+const _SUB_GAP     = TITLE_GAP  // title zone → subtitle → content, same everywhere
 // Line counting for a subtitle: heading-scale text, so the body ruler's 0.5 is too
 // optimistic here as well. 0.62 reproduces what Slides actually did with the 68-character
 // subtitle on slide 20 — three lines at 28pt, where 0.5 predicted two.
@@ -1332,11 +1338,6 @@ function buildBadgesRequests(
 
   return reqs
 }
-
-// ─── Universal fixed gap: ЗАГОЛОВОК bottom → ПІДЗАГОЛОВОК/ТЕКСТ top ─────────
-// Applied to all compositions that have ЗАГОЛОВОК + subtitle/body below it.
-// 60px on the 1920×1080 Figma grid. Must stay in sync with compositions.ts float_gap.
-const TITLE_GAP = 60
 
 // ─── Cover: float ПІДЗАГОЛОВОК below ЗАГОЛОВОК, ДАТА below ПІДЗАГОЛОВОК ──────
 // Chain: ЗАГОЛОВОК → gap 60px → ПІДЗАГОЛОВОК (optional) → gap 30px → ДАТА
@@ -3309,7 +3310,7 @@ function buildThreeColumnsNumRequests(pageId: string): object[] {
 // Title uses 44pt (narrower than bento 66pt) with full TITLE_W width → fewer lines → less overflow risk.
 const TCL_TITLE_PT       = 44
 const TCL_TITLE_HMAX     = 300   // cap in px; prevents dots from being pushed off-slide
-const TCL_TITLE_GAP      = 60   // gap: title content bottom → dot top
+const TCL_TITLE_GAP      = TITLE_GAP  // gap: title content bottom → dot top
 const TCL_DOT_TEXT_GAP   = 20   // gap: dot bottom → text top (three_columns_timeline only)
 const TCL_ZONE_X_THREE   = [100, 680, 1260] as const
 const TCL_ZONE_W_THREE   = 560
