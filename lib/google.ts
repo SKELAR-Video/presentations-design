@@ -43,14 +43,33 @@ const _KW = Math.floor((_UW - 3 * _GAP) / 4)  // 407
 // truth for both the layout (buildTimelineLayoutRequests) and the font search (bentoDims),
 // which previously disagreed: the font search used a hard-coded worst case (300px title)
 // and threw that extra height away on every slide whose title was short.
-function timelineLayoutMetrics(titleText: string): { titleContentH: number; textY: number; textH: number } {
-  const lines = titleText.trim() ? estimateLineCount(titleText, _TITLE_W, TCL_TITLE_PT) : 1
+// Timelines cap their title zone at TCL_TITLE_HMAX so the dots stay on the slide — but the
+// font was fixed at 44pt, so a long heading needed 516px inside a 300px cap and simply drew
+// over the row below it (deck 1RKZO…KikM, slide 11). The cap now drives the size: the
+// largest step that actually fits inside it.
+function timelineTitlePt(titleText: string): number {
+  const t = titleText.trim()
+  if (!t) return TCL_TITLE_PT
+  for (const pt of TITLE_PT_STEPS) {
+    if (pt > TCL_TITLE_PT) continue
+    if (longestWordPx(t, pt) * 1.1 > _TITLE_W) continue
+    const lines = t.split('\n').reduce((n, part) => n + wrappedLines(part, _TITLE_W, pt, _TITLE_WRAP_CHAR_W), 0)
+    if (lines * pt * 2.667 * 1.1 <= TCL_TITLE_HMAX) return pt
+  }
+  return TITLE_PT_STEPS[TITLE_PT_STEPS.length - 1]
+}
+
+function timelineLayoutMetrics(titleText: string): { titlePt: number; titleContentH: number; textY: number; textH: number } {
+  const titlePt = timelineTitlePt(titleText)
+  const lines = titleText.trim()
+    ? titleText.trim().split('\n').reduce((n, part) => n + wrappedLines(part, _TITLE_W, titlePt, _TITLE_WRAP_CHAR_W), 0)
+    : 1
   const titleContentH = Math.min(
-    Math.max(Math.ceil(lines * lineH(TCL_TITLE_PT)), Math.ceil(lineH(TCL_TITLE_PT))),
+    Math.max(Math.ceil(lines * titlePt * 2.667 * 1.1), Math.ceil(titlePt * 2.667 * 1.1)),
     TCL_TITLE_HMAX,
   )
   const textY = (_PAD - 1 + _INSET) + titleContentH + TCL_TITLE_GAP  // title box sits at y=99
-  return { titleContentH, textY, textH: _H - _PAD - textY }
+  return { titlePt, titleContentH, textY, textH: _H - _PAD - textY }
 }
 
 // ─── Slide subtitle (ПІДЗАГОЛОВОК on column layouts) ─────────────────────────
@@ -3296,7 +3315,7 @@ function buildTimelineLayoutRequests(
   const titleText = (pSlots['ЗАГОЛОВОК'] ?? '').trim()
   // Same metrics bentoDims() used to pick the font — one source of truth, so the box the
   // text is measured against and the box it is placed in can never drift apart.
-  const { titleContentH, textY, textH } = timelineLayoutMetrics(titleText)
+  const { titlePt, titleContentH, textY, textH } = timelineLayoutMetrics(titleText)
   const dotsY = textY  // text top aligned with dot top for both compositions
 
   const isThree = compId === 'three_columns_timeline'
@@ -3315,11 +3334,22 @@ function buildTimelineLayoutRequests(
       .map(te => te.textRun?.content ?? '').join('')
 
     if (elText.includes('{{ЗАГОЛОВОК}}')) {
-      reqs.push(makeElemTransform(el.objectId,
-        elX, elY,
-        _TITLE_W + 2 * _INSET, titleContentH + 2 * _INSET,
-        sW, sH,
-      ))
+      reqs.push(
+        makeElemTransform(el.objectId,
+          elX, elY,
+          _TITLE_W + 2 * _INSET, titleContentH + 2 * _INSET,
+          sW, sH,
+        ),
+        // The size the zone was measured with has to be the size that gets written.
+        {
+          updateTextStyle: {
+            objectId: el.objectId,
+            style: { fontSize: { magnitude: titlePt, unit: 'PT' }, bold: false },
+            fields: 'fontSize,bold',
+            textRange: { type: 'ALL' },
+          },
+        },
+      )
       continue
     }
 
