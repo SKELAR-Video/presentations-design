@@ -4095,25 +4095,6 @@ export async function buildPresentation(
     }
   }
 
-  // Step 2.86: a card that opens with a figure puts that figure on its own line, so the
-  // marker styling can make it white. Otherwise "80% часу…" and "4.2 — середня оцінка…"
-  // differ only in where the line happens to wrap.
-  for (const slide of plan.slides) {
-    const tokens = BENTO_TOKENS[slide.composition]
-      ?? (slide.composition === 'columns_flex' ? ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3', 'КОЛОНКА_4'] : [])
-    if (!tokens.length) continue
-    for (const tok of tokens) {
-      const raw = (slide.slots[tok] ?? '').trim()
-      if (!raw) continue
-      const split = splitLeadingFigure(raw)
-      if (!split) continue
-      const idx = tok.match(/_(\d+)$/)?.[1]
-      slide.slots[tok] = `${split.figure}\n${split.rest}`
-      if (idx) slide.signalMarkers = { ...(slide.signalMarkers ?? {}), [idx]: true }
-      console.log(`[figure] ${slide.id}/${tok}: «${split.figure}» винесено в окремий рядок`)
-    }
-  }
-
   // Step 2.85: read the list markup, then strip it.
   // Bullets tell us whether the first line is one of the items ("• Цільові спеціальності"
   // among bulleted lines) or stands above them. That answer is recorded per column index
@@ -4893,6 +4874,25 @@ export async function buildPresentation(
             })
           }
         }
+        // A card that opens with a figure ("80% часу…", "4.2 — середня оцінка…") gets that
+        // figure in WHITE, in place. It stays on its own line — the number is the point of
+        // the sentence, not a separate headline, and moving it down made two identical
+        // shapes look like two different rules depending on where the line wrapped.
+        const fig = splitLeadingFigure(slotValue)
+        if (fig) {
+          const figEnd = Math.min(fig.figure.length, actualLen)
+          if (figEnd > 0) {
+            fixedRangeStyleRequests.push({
+              updateTextStyle: {
+                objectId: el.objectId,
+                style: { foregroundColor: { opaqueColor: { rgbColor: _WHITE } } },
+                fields: 'foregroundColor',
+                textRange: { type: 'FIXED_RANGE', startIndex: 0, endIndex: figEnd },
+              },
+            })
+          }
+        }
+
         // Plain colon-split: prefix up to and including ":" → WHITE
         const colonIdx = slotValue.indexOf(':')
         const safeColonEnd = Math.min(colonIdx + 1, actualLen)
@@ -5302,6 +5302,25 @@ export async function buildPresentation(
       const grey  = { foregroundColor: { opaqueColor: { rgbColor: _AG_MUTED_RGB } } }
       // Marker present → it is grey and the items stay white. No marker → the column is
       // grey as a whole, rather than pretending its first sentence is a heading.
+      // Flat columns are white on dark, so a figure is highlighted by muting what follows
+      // it rather than by colouring it — the opposite direction to a bento card, same
+      // result: the number reads first.
+      const fig = splitLeadingFigure(colText)
+      if (fig) {
+        const figEnd = fig.figure.length
+        if (figEnd > 0 && figEnd < colText.length) {
+          fixedRangeStyleRequests.push({
+            updateTextStyle: {
+              objectId: objId,
+              style: { foregroundColor: { opaqueColor: { rgbColor: _AG_MUTED_RGB } } },
+              fields: 'foregroundColor',
+              textRange: { type: 'FIXED_RANGE', startIndex: figEnd, endIndex: colText.length },
+            },
+          })
+        }
+        continue
+      }
+
       const marked = nlIdx > 0 &&
         isColumnLabel(colText.slice(0, nlIdx)) &&
         slotHasMarker(plan.slides[i], `КОЛОНКА_${k}`, colText.slice(0, nlIdx), colText)
