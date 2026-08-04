@@ -5,7 +5,7 @@ import { PHASE0_COMPOSITIONS, getComposition } from './compositions'
 import { validateDeck, type ValidationReport } from './validator'
 import { fixOverflowSlots } from './anthropic'
 import { autoPushIfPass } from './auto-push'
-import { listMarkerSignal, looksLikeAction } from './columns'
+import { listMarkerSignal, looksLikeAction, splitLeadingFigure } from './columns'
 import {
   renderedHeight, renderedHeightUniform, wrappedLines,
   LIST_ITEM_GAP_EM, FIT_MARGIN,
@@ -4092,6 +4092,25 @@ export async function buildPresentation(
         console.log(`[number-dedup] ${slide.id}/${tok}: прибрано «${lines[0].trim()}» — номер малює макет`)
         slide.slots[tok] = lines.slice(1).join('\n')
       })
+    }
+  }
+
+  // Step 2.86: a card that opens with a figure puts that figure on its own line, so the
+  // marker styling can make it white. Otherwise "80% часу…" and "4.2 — середня оцінка…"
+  // differ only in where the line happens to wrap.
+  for (const slide of plan.slides) {
+    const tokens = BENTO_TOKENS[slide.composition]
+      ?? (slide.composition === 'columns_flex' ? ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3', 'КОЛОНКА_4'] : [])
+    if (!tokens.length) continue
+    for (const tok of tokens) {
+      const raw = (slide.slots[tok] ?? '').trim()
+      if (!raw) continue
+      const split = splitLeadingFigure(raw)
+      if (!split) continue
+      const idx = tok.match(/_(\d+)$/)?.[1]
+      slide.slots[tok] = `${split.figure}\n${split.rest}`
+      if (idx) slide.signalMarkers = { ...(slide.signalMarkers ?? {}), [idx]: true }
+      console.log(`[figure] ${slide.id}/${tok}: «${split.figure}» винесено в окремий рядок`)
     }
   }
 

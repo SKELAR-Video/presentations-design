@@ -132,3 +132,22 @@ export function looksLikeAction(line: string): boolean {
   const first = line.trim().replace(/^[«"'(\[]+/, '').split(/[\s/]+/)[0] ?? ''
   return first.length >= 7 && _ACTION_SUFFIX.test(first)
 }
+
+// ─── A figure that opens a card is its headline ───────────────────────────────
+// "80% часу користувач проводить…" and "4.2 — середня оцінка…" are the same shape: a
+// number, then what it means. Left as one paragraph they only differ in where the line
+// happened to wrap — after the figure in one card, mid-phrase in the next — which reads
+// as two different rules when there is no rule at all. The figure goes on its own line,
+// where the marker styling then makes it white.
+const _FIGURE = /^([<>~≈±]?\s*[$€£₴]?\s*\d[\d\s.,]*\s*(?:%|[+]|тис\.?|млн|млрд|[KkMmBb])?)\s*(?:[—–:-]\s*)?(\S.*)$/u
+export function splitLeadingFigure(text: string): { figure: string; rest: string } | null {
+  const line = text.trim()
+  if (line.includes('\n') || line.includes('\v')) return null   // already structured
+  const m = _FIGURE.exec(line)
+  if (!m) return null
+  const figure = m[1].trim()
+  const rest   = m[2].trim()
+  if (!/\d/.test(figure) || figure.length > 12) return null
+  if (rest.split(/\s+/).length < 2) return null                  // "5 улюблених" is a phrase
+  return { figure, rest }
+}
