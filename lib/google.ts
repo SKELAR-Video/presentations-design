@@ -145,7 +145,8 @@ function titleTextBottom(titleText: string, titlePt: number): number {
   const text = titleText.trim()
   if (!text) return _PAD
   const lineBox = titlePt * 2.667 * 1.1
-  const lines   = Math.max(1, wrappedLines(text, _TITLE_W, titlePt, _TITLE_WRAP_CHAR_W))
+  const lines   = Math.max(1, text.split('\n')
+    .reduce((n, part) => n + wrappedLines(part, _TITLE_W, titlePt, _TITLE_WRAP_CHAR_W), 0))
   // full line boxes for every line but the last, then only the visible part of the last
   return _PAD + Math.ceil((lines - 1) * lineBox + _GLYPH_OF_LINE * lineBox)
 }
@@ -157,6 +158,10 @@ function titleTextBottom(titleText: string, titlePt: number): number {
 // word still fits the full title width. The master's 32pt (two_columns) and 28pt
 // (three/four columns) were constants that ignored the slide — on a slide with 391px of
 // free room above the cards the heading sat at 32pt and half the zone stayed empty.
+// The most a heading may take before the content's own minimum is at risk:
+// 980 (page margin) − 440 (a row's minimum height) − 60 (TITLE_GAP) − 100 (dead zone).
+const _TITLE_MAX_H = _H - _PAD - _BOTTOM_BENTO_H_DEFAULT - _SUB_GAP - _PAD  // 380
+
 const _DYNAMIC_TITLE_COMPS = new Set([
   'two_columns', 'two_columns_labeled', 'two_columns_plain',
   'three_columns', 'three_columns_num',
@@ -171,7 +176,19 @@ function titlePtFor(compId: string, titleText?: string): number {
     return titleText?.trim() ? pickTitlePt(titleText.trim(), _LTW) : TITLE_PT_STEPS[0]
   }
   if (_DYNAMIC_TITLE_COMPS.has(compId)) {
-    return titleText?.trim() ? pickTitlePt(titleText.trim(), _TITLE_W) : TITLE_PT_STEPS[0]
+    const t = titleText?.trim()
+    if (!t) return TITLE_PT_STEPS[0]
+    // Width is not the only limit. Taking "all the free space" without a floor under the
+    // content let a four-line 44pt heading eat 555px of the slide and squeeze its columns
+    // to 323px. The content keeps its minimum area (440px, the same floor a bento row
+    // has), so the heading may occupy at most what is left above it.
+    for (const pt of TITLE_PT_STEPS) {
+      if (longestWordPx(t, pt) * 1.1 > _TITLE_W) continue
+      const h = t.split('\n').reduce((n, part) => n + wrappedLines(part, _TITLE_W, pt, _TITLE_WRAP_CHAR_W), 0)
+        * pt * 2.667 * 1.1
+      if (h <= _TITLE_MAX_H) return pt
+    }
+    return TITLE_PT_STEPS[TITLE_PT_STEPS.length - 1]
   }
   return compId === 'two_columns' ? 32 : 28
 }
@@ -4734,7 +4751,8 @@ export async function buildPresentation(
     if (_DYNAMIC_TITLE_COMPS.has(compIdT) && titleTxt) {
       const pt = titlePtFor(compIdT, titleTxt)
       const h  = Math.ceil(
-        wrappedLines(titleTxt, _TITLE_W, pt, _TITLE_WRAP_CHAR_W) * pt * 2.667 * 1.1,
+        titleTxt.split('\n').reduce((n, part) => n + wrappedLines(part, _TITLE_W, pt, _TITLE_WRAP_CHAR_W), 0)
+        * pt * 2.667 * 1.1,
       )
       requests.push(
         makeElemTransform(titleObjId, _PAD - _INSET, _PAD - _INSET, _TITLE_W + 2 * _INSET, h + 2 * _INSET, sW, sH),
