@@ -635,12 +635,14 @@ function logWordFit(label: string, text: string, innerW: number, pt: number): vo
   )
 }
 
-// Choose largest title pt where the longest word (×1.2 safety margin) fits in wPx.
-// Effective limit = wPx - 19 (same INSET offset used everywhere for rendering imprecision).
-// Prevents borderline 9-char Cyrillic words (e.g. "щоденного") from visually breaking.
+// Choose largest title pt where the longest word fits in wPx — same 1.1 safety margin as
+// every other word-fit check (logWordFit, titlePtFor). This one held out at the old 1.2 +
+// a separate -19 inset subtraction from before the project standardized on inner_width
+// passed directly (see docs/rules/typography.md): wider zones stayed 10% more
+// conservative than the rest of the deck for no documented reason.
 function pickTitlePt(text: string, wPx: number): TitlePt {
   for (const pt of TITLE_PT_STEPS) {
-    if (longestWordPx(text, pt) * 1.2 <= wPx - 19) return pt  // 19 = _INSET buffer
+    if (longestWordPx(text, pt) * 1.1 <= wPx) return pt
   }
   return TITLE_PT_STEPS[TITLE_PT_STEPS.length - 1]
 }
