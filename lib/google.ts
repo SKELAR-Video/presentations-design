@@ -97,7 +97,7 @@ export function timelineLayoutMetrics(titleText: string): { titlePt: number; tit
 //   44→28   40→28   36→22   32→22   28→18   66→48
 const _SUB_SCALE   = [48, 36, 28, 22, 18, 14] as const
 const _SUB_RATIO   = 0.7
-const _SUB_MIN_PT  = 14
+export const _SUB_MIN_PT  = 14
 const _SUB_GAP     = TITLE_GAP  // title zone → subtitle → content, same everywhere
 // Line counting for a subtitle: heading-scale text, so the body ruler's 0.5 is too
 // optimistic here as well. 0.62 reproduces what Slides actually did with the 68-character
@@ -106,9 +106,9 @@ const _SUB_WRAP_CHAR_W = 0.62
 // A subtitle is a sentence under a title, not a second title. Past two lines it stops
 // reading as one and starts crowding the content: on slide 20 it grew to three lines at
 // 28pt (246px) and left the columns with almost no air above them.
-const _SUB_MAX_LINES = 2
+export const _SUB_MAX_LINES = 2
 
-function subtitleRatioPt(titlePt: number): number {
+export function subtitleRatioPt(titlePt: number): number {
   const target = titlePt * _SUB_RATIO
   let best = _SUB_MIN_PT
   let bestDiff = Infinity
@@ -122,7 +122,7 @@ function subtitleRatioPt(titlePt: number): number {
 // The same trade the bento row makes, one level up: the free space below the subtitle is
 // not negotiable, so when the sentence is too long for its size, the SIZE gives way. It
 // steps down the scale until it fits _SUB_MAX_LINES, never below half the title.
-function subtitlePtFor(text: string, titlePt: number): number {
+export function subtitlePtFor(text: string, titlePt: number): number {
   const start = subtitleRatioPt(titlePt)
   const floor = Math.max(_SUB_MIN_PT, Math.round(titlePt / 2))
   if (!text.trim()) return start
@@ -136,7 +136,7 @@ function subtitlePtFor(text: string, titlePt: number): number {
 }
 
 // Height as it will actually render, at the subtitle's own wrap factor.
-function subtitleHeight(text: string, pt: number): number {
+export function subtitleHeight(text: string, pt: number): number {
   if (!text.trim()) return 0
   return Math.ceil(wrappedLines(text.trim(), _TITLE_W, pt, _SUB_WRAP_CHAR_W) * pt * 2.667 * 1.1)
 }

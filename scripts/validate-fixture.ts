@@ -11,6 +11,7 @@ import { renderedHeight, renderedHeightUniform, FIT_MARGIN, pickTitlePt, longest
 import {
   timelineTitlePt, timelineLayoutMetrics, TCL_TITLE_HMAX, TCL_TEXT_W_TWO, TCL_ZONE_W_THREE, _AG_DOT_SZ,
   _TITLE_W, _TITLE_WRAP_CHAR_W, hierarchyCapPt, isColumnLabel,
+  subtitleRatioPt, subtitlePtFor, subtitleHeight, _SUB_MIN_PT, _SUB_MAX_LINES,
 } from '../lib/google'
 
 // ─── Fixture 1 — PASS: correct badges slide (App Store categories) ─────────
@@ -1039,4 +1040,89 @@ console.log('\n=== isColumnLabel fixture — absolute rule, no neighbor comparis
   allOk = allOk && deterministic
   console.log(`  determinism / no hidden neighbor state: ${deterministic ? '✓' : '✗'}`)
   console.log(`  → ${allOk ? '✅ label-or-not is a fact about the line alone' : '❌ WRONG'}`)
+}
+
+// ─── subtitlePtFor fixture — 2-line ceiling, floor never crossed ───────────
+// google.ts:111-149, deck 1ZB2z…HFJo slide 20: subtitle at 28pt wrapped to 3 lines
+// (246px) and pressed into the columns below. Only ever verified at that one point
+// (title=40→sub start 28). Nothing ran the step-down across a range, or checked the
+// floor (half the title, never below _SUB_MIN_PT) actually holds when 2 lines is
+// unreachable.
+console.log('\n=== subtitlePtFor fixture — steps down to fit 2 lines, never below floor ===')
+{
+  const short = 'Огляд ринку'
+  // Regression pin: title=40 → start pt = subtitleRatioPt(40) = 28 (0.7×40, snapped to
+  // scale). This exact subtitle wraps to 3 lines at 28pt and 2 lines at 22pt — the same
+  // shape as the doc-cited case (was 28pt/3 lines/246px, became 22pt/2 lines/~129px).
+  const regressionSub = 'Ми зібрали ключові дані про ринок і поведінку користувачів за останній квартал'
+
+  let allOk = true
+
+  {
+    const titlePt = 40
+    const start = subtitleRatioPt(titlePt)
+    const startOk = start === 28
+    const pt = subtitlePtFor(short, titlePt)
+    const lines = wrappedLines(short, _TITLE_W, pt, 0.62)
+    const ok = startOk && pt === start && lines <= _SUB_MAX_LINES
+    allOk = allOk && ok
+    console.log(`  [short subtitle] start_pt=${start}(expect 28→${startOk ? '✓' : '✗'}) | chosen_pt=${pt} | lines=${lines} → ${ok ? 'PASS' : 'FAIL'}`)
+  }
+
+  {
+    const titlePt = 40
+    const pt = subtitlePtFor(regressionSub, titlePt)
+    const lines = wrappedLines(regressionSub, _TITLE_W, pt, 0.62)
+    const h = subtitleHeight(regressionSub, pt)
+    const ok = pt === 22 && lines === 2
+    allOk = allOk && ok
+    console.log(
+      `  [regression pin] chosen_pt=${pt} (expected 22) | lines=${lines} (expected 2) | height=${h}px ` +
+      `(was: 28pt/3 lines/246px) → ${ok ? 'PASS' : 'FAIL'}`,
+    )
+  }
+
+  {
+    // Floor case: title so small that half of it is below _SUB_MIN_PT — the floor must
+    // still clamp to _SUB_MIN_PT, never lower, even though 2 lines might need less.
+    const titlePt = 18
+    const floor = Math.max(_SUB_MIN_PT, Math.round(titlePt / 2))
+    const pt = subtitlePtFor(regressionSub, titlePt)
+    const ok = pt >= floor && pt >= _SUB_MIN_PT
+    allOk = allOk && ok
+    console.log(`  [tiny title=18, floor=${floor}] chosen_pt=${pt} → never below floor: ${ok ? '✓' : '✗ WRONG'}`)
+  }
+
+  {
+    // Empty subtitle — returns the ratio start untouched, no wrap search runs at all.
+    const titlePt = 44
+    const start = subtitleRatioPt(titlePt)
+    const pt = subtitlePtFor('', titlePt)
+    const ok = pt === start
+    allOk = allOk && ok
+    console.log(`  [empty subtitle] chosen_pt=${pt} (expected ${start}, untouched) → ${ok ? 'PASS' : 'FAIL'}`)
+  }
+
+  {
+    // Design gap, not a bug: a subtitle long enough that even the floor pt still wraps to
+    // 3+ lines. Unlike timelineLayoutMetrics, subtitleHeight does NOT clamp or hide this —
+    // it reports the true height for whatever pt/line-count actually results. Recorded so
+    // this stays true after future edits: no hidden-overflow class here.
+    const titlePt = 44
+    const veryLong = 'Ми зібрали ключові дані про ринок і поведінку користувачів за останній квартал і хочемо поділитись повним аналізом трендів та прогнозів на наступний рік'
+    const floor = Math.max(_SUB_MIN_PT, Math.round(titlePt / 2))
+    const pt = subtitlePtFor(veryLong, titlePt)
+    const lines = wrappedLines(veryLong, _TITLE_W, pt, 0.62)
+    const h = subtitleHeight(veryLong, pt)
+    const expectedH = Math.ceil(lines * pt * 2.667 * 1.1)
+    const noHiddenClamp = h === expectedH
+    const ok = pt === floor && lines > _SUB_MAX_LINES && noHiddenClamp
+    allOk = allOk && ok
+    console.log(
+      `  [very long, floor=${floor}] chosen_pt=${pt} | lines=${lines} (>${_SUB_MAX_LINES}, floor reached) | ` +
+      `height=${h}px, matches true lines×lineH (no clamp): ${noHiddenClamp ? '✓' : '✗'} → ${ok ? 'as expected (design gap, honestly reported)' : 'CHANGED — investigate'}`,
+    )
+  }
+
+  console.log(`  → ${allOk ? '✅ subtitle steps down for 2 lines, respects its floor, never hides overflow' : '❌ WRONG'}`)
 }
