@@ -9,7 +9,8 @@ import { listMarkerSignal, looksLikeAction, splitLeadingFigure } from './columns
 import {
   renderedHeight, renderedHeightUniform, wrappedLines,
   LIST_ITEM_GAP_EM, FIT_MARGIN,
-  type Para,
+  TITLE_PT_STEPS, longestWordPx, pickTitlePt,
+  type Para, type TitlePt,
 } from './textfit'
 
 // ─── Bento font-size auto-shrink ─────────────────────────────────────────────
@@ -612,21 +613,6 @@ function textFitsParagraphs(text: string, wPx: number, hPx: number, pt: number):
 // ─── bento_right ТЕКСТ font-shrink ───────────────────────────────────────────
 const _LTW  = _UW - _RBW - _GAP  // 830 — left text zone width in bento_right
 
-// Font size steps for bento_right titles (narrowest zone: 830px).
-// Largest pt where the longest word fits horizontally (no mid-word break).
-const TITLE_PT_STEPS = [44, 40, 36, 32, 28] as const
-type TitlePt = typeof TITLE_PT_STEPS[number]
-
-// Returns estimated render width (px) of the longest whitespace-delimited word at given pt.
-// Factor 0.65: conservative for Inter Medium with Cyrillic wide glyphs (Ф, Ш, Щ, Ж etc.).
-// Strips leading/trailing punctuation before measuring — "активність," counts as 10 chars, not 11.
-function longestWordPx(text: string, pt: number): number {
-  const pxPerChar = pt * 2.667 * 0.65
-  const words = text.trim().split(/\s+/).filter(Boolean)
-  const coreLen = (w: string) => w.replace(/^[.,;:!?«»"'()\[\]{}\-–—]+|[.,;:!?«»"'()\[\]{}\-–—]+$/g, '').length || w.length
-  return words.length === 0 ? 0 : Math.round(Math.max(...words.map(w => coreLen(w) * pxPerChar)))
-}
-
 // Logs word-fit check in the standard format for every text box.
 // PASS iff longestWordPx(text, pt) × 1.1 ≤ innerW.
 function logWordFit(label: string, text: string, innerW: number, pt: number): void {
@@ -639,18 +625,6 @@ function logWordFit(label: string, text: string, innerW: number, pt: number): vo
   console.log(
     `[word-fit] ${label}: longest_word_len=${longestWord.length} | est_width=${est} | est×1.1=${est11} | inner_width=${innerW} | chosen_font=${pt} → ${pass ? 'PASS' : 'FAIL'}`,
   )
-}
-
-// Choose largest title pt where the longest word fits in wPx — same 1.1 safety margin as
-// every other word-fit check (logWordFit, titlePtFor). This one held out at the old 1.2 +
-// a separate -19 inset subtraction from before the project standardized on inner_width
-// passed directly (see docs/rules/typography.md): wider zones stayed 10% more
-// conservative than the rest of the deck for no documented reason.
-function pickTitlePt(text: string, wPx: number): TitlePt {
-  for (const pt of TITLE_PT_STEPS) {
-    if (longestWordPx(text, pt) * 1.1 <= wPx) return pt
-  }
-  return TITLE_PT_STEPS[TITLE_PT_STEPS.length - 1]
 }
 
 // Compute actual available height for ТЕКСТ given a (possibly long) title.
