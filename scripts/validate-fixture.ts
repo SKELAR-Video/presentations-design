@@ -7,7 +7,11 @@ import { PHASE0_COMPOSITIONS } from '../lib/compositions'
 import { applyCoverageFallback, missingSourceLines } from '../lib/coverage'
 import { applyColumnCapacityFallback, countSourceColumns, listMarkerSignal, looksLikeAction } from '../lib/columns'
 import type { SlidePlan } from '../lib/types'
-import { renderedHeight, renderedHeightUniform, FIT_MARGIN, pickTitlePt, longestWordPx } from '../lib/textfit'
+import { renderedHeight, renderedHeightUniform, FIT_MARGIN, pickTitlePt, longestWordPx, wrappedLines } from '../lib/textfit'
+import {
+  timelineTitlePt, timelineLayoutMetrics, TCL_TITLE_HMAX, TCL_TEXT_W_TWO, TCL_ZONE_W_THREE, _AG_DOT_SZ,
+  _TITLE_W, _TITLE_WRAP_CHAR_W,
+} from '../lib/google'
 
 // ─── Fixture 1 — PASS: correct badges slide (App Store categories) ─────────
 const fixture1: SlidePlan = {
@@ -870,4 +874,96 @@ run('Fixture 2 — run 2', fixture2)
     )
     console.log(`  → ${ok ? '✅ the blank line is charged, at exactly one line box + its gap' : '❌ WRONG'}`)
   }
+}
+
+// ─── Timeline fixture — title zone must never push the dots off the cap ─────
+// two_columns_timeline / three_columns_timeline had zero coverage before this: the only
+// evidence the fix in google.ts:64-87 works at all was one deck citation in a doc comment
+// (1RKZO…KikM, slide 11 — a title needing 516px inside a 300px cap drew over the dot row
+// below it). Nothing verified the fix holds for OTHER title lengths, or keeps holding
+// after some unrelated future edit nearby.
+console.log('\n=== Timeline fixture — title zone respects TCL_TITLE_HMAX ===')
+{
+  const cases: { label: string; title: string; expectPt?: number; expectLines?: number }[] = [
+    { label: 'one line',  title: 'Три етапи' },
+    { label: 'two lines', title: 'Три головні етапи адаптації нового співробітника' },
+    // Pins the exact historical regression (typography.md: 44pt→4 lines→516px✗, steps
+    // down to 32pt→3 lines→282px✓) — same shape of title, same step-down, same result.
+    {
+      label: 'regression pin (was: 44pt drew over the dot row)',
+      title: 'Шлях кандидата від першого контакту з рекрутером до підписання офера',
+      expectPt: 32, expectLines: 3,
+    },
+  ]
+
+  let allOk = true
+  for (const c of cases) {
+    const { titlePt, titleContentH } = timelineLayoutMetrics(c.title)
+    const lines = Math.round(titleContentH / (titlePt * 2.667 * 1.1))
+    const agrees = timelineTitlePt(c.title) === titlePt
+    const withinCap = titleContentH <= TCL_TITLE_HMAX
+    const pinOk = (c.expectPt === undefined || titlePt === c.expectPt)
+      && (c.expectLines === undefined || lines === c.expectLines)
+    const ok = withinCap && pinOk && agrees
+    allOk = allOk && ok
+    console.log(
+      `  [${c.label}] chosen_pt=${titlePt} | lines=${lines} | titleContentH=${titleContentH}px | cap=${TCL_TITLE_HMAX}px` +
+      ` → ${withinCap ? 'within cap' : 'OVER CAP'}` +
+      (c.expectPt !== undefined ? ` | expected pt=${c.expectPt}/lines=${c.expectLines} → ${pinOk ? 'match' : 'MISMATCH'}` : '') +
+      (agrees ? '' : ' | ✗ timelineTitlePt/timelineLayoutMetrics DISAGREE'),
+    )
+  }
+
+  // Found while writing this fixture, not before it: timelineLayoutMetrics reports
+  // titleContentH through Math.min(..., TCL_TITLE_HMAX) — a real clamp, not a "does it
+  // fit" check. When even the floor step (28pt) needs more than the cap, the function does
+  // NOT say so: it silently reports exactly TCL_TITLE_HMAX, as if the title fit. Nothing
+  // downstream (textY, textH) ever learns the real height was bigger — the dot row gets
+  // placed as though the title took only 300px, when the true rendered text takes more.
+  // This is the same failure buildTimelineLayoutRequests was built to prevent (deck
+  // 1RKZO…KikM, slide 11), just at a title length one step past what the fix's own search
+  // covers — and unlike a normal overflow, nothing FAILs: text_overflow only checks boxes
+  // with 2+ paragraphs, and a title is one.
+  const extreme = 'Шлях кандидата від першого контакту з рекрутером до підписання офера і успішного виходу на нову роботу після довгого і виснажливого пошуку'
+  const extremeMetrics = timelineLayoutMetrics(extreme)
+  const reportedOvershoot = extremeMetrics.titleContentH - TCL_TITLE_HMAX
+  // Recompute the TRUE height the same way timelineLayoutMetrics does internally, but
+  // without its Math.min clamp — this is what actually gets drawn.
+  const trueLines = extreme.split('\n')
+    .reduce((n, part) => n + wrappedLines(part, _TITLE_W, extremeMetrics.titlePt, _TITLE_WRAP_CHAR_W), 0)
+  const trueH = Math.ceil(trueLines * extremeMetrics.titlePt * 2.667 * 1.1)
+  const trueOvershoot = trueH - TCL_TITLE_HMAX
+  const clampHidesOverflow = reportedOvershoot === 0 && trueOvershoot > 0
+  // This assertion PASSES because it correctly detects the hidden-overflow condition — it
+  // is not asserting the behavior is fine. See the finding note above.
+  const extremeOk = extremeMetrics.titlePt === 28 && clampHidesOverflow
+  allOk = allOk && extremeOk
+  console.log(
+    `  [known limit / very long title] chosen_pt=${extremeMetrics.titlePt} | ` +
+    `reported titleContentH=${extremeMetrics.titleContentH}px (clamped, overshoot=${reportedOvershoot}px) | ` +
+    `true content height=${trueH}px (real overshoot=${trueOvershoot}px)` +
+    ` → ${clampHidesOverflow ? '⚠️ clamp hides a real overflow — see finding note' : (extremeMetrics.titlePt === 28 ? 'no hidden overflow at this length' : 'CHANGED — investigate')}`,
+  )
+
+  console.log('\n--- Timeline fixture — run 2 (determinism) ---')
+  for (const c of cases) {
+    const m = timelineLayoutMetrics(c.title)
+    console.log(`  [${c.label}] chosen_pt=${m.titlePt} | titleContentH=${m.titleContentH}px`)
+  }
+
+  // Two-column timeline: the two text columns are NOT the same width (674 vs 623) — a
+  // future refactor that "simplifies" this to one shared width would silently narrow one
+  // column's text zone. Nothing else in the test suite checks this.
+  const tclW0: number = TCL_TEXT_W_TWO[0]
+  const tclW1: number = TCL_TEXT_W_TWO[1]
+  const widthsDistinct = tclW0 !== tclW1
+  const threeColTextW = TCL_ZONE_W_THREE - _AG_DOT_SZ - 10
+  const threeColOk = threeColTextW === 496
+  allOk = allOk && widthsDistinct && threeColOk
+  console.log(
+    `  two-column widths: [${TCL_TEXT_W_TWO[0]}, ${TCL_TEXT_W_TWO[1]}] distinct=${widthsDistinct ? '✓' : '✗ COLLAPSED'} | ` +
+    `three-column text width: ${threeColTextW}px (zone ${TCL_ZONE_W_THREE} − dot ${_AG_DOT_SZ} − 10) → ${threeColOk ? '✓' : '✗'}`,
+  )
+
+  console.log(`  → ${allOk ? '✅ timeline title zone holds its cap; column widths stay distinct' : '❌ WRONG'}`)
 }

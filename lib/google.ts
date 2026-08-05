@@ -61,7 +61,7 @@ const _KW = colWidth(_UW, _GAP, 4)  // 407
 // font was fixed at 44pt, so a long heading needed 516px inside a 300px cap and simply drew
 // over the row below it (deck 1RKZO…KikM, slide 11). The cap now drives the size: the
 // largest step that actually fits inside it.
-function timelineTitlePt(titleText: string): number {
+export function timelineTitlePt(titleText: string): number {
   const t = titleText.trim()
   if (!t) return TCL_TITLE_PT
   for (const pt of TITLE_PT_STEPS) {
@@ -73,7 +73,7 @@ function timelineTitlePt(titleText: string): number {
   return TITLE_PT_STEPS[TITLE_PT_STEPS.length - 1]
 }
 
-function timelineLayoutMetrics(titleText: string): { titlePt: number; titleContentH: number; textY: number; textH: number } {
+export function timelineLayoutMetrics(titleText: string): { titlePt: number; titleContentH: number; textY: number; textH: number } {
   const titlePt = timelineTitlePt(titleText)
   const lines = titleText.trim()
     ? titleText.trim().split('\n').reduce((n, part) => n + wrappedLines(part, _TITLE_W, titlePt, _TITLE_WRAP_CHAR_W), 0)
@@ -160,7 +160,7 @@ function titleSubGap(titlePt: number): number {
 //   "Підтримка талановитих учнів" (27)  — two lines  → needs > 0.51
 // 0.58 sits between them; a title guessed one line too tall only lowers the subtitle a
 // little, while guessing one line too short puts text over text.
-const _TITLE_WRAP_CHAR_W = 0.58
+export const _TITLE_WRAP_CHAR_W = 0.58
 
 // A line box is not the text: at lineSpacing 90% the glyphs occupy about 0.85 of it, the
 // rest is leading above the cap height and below the descender. Measuring the title's
@@ -666,7 +666,7 @@ const _LOGO_H = 90
 const _eL     = (px: number) => Math.round(px * _FPX)
 // Safe title width: right edge = LOGO_X − 20 = 1710, clears logo zone by LOGO_GAP
 const _LOGO_X  = _W - _PAD - _LOGO_W  // 1730
-const _TITLE_W = _LOGO_X - 20 - _PAD  // 1610 (20 = logo_gap)
+export const _TITLE_W = _LOGO_X - 20 - _PAD  // 1610 (20 = logo_gap)
 const _INSET   = 19  // Figma px — Google Slides default content inset (~0.25cm); REST API v1 cannot set to 0
 
 // Fixed title/subtitle box heights — 2-line comfortable capacity at role font size.
@@ -2457,7 +2457,7 @@ const AGENDA_ROW_DEFS: Readonly<Record<string, readonly (readonly number[])[]>> 
   agenda_8: [_AG8_COL_X, _AG8_COL_X], // 2 rows: 4+4 (unchanged)
 }
 const _AG_TEXT_W     = 374  // item text box content width (px)
-const _AG_DOT_SZ     = 54   // dot ellipse diameter
+export const _AG_DOT_SZ     = 54   // dot ellipse diameter
 const _AG_NUM_PT     = 18   // number font size (48 Figma px / 2.667)
 const _AG_BODY_PT    = 14   // body text max (36 Figma px / 2.667 ≈ 13.5 → 14)
 const _AG_BODY_MIN   = 8    // body text floor — below this text is unreadable
@@ -3297,13 +3297,13 @@ function buildThreeColumnsNumRequests(pageId: string): object[] {
 // Returns layout requests + computed dotsY so buildTimelineRequests can place dots correctly.
 // Title uses 44pt (narrower than bento 66pt) with full TITLE_W width → fewer lines → less overflow risk.
 const TCL_TITLE_PT       = 44
-const TCL_TITLE_HMAX     = 300   // cap in px; prevents dots from being pushed off-slide
+export const TCL_TITLE_HMAX     = 300   // cap in px; prevents dots from being pushed off-slide
 const TCL_TITLE_GAP      = TITLE_GAP  // gap: title content bottom → dot top
 const TCL_DOT_TEXT_GAP   = 20   // gap: dot bottom → text top (three_columns_timeline only)
 const TCL_ZONE_X_THREE   = [100, 680, 1260] as const
-const TCL_ZONE_W_THREE   = 560
+export const TCL_ZONE_W_THREE   = 560
 const TCL_TEXT_X_TWO     = [175, 1045] as const
-const TCL_TEXT_W_TWO     = [674, 623] as const
+export const TCL_TEXT_W_TWO     = [674, 623] as const
 
 function buildTimelineLayoutRequests(
   slide: slides_v1.Schema$Page,
