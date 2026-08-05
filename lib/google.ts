@@ -657,7 +657,12 @@ function pickTitlePt(text: string, wPx: number): TitlePt {
 // Uses exact text height (no minimum floor) so textY is as high as possible.
 function bentoRightTextAvailH(titleText: string): number {
   const titlePt  = pickTitlePt(titleText.trim(), _LTW)
-  const tLines   = estimateLineCount(titleText.trim(), _LTW, titlePt)
+  // Same fix as buildBentoRightLeftColumnRequests's titleLines: estimateLineCount treats
+  // \n as whitespace, so an explicit line break merged into one wrap pass instead of
+  // counting as its own segment — this under-measured the title, which over-measured the
+  // room left for ТЕКСТ below it.
+  const tLines   = titleText.trim().split('\n')
+    .reduce((n, part) => n + Math.max(1, estimateLineCount(part, _LTW, titlePt)), 0)
   const logoY    = _H_SLIDE - _PAD - _LOGO_H
   const maxTitleH = logoY - TITLE_GAP - _PAD - 20  // 710 — mirrors buildBentoRightLeftColumnRequests cap
   const dynH     = Math.min(Math.ceil(tLines * lineH(titlePt)), maxTitleH)
