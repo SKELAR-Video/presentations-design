@@ -10,7 +10,7 @@ import type { SlidePlan } from '../lib/types'
 import { renderedHeight, renderedHeightUniform, FIT_MARGIN, pickTitlePt, longestWordPx, wrappedLines } from '../lib/textfit'
 import {
   timelineTitlePt, timelineLayoutMetrics, TCL_TITLE_HMAX, TCL_TEXT_W_TWO, TCL_ZONE_W_THREE, _AG_DOT_SZ,
-  _TITLE_W, _TITLE_WRAP_CHAR_W,
+  _TITLE_W, _TITLE_WRAP_CHAR_W, hierarchyCapPt, isColumnLabel,
 } from '../lib/google'
 
 // ─── Fixture 1 — PASS: correct badges slide (App Store categories) ─────────
@@ -966,4 +966,77 @@ console.log('\n=== Timeline fixture — title zone respects TCL_TITLE_HMAX ===')
   )
 
   console.log(`  → ${allOk ? '✅ timeline title zone holds its cap; column widths stay distinct' : '❌ WRONG'}`)
+}
+
+// ─── hierarchyCapPt fixture — body text stays 20% below the title, always ──
+// google.ts:229-236, deck 1JVYC…tAek slides 27/28/29: 32/28, 44/36, 40/36 read as one
+// size because nothing capped body text below the title. Only ever verified against
+// those three numbers in a doc comment — nothing ran the formula across a range, and
+// nothing checked the floor still wins when 0.8×title would go below it.
+console.log('\n=== hierarchyCapPt fixture — body stays ≤0.8×title, ≥ floor ===')
+{
+  // [titlePt, floorPt, expectedCap]
+  const cases: [number, number, number][] = [
+    [32, 10, 25],  // regression pin — exact numbers from the doc comment
+    [44, 10, 35],
+    [40, 10, 32],
+    [20, 18, 18],  // floor wins: floor(20×0.8)=16 < floorPt=18
+    [66, 14, 52],  // section-scale title, still capped
+    [14, 10, 11],  // smallest real title step
+  ]
+  let allOk = true
+  for (const [titlePt, floorPt, expected] of cases) {
+    const cap = hierarchyCapPt(titlePt, floorPt)
+    const neverAboveTitle = cap <= titlePt
+    const neverBelowFloor = cap >= floorPt
+    const matches = cap === expected
+    const ok = neverAboveTitle && neverBelowFloor && matches
+    allOk = allOk && ok
+    console.log(
+      `  [title=${titlePt} floor=${floorPt}] cap=${cap} (expected ${expected}) | ` +
+      `≤title=${neverAboveTitle ? '✓' : '✗'} ≥floor=${neverBelowFloor ? '✓' : '✗'} → ${ok ? 'PASS' : 'FAIL'}`,
+    )
+  }
+  console.log(`  → ${allOk ? '✅ body text never closes the gap with the title, at any title size' : '❌ WRONG'}`)
+}
+
+// ─── isColumnLabel fixture — a label is a fact about the line itself ────────
+// google.ts:830-838. bento.md's own history: an earlier version compared a line's length
+// against the AVERAGE of its neighbors (≤70% of average item length) — the same line was
+// a label in one column and a plain item in the sibling column, depending on what else was
+// in that column. Nothing pins the current, absolute rule (≤40 chars, ≤5 words, no
+// trailing ./!/?/…) against the boundary cases, or proves it truly takes no second
+// "neighbors" argument.
+console.log('\n=== isColumnLabel fixture — absolute rule, no neighbor comparison ===')
+{
+  const cases: [string, boolean, string][] = [
+    ['Залучення талантів', true, 'real label, 3 words'],
+    ['Підтримка проявів бренду', true, '4 words, still a label'],
+    ['А'.repeat(40), true, 'exactly 40 chars, no trailing punctuation'],
+    ['А'.repeat(41), false, '41 chars — one over the limit'],
+    ['Один два три чотири п’ять', true, 'exactly 5 words'],
+    ['Один два три чотири п’ять шість', false, '6 words — one over the limit'],
+    ['Це не мітка.', false, 'ends with a period — a sentence'],
+    ['Це питання?', false, 'ends with a question mark'],
+    ['Це вигук!', false, 'ends with an exclamation mark'],
+    ['Це триває…', false, 'ends with an ellipsis'],
+    ['', false, 'empty line'],
+    ['   ', false, 'whitespace only'],
+  ]
+  let allOk = true
+  for (const [line, expected, why] of cases) {
+    const got = isColumnLabel(line)
+    const ok = got === expected
+    allOk = allOk && ok
+    console.log(`  ${ok ? '✅' : '❌'} ${JSON.stringify(line).padEnd(38)} → ${got ? 'мітка' : 'не мітка'} (${why})${ok ? '' : ` ← очікувалось ${expected ? 'мітка' : 'не мітка'}`}`)
+  }
+  // The regression itself: same line, called twice — the function has no way to see any
+  // "neighbor" state even if it wanted to (single required argument), so this can only
+  // ever be deterministic. Kept explicit so a future signature change that reintroduces a
+  // second, optional "context" parameter trips this comment, not just a type error.
+  const sample = 'Продуктивність'
+  const deterministic = isColumnLabel(sample) === isColumnLabel(sample)
+  allOk = allOk && deterministic
+  console.log(`  determinism / no hidden neighbor state: ${deterministic ? '✓' : '✗'}`)
+  console.log(`  → ${allOk ? '✅ label-or-not is a fact about the line alone' : '❌ WRONG'}`)
 }

@@ -231,7 +231,7 @@ function titlePtFor(compId: string, titleText?: string): number {
 // 40pt heading — the two read as one size and the slide loses its hierarchy (deck
 // 1JVYC…tAek, slides 27/28/29: 32/28, 44/36, 40/36).
 const _HIERARCHY_RATIO = 0.8
-function hierarchyCapPt(titlePt: number, floorPt: number): number {
+export function hierarchyCapPt(titlePt: number, floorPt: number): number {
   return Math.max(floorPt, Math.floor(titlePt * _HIERARCHY_RATIO))
 }
 
@@ -830,7 +830,7 @@ function slotHasMarker(
 // Does the first line work as the column's marker? A marker is a short noun phrase
 // ("Залучення талантів", "Репутація"), not a sentence. Greying a full sentence just
 // because it happens to be first invents a hierarchy that is not in the content.
-function isColumnLabel(line: string): boolean {
+export function isColumnLabel(line: string): boolean {
   const t = line.trim()
   if (!t || t.length > 40) return false
   if (/[.!?…]$/.test(t)) return false
