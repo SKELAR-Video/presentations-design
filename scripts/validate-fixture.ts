@@ -12,7 +12,7 @@ import {
   timelineTitlePt, timelineLayoutMetrics, TCL_TITLE_HMAX, TCL_TEXT_W_TWO, TCL_ZONE_W_THREE, _AG_DOT_SZ,
   _TITLE_W, _TITLE_WRAP_CHAR_W, hierarchyCapPt, isColumnLabel,
   subtitleRatioPt, subtitlePtFor, subtitleHeight, _SUB_MIN_PT, _SUB_MAX_LINES,
-  bentoRightTitleLines,
+  bentoRightTitleLines, drawsOwnNumbers, stripOwnOrdinal,
 } from '../lib/google'
 
 // ─── Fixture 1 — PASS: correct badges slide (App Store categories) ─────────
@@ -1174,4 +1174,49 @@ console.log('\n=== bentoRightTitleLines fixture — \\n counts as its own line =
   }
 
   console.log(`  → ${allOk ? '✅ an explicit line break is always at least its own line' : '❌ WRONG'}`)
+}
+
+// ─── Number-dedup fixture — the layout's own number never doubles ──────────
+// google.ts Step 2.84, deck 1Etiy…7334 (brief 1-rUf4…GPBg): steps written as "01" /
+// "Відбір" / description, and numbered layouts draw that 01 themselves — every slide
+// printed two "01"s. Only ever verified on that one brief; nothing pins the boundary
+// between "this number is the layout's own ordinal, strip it" and "this number is real
+// content, keep it" (a card that opens with its own figure, like "15 студентів...").
+console.log('\n=== Number-dedup fixture — drawsOwnNumbers + stripOwnOrdinal ===')
+{
+  let allOk = true
+
+  const drawsCases: [string, string, number, boolean, string][] = [
+    ['three_columns_num', '', 3, true, '_num suffix always numbers'],
+    ['columns_flex', '', 4, true, 'columns_flex always numbers'],
+    ['four_columns_paren', '', 4, true, 'paren layout always numbers'],
+    ['four_columns_bubble', '', 4, true, 'bubble layout always numbers'],
+    ['three_columns', 'Три кроки до релізу', 3, true, 'title names the cardinal, matches card count'],
+    ['three_columns', 'Три кроки до релізу', 4, false, 'title says three, but 4 cards filled — no match'],
+    ['three_columns', 'Кроки до релізу', 3, false, 'no cardinal in title at all'],
+  ]
+  for (const [compId, title, n, expected, why] of drawsCases) {
+    const got = drawsOwnNumbers(compId, title, n)
+    const ok = got === expected
+    allOk = allOk && ok
+    console.log(`  ${ok ? '✅' : '❌'} drawsOwnNumbers(${compId}, "${title}", ${n}) → ${got} (${why})`)
+  }
+
+  const stripCases: [string, number, string, string][] = [
+    // Regression pin — exact brief shape from numbers.md:58.
+    ['01\nВідбір\nПерший контакт з кандидатом', 0, 'Відбір\nПерший контакт з кандидатом', 'own ordinal (01, card 0) — stripped'],
+    ['(3)\nТретій крок', 2, 'Третій крок', 'parenthesized ordinal (3, card index 2) — stripped'],
+    ['3.\nТретій крок', 2, 'Третій крок', 'ordinal with a dot — stripped'],
+    ['02\nВідбір', 0, '02\nВідбір', 'wrong ordinal for this card (02 on card index 0) — kept'],
+    ['15\nстудентів отримали роботу', 0, '15\nстудентів отримали роботу', 'own content figure, not the layout\'s ordinal — kept'],
+    ['Один рядок без номера', 0, 'Один рядок без номера', 'single line, nothing to strip — kept'],
+  ]
+  for (const [text, idx, expected, why] of stripCases) {
+    const got = stripOwnOrdinal(text, idx)
+    const ok = got === expected
+    allOk = allOk && ok
+    console.log(`  ${ok ? '✅' : '❌'} stripOwnOrdinal(${JSON.stringify(text.split('\n')[0])}.., idx=${idx}) → ${JSON.stringify(got.split('\n')[0])}.. (${why})`)
+  }
+
+  console.log(`  → ${allOk ? '✅ only the layout\'s own ordinal is stripped, never real content' : '❌ WRONG'}`)
 }

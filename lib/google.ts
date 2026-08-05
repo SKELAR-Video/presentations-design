@@ -2034,6 +2034,31 @@ function findCardinalInTitle(title: string): number | null {
   return null
 }
 
+// Does this layout draw the card's ordinal itself, in its own big type? If so, the
+// brief's own leading "01"/"1."/"(1)" line for that same number must not also print — see
+// stripOwnOrdinal below. compId ending in _num, or a flex/paren/bubble layout, always
+// numbers; anything else only if its own title names the cardinal ("Три кроки" → 3).
+export function drawsOwnNumbers(compId: string, titleText: string, n: number): boolean {
+  if (compId.endsWith('_num')) return true
+  if (compId === 'columns_flex' || compId === 'four_columns_paren' || compId === 'four_columns_bubble') return true
+  return !!titleText && findCardinalInTitle(titleText) === n
+}
+
+const _LEADING_NUMBER = /^\s*\(?\s*0?\d{1,2}\s*[.)]?\s*$/
+
+// Strips a card's own leading line if it is nothing but its ordinal number — but only when
+// that number is the SAME one the layout is about to draw for card index `cardIndex`
+// (0-based). A card that opens with a figure of its own ("15" over "студентів отримали
+// роботу") keeps it: the number being removed has to match the card's position, not just
+// look like a number.
+export function stripOwnOrdinal(text: string, cardIndex: number): string {
+  const lines = text.split('\n')
+  if (lines.length < 2 || !_LEADING_NUMBER.test(lines[0])) return text
+  const value = parseInt(lines[0].replace(/\D/g, ''), 10)
+  if (value !== cardIndex + 1) return text
+  return lines.slice(1).join('\n')
+}
+
 // Creates a small ordinal number label in the top-left corner of a bento card.
 // numId must be unique across the deck. cardX/cardY are the card body top-left (Figma px).
 function makeBentoNumRequests(numId: string, pageId: string, cardIdx: number, cardX: number, cardY: number, cardW: number, fontPt = _NUM_FONT_PT, numH = _NUM_H): object[] {
@@ -4130,12 +4155,6 @@ export async function buildPresentation(
   // that 01 themselves, in their own big type, so leaving it in the card printed it twice.
   // Stripped only where the layout really numbers — elsewhere the digit IS the content.
   {
-    const drawsOwnNumbers = (compId: string, titleText: string, n: number): boolean => {
-      if (compId.endsWith('_num')) return true
-      if (compId === 'columns_flex' || compId === 'four_columns_paren' || compId === 'four_columns_bubble') return true
-      return !!titleText && findCardinalInTitle(titleText) === n
-    }
-    const LEADING_NUMBER = /^\s*\(?\s*0?\d{1,2}\s*[.)]?\s*$/
     for (const slide of plan.slides) {
       const tokens = BENTO_TOKENS[slide.composition]
         ?? (slide.composition === 'columns_flex' ? ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3', 'КОЛОНКА_4'] : [])
@@ -4143,15 +4162,11 @@ export async function buildPresentation(
       if (!filled.length) continue
       if (!drawsOwnNumbers(slide.composition, (slide.slots['ЗАГОЛОВОК'] ?? '').trim(), filled.length)) continue
       filled.forEach((tok, ci) => {
-        const lines = (slide.slots[tok] ?? '').split('\n')
-        if (lines.length < 2 || !LEADING_NUMBER.test(lines[0])) return
-        // …and only when the digit is this card's ORDINAL. A card that opens with a
-        // figure of its own ("15" over "студентів отримали роботу") keeps it — the number
-        // being removed has to be the same number the layout is about to draw.
-        const value = parseInt(lines[0].replace(/\D/g, ''), 10)
-        if (value !== ci + 1) return
-        console.log(`[number-dedup] ${slide.id}/${tok}: прибрано «${lines[0].trim()}» — номер малює макет`)
-        slide.slots[tok] = lines.slice(1).join('\n')
+        const before = slide.slots[tok] ?? ''
+        const after = stripOwnOrdinal(before, ci)
+        if (after === before) return
+        console.log(`[number-dedup] ${slide.id}/${tok}: прибрано «${before.split('\n')[0].trim()}» — номер малює макет`)
+        slide.slots[tok] = after
       })
     }
   }
