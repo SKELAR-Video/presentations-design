@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "es2020",
+    "outDir": "../.fx-build",
+    "noEmit": false,
+    "isolatedModules": false,
+    "incremental": false
+  },
+  "include": ["validate-fixture.ts", "../types/next-auth.d.ts"]
+}
