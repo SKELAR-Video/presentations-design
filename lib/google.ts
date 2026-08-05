@@ -627,16 +627,22 @@ function logWordFit(label: string, text: string, innerW: number, pt: number): vo
   )
 }
 
+// Line count for a bento_right ЗАГОЛОВОК at a given size — shared by the title box's own
+// height (buildBentoRightLeftColumnRequests) and the room it leaves for ТЕКСТ below it
+// (bentoRightTextAvailH). Both used to run this same reduce independently; estimateLineCount
+// alone treats \n as whitespace, so an explicit line break in the brief merged into one wrap
+// pass instead of counting as its own segment — under-measuring the title, which
+// over-measured the room left below it.
+export function bentoRightTitleLines(titleText: string, titlePt: number): number {
+  return titleText.trim().split('\n')
+    .reduce((n, part) => n + Math.max(1, estimateLineCount(part, _LTW, titlePt)), 0)
+}
+
 // Compute actual available height for ТЕКСТ given a (possibly long) title.
 // Uses exact text height (no minimum floor) so textY is as high as possible.
 function bentoRightTextAvailH(titleText: string): number {
   const titlePt  = pickTitlePt(titleText.trim(), _LTW)
-  // Same fix as buildBentoRightLeftColumnRequests's titleLines: estimateLineCount treats
-  // \n as whitespace, so an explicit line break merged into one wrap pass instead of
-  // counting as its own segment — this under-measured the title, which over-measured the
-  // room left for ТЕКСТ below it.
-  const tLines   = titleText.trim().split('\n')
-    .reduce((n, part) => n + Math.max(1, estimateLineCount(part, _LTW, titlePt)), 0)
+  const tLines   = bentoRightTitleLines(titleText, titlePt)
   const logoY    = _H_SLIDE - _PAD - _LOGO_H
   const maxTitleH = logoY - TITLE_GAP - _PAD - 20  // 710 — mirrors buildBentoRightLeftColumnRequests cap
   const dynH     = Math.min(Math.ceil(tLines * lineH(titlePt)), maxTitleH)
@@ -1536,13 +1542,7 @@ function buildBentoRightLeftColumnRequests(
 
   // Title font stepping: largest pt where longest word fits in 830px (no mid-word break).
   const titlePt    = pickTitlePt(titleText, _LTW)
-  // estimateLineCount only wraps by estimated width — an explicit \n in the brief (two
-  // short sentences on their own lines) is whitespace to it, so two real paragraphs were
-  // counted as one wrapped line and the box was built one line too short. Split on \n
-  // first, same as the flat-column title path already does, and sum each segment's own
-  // wrap count.
-  const titleLines = titleText.split('\n')
-    .reduce((n, part) => n + Math.max(1, estimateLineCount(part, _LTW, titlePt)), 0)
+  const titleLines = bentoRightTitleLines(titleText, titlePt)
   const logoY      = _H_SLIDE - _PAD - _LOGO_H  // 890
   const maxTitleH  = logoY - TITLE_GAP - _PAD - 20  // 710 — cap: textY ≤ 870, collapsed ТЕКСТ bottom = 890 = logoY (no logo overlap)
   const titleH     = Math.min(Math.ceil(titleLines * lineH(titlePt)), maxTitleH)

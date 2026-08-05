@@ -12,6 +12,7 @@ import {
   timelineTitlePt, timelineLayoutMetrics, TCL_TITLE_HMAX, TCL_TEXT_W_TWO, TCL_ZONE_W_THREE, _AG_DOT_SZ,
   _TITLE_W, _TITLE_WRAP_CHAR_W, hierarchyCapPt, isColumnLabel,
   subtitleRatioPt, subtitlePtFor, subtitleHeight, _SUB_MIN_PT, _SUB_MAX_LINES,
+  bentoRightTitleLines,
 } from '../lib/google'
 
 // ─── Fixture 1 — PASS: correct badges slide (App Store categories) ─────────
@@ -1125,4 +1126,52 @@ console.log('\n=== subtitlePtFor fixture — steps down to fit 2 lines, never be
   }
 
   console.log(`  → ${allOk ? '✅ subtitle steps down for 2 lines, respects its floor, never hides overflow' : '❌ WRONG'}`)
+}
+
+// ─── bentoRightTitleLines fixture — a real paragraph break is a line ────────
+// Found and fixed earlier this session (df1c234, 509dba3): estimateLineCount alone treats
+// \n as whitespace, so an explicit line break from the brief merged into one wrap pass
+// instead of counting as its own segment. Confirmed live on deck 1L9tUe0o…, slide 38
+// (bento_right_2x2): the title box was sized for 269px, the real render needed 317px —
+// exactly the +48px overflow check-deck reported. Fixed by hand at the time (two separate
+// call sites); unified into one shared function while writing this fixture, since both
+// were running the identical reduce independently.
+console.log('\n=== bentoRightTitleLines fixture — \\n counts as its own line ===')
+{
+  const oneParagraph = 'Три етапи запуску'
+  // The exact slide 38 case: two short sentences, explicit \n between them.
+  const twoParagraphs = 'У мене ВОС 999.\nЧи варто хвилюватись?'
+
+  let allOk = true
+
+  {
+    const lines = bentoRightTitleLines(oneParagraph, 36)
+    const ok = lines === 1
+    allOk = allOk && ok
+    console.log(`  [single paragraph] lines=${lines} (expected 1) → ${ok ? 'PASS' : 'FAIL'}`)
+  }
+
+  {
+    // Regression pin: at 36pt this is exactly the slide 38 case. Old (unsplit) formula
+    // counted 2 lines here — a coincidence of word-wrap merging across the removed \n, not
+    // a real answer — sizing the box for 269px against a real 317px need. Split gives 3.
+    const lines = bentoRightTitleLines(twoParagraphs, 36)
+    const titleH = Math.ceil(lines * 36 * 2.667 * 1.4)
+    const ok = lines === 3 && titleH === 404
+    allOk = allOk && ok
+    console.log(
+      `  [regression pin, slide 38] lines=${lines} (expected 3) | titleH=${titleH}px (expected 404, was 269 → +48px overflow) → ${ok ? 'PASS' : 'FAIL'}`,
+    )
+  }
+
+  {
+    // Three real paragraphs, each forced onto its own line regardless of how short.
+    const three = 'Перше.\nДруге.\nТретє.'
+    const lines = bentoRightTitleLines(three, 36)
+    const ok = lines === 3
+    allOk = allOk && ok
+    console.log(`  [three short paragraphs] lines=${lines} (expected 3, one per \\n) → ${ok ? 'PASS' : 'FAIL'}`)
+  }
+
+  console.log(`  → ${allOk ? '✅ an explicit line break is always at least its own line' : '❌ WRONG'}`)
 }
