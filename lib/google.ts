@@ -843,6 +843,42 @@ export function isColumnLabel(line: string): boolean {
   return t.split(/\s+/).filter(Boolean).length <= 5
 }
 
+// Given a two_columns_labeled/two_columns_plain slide's column texts, extract "Label —
+// Body" splits and decide whether the slide keeps its composition or falls back.
+// Labels live in ПІДПИС_N only when the source wrote them as "Label — Body". When they
+// are simply the column's first line (no separator at all), ПІДПИС stays empty and the
+// labelled layout would draw the whole column in one white size — the marker becomes
+// indistinguishable from the items under it. That design is not offered: the slide falls
+// back to two_columns_plain, which greys the marker in place (deck 1ZB2z…HFJo, slides 3/4
+// — same content, slide 3 labeled/all-white/no hierarchy, slide 4 plain/marker greyed).
+export function applyColumnLabelExtraction(
+  compIn: string,
+  slotsIn: Record<string, string>,
+): { composition: string; slots: Record<string, string> } {
+  if (compIn !== 'two_columns_labeled' && compIn !== 'two_columns_plain') {
+    return { composition: compIn, slots: slotsIn }
+  }
+  let comp = compIn
+  const slots = { ...slotsIn }
+  for (const k of [1, 2]) {
+    const col = (slots[`КОЛОНКА_${k}`] ?? '').trim()
+    if (!col) continue
+    const split = extractColumnLabel(col)
+    if (!split) continue
+    if (comp === 'two_columns_labeled' && !(slots[`ПІДПИС_${k}`] ?? '').trim()) {
+      slots[`ПІДПИС_${k}`] = split.label
+      slots[`КОЛОНКА_${k}`] = split.body
+    } else if (comp === 'two_columns_plain') {
+      slots[`КОЛОНКА_${k}`] = `${split.label}\n${split.body}`
+    }
+  }
+  if (comp === 'two_columns_labeled' &&
+      ![1, 2].some(k => (slots[`ПІДПИС_${k}`] ?? '').trim())) {
+    comp = 'two_columns_plain'
+  }
+  return { composition: comp, slots }
+}
+
 function extractColumnLabel(text: string): { label: string; body: string } | null {
   const hasLetter = /[a-zA-Zа-яА-ЯіІїЇєЄ'ʼ]/
   const emDash = text.search(/ [—–] /)  // em dash or en dash surrounded by spaces
@@ -4207,28 +4243,13 @@ export async function buildPresentation(
   for (const slide of plan.slides) {
     let comp = slide.composition
     if (comp === 'two_columns_labeled' || comp === 'two_columns_plain') {
-      for (const k of [1, 2]) {
-        const col = (slide.slots[`КОЛОНКА_${k}`] ?? '').trim()
-        if (!col) continue
-        const split = extractColumnLabel(col)
-        if (!split) continue
-        if (comp === 'two_columns_labeled' && !(slide.slots[`ПІДПИС_${k}`] ?? '').trim()) {
-          slide.slots[`ПІДПИС_${k}`] = split.label
-          slide.slots[`КОЛОНКА_${k}`] = split.body
-        } else if (comp === 'two_columns_plain') {
-          slide.slots[`КОЛОНКА_${k}`] = `${split.label}\n${split.body}`
-        }
-      }
-      // Labels live in ПІДПИС_N only when the source wrote them as "Label — Body". When
-      // they are simply the column's first line (this brief's shape), ПІДПИС stays empty
-      // and the labelled layout draws the whole column in one white size — the marker
-      // becomes indistinguishable from the items under it. That design is not offered:
-      // the slide falls back to two_columns_plain, which greys the marker in place.
-      if (comp === 'two_columns_labeled' &&
-          ![1, 2].some(k => (slide.slots[`ПІДПИС_${k}`] ?? '').trim())) {
+      const before = comp
+      const result = applyColumnLabelExtraction(comp, slide.slots)
+      slide.composition = result.composition
+      slide.slots = result.slots
+      comp = result.composition
+      if (before === 'two_columns_labeled' && comp === 'two_columns_plain') {
         console.log(`[label-fallback] ${slide.id}: two_columns_labeled without ПІДПИС → two_columns_plain`)
-        slide.composition = 'two_columns_plain'
-        comp = 'two_columns_plain'
       }
     } else if (comp === 'two_columns' || comp.startsWith('bento_right_')) {
       // For these compositions: colon→em-dash normalization only (no gray-label rendering)

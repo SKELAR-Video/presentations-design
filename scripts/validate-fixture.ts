@@ -12,7 +12,7 @@ import {
   timelineTitlePt, timelineLayoutMetrics, TCL_TITLE_HMAX, TCL_TEXT_W_TWO, TCL_ZONE_W_THREE, _AG_DOT_SZ,
   _TITLE_W, _TITLE_WRAP_CHAR_W, hierarchyCapPt, isColumnLabel,
   subtitleRatioPt, subtitlePtFor, subtitleHeight, _SUB_MIN_PT, _SUB_MAX_LINES,
-  bentoRightTitleLines, drawsOwnNumbers, stripOwnOrdinal,
+  bentoRightTitleLines, drawsOwnNumbers, stripOwnOrdinal, applyColumnLabelExtraction,
 } from '../lib/google'
 
 // ─── Fixture 1 — PASS: correct badges slide (App Store categories) ─────────
@@ -1219,4 +1219,89 @@ console.log('\n=== Number-dedup fixture — drawsOwnNumbers + stripOwnOrdinal ==
   }
 
   console.log(`  → ${allOk ? '✅ only the layout\'s own ordinal is stripped, never real content' : '❌ WRONG'}`)
+}
+
+// ─── two_columns_labeled fallback fixture — no ПІДПИС, no offer ────────────
+// google.ts's applyColumnLabelExtraction (extracted from Step 2.9 while writing this).
+// Deck 1ZB2z…HFJo, slides 3 and 4, same content: slide 3 (labeled) drew the whole column
+// in one white size — no hierarchy, marker indistinguishable from items. Slide 4 (plain)
+// greyed the marker correctly. Only ever verified on that one pair of slides.
+console.log('\n=== two_columns_labeled fallback fixture ===')
+{
+  let allOk = true
+
+  {
+    // Not a labeled/plain composition at all — passthrough, untouched.
+    const r = applyColumnLabelExtraction('two_columns', { КОЛОНКА_1: 'Щось — тут' })
+    const ok = r.composition === 'two_columns' && r.slots.КОЛОНКА_1 === 'Щось — тут'
+    allOk = allOk && ok
+    console.log(`  [not labeled/plain] composition unchanged → ${ok ? 'PASS' : 'FAIL'}`)
+  }
+
+  {
+    // Source wrote "Label — Body": extracts into ПІДПИС_1, stays labeled.
+    const r = applyColumnLabelExtraction('two_columns_labeled', {
+      КОЛОНКА_1: 'Залучення талантів — активна робота з кандидатами',
+      КОЛОНКА_2: 'Репутація — публічний імідж компанії',
+    })
+    const ok = r.composition === 'two_columns_labeled'
+      && r.slots.ПІДПИС_1 === 'Залучення талантів' && r.slots.КОЛОНКА_1 === 'Активна робота з кандидатами'
+      && r.slots.ПІДПИС_2 === 'Репутація' && r.slots.КОЛОНКА_2 === 'Публічний імідж компанії'
+    allOk = allOk && ok
+    console.log(`  [both columns have "Label — Body"] stays labeled, both ПІДПИС filled → ${ok ? 'PASS' : 'FAIL'}`)
+  }
+
+  {
+    // Regression pin: no separator anywhere — the exact deck 1ZB2z…HFJo shape. Neither
+    // column has "Label — Body"; ПІДПИС stays empty on both → falls back to plain.
+    const r = applyColumnLabelExtraction('two_columns_labeled', {
+      КОЛОНКА_1: 'Залучення талантів',
+      КОЛОНКА_2: 'Репутація',
+    })
+    const ok = r.composition === 'two_columns_plain'
+      && r.slots.КОЛОНКА_1 === 'Залучення талантів' && r.slots.КОЛОНКА_2 === 'Репутація'
+      && !r.slots.ПІДПИС_1 && !r.slots.ПІДПИС_2
+    allOk = allOk && ok
+    console.log(`  [regression pin: no separator at all] falls back to plain → ${ok ? 'PASS' : 'FAIL'}`)
+  }
+
+  {
+    // Partial: one column has a separator, the other doesn't. ONE filled ПІДПИС is enough
+    // to keep the labeled composition — this is an all-or-nothing decision across the
+    // whole slide, not a per-column one. Worth pinning since it's easy to assume otherwise.
+    const r = applyColumnLabelExtraction('two_columns_labeled', {
+      КОЛОНКА_1: 'Залучення талантів — активна робота з кандидатами',
+      КОЛОНКА_2: 'Просто другий пункт без розділювача',
+    })
+    const ok = r.composition === 'two_columns_labeled' && !!r.slots.ПІДПИС_1 && !r.slots.ПІДПИС_2
+    allOk = allOk && ok
+    console.log(`  [one column labeled, one not] stays labeled (any label is enough) → ${ok ? 'PASS' : 'FAIL'}`)
+  }
+
+  {
+    // Existing ПІДПИС is never overwritten by extraction, even if the column also has a
+    // "Label — Body" shape.
+    const r = applyColumnLabelExtraction('two_columns_labeled', {
+      ПІДПИС_1: 'Вже заповнено',
+      КОЛОНКА_1: 'Інша мітка — тіло',
+    })
+    const ok = r.slots.ПІДПИС_1 === 'Вже заповнено' && r.slots.КОЛОНКА_1 === 'Інша мітка — тіло'
+    allOk = allOk && ok
+    console.log(`  [ПІДПИС already filled] not overwritten, column text untouched → ${ok ? 'PASS' : 'FAIL'}`)
+  }
+
+  {
+    // two_columns_plain: same split, folded into one text with a real line break instead
+    // of a separate slot — composition never changes for plain (there's nothing to fall
+    // back from).
+    const r = applyColumnLabelExtraction('two_columns_plain', {
+      КОЛОНКА_1: 'Залучення талантів — активна робота з кандидатами',
+    })
+    const ok = r.composition === 'two_columns_plain'
+      && r.slots.КОЛОНКА_1 === 'Залучення талантів\nАктивна робота з кандидатами'
+    allOk = allOk && ok
+    console.log(`  [two_columns_plain folds label+body into one slot] → ${ok ? 'PASS' : 'FAIL'}`)
+  }
+
+  console.log(`  → ${allOk ? '✅ labeled composition only survives when it can actually draw a label' : '❌ WRONG'}`)
 }
