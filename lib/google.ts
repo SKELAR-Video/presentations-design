@@ -1557,7 +1557,13 @@ function buildBentoRightLeftColumnRequests(
 
   // Title font stepping: largest pt where longest word fits in 830px (no mid-word break).
   const titlePt    = pickTitlePt(titleText, _LTW)
-  const titleLines = estimateLineCount(titleText, _LTW, titlePt)
+  // estimateLineCount only wraps by estimated width — an explicit \n in the brief (two
+  // short sentences on their own lines) is whitespace to it, so two real paragraphs were
+  // counted as one wrapped line and the box was built one line too short. Split on \n
+  // first, same as the flat-column title path already does, and sum each segment's own
+  // wrap count.
+  const titleLines = titleText.split('\n')
+    .reduce((n, part) => n + Math.max(1, estimateLineCount(part, _LTW, titlePt)), 0)
   const logoY      = _H_SLIDE - _PAD - _LOGO_H  // 890
   const maxTitleH  = logoY - TITLE_GAP - _PAD - 20  // 710 — cap: textY ≤ 870, collapsed ТЕКСТ bottom = 890 = logoY (no logo overlap)
   const titleH     = Math.min(Math.ceil(titleLines * lineH(titlePt)), maxTitleH)
