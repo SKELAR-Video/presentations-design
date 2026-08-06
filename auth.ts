@@ -30,12 +30,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       authorization: {
         params: {
+          // Least privilege, deliberately split in two:
+          //   drive.readonly — read ANY file the user can see. Needed because a brief is an
+          //                    arbitrary document the user pastes a link to, and because the
+          //                    master template is somebody else's file.
+          //   drive.file     — create files, and write ONLY to files this app itself created.
+          //                    The generated deck and its folder fall under this; nothing
+          //                    else in the user's Drive can be modified, moved or deleted,
+          //                    even if this code had a bug that tried to.
+          // Replaces the full `drive` scope, which granted write and delete over every file
+          // the user owns — far more than a deck generator ever needs. Note this is also the
+          // concern CLAUDE.md flags as a blocker for opening the tool up; solving it here in
+          // code means no Domain-Wide Delegation setup is required from an admin.
           scope: [
             'openid',
             'email',
             'profile',
             'https://www.googleapis.com/auth/documents.readonly',
-            'https://www.googleapis.com/auth/drive',
+            'https://www.googleapis.com/auth/drive.readonly',
+            'https://www.googleapis.com/auth/drive.file',
           ].join(' '),
           access_type: 'offline',
           prompt: 'consent',

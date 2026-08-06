@@ -663,6 +663,42 @@ function pickTextPt(compId: string, text: string, availH?: number): number | nul
   return steps[steps.length - 1] ?? floor
 }
 
+// ─── Output folder ───────────────────────────────────────────────────────────
+// Every generated deck goes into one folder in the user's own Drive instead of landing
+// loose in the root. Returns undefined rather than throwing: filing is a convenience, and
+// losing a finished deck over it would be a bad trade.
+//
+// Under the drive.file scope, files.list only ever returns files THIS app created — which
+// is exactly the lookup wanted here, and the reason the search cannot accidentally match
+// some unrelated folder of the user's with the same name.
+const DECK_FOLDER_NAME = 'SKELAR Presentation'
+
+async function ensureDeckFolder(drive: ReturnType<typeof google.drive>): Promise<string | undefined> {
+  const FOLDER_MIME = 'application/vnd.google-apps.folder'
+  try {
+    const found = await drive.files.list({
+      q: `name = '${DECK_FOLDER_NAME.replace(/'/g, "\\'")}' and mimeType = '${FOLDER_MIME}' and trashed = false`,
+      fields: 'files(id, name)',
+      pageSize: 1,
+    })
+    const existing = found.data.files?.[0]?.id
+    if (existing) {
+      console.log(`[deck-folder] reusing "${DECK_FOLDER_NAME}" (${existing})`)
+      return existing
+    }
+    const created = await drive.files.create({
+      requestBody: { name: DECK_FOLDER_NAME, mimeType: FOLDER_MIME },
+      fields: 'id',
+    })
+    const id = created.data.id ?? undefined
+    console.log(`[deck-folder] created "${DECK_FOLDER_NAME}" (${id})`)
+    return id
+  } catch (e: unknown) {
+    console.warn(`[deck-folder] could not prepare folder, deck goes to Drive root: ${e instanceof Error ? e.message : String(e)}`)
+    return undefined
+  }
+}
+
 // ─── Logo ────────────────────────────────────────────────────────────────────
 const _FPX    = 9144000 / 1920
 const _W      = 1920
@@ -3936,6 +3972,15 @@ export async function buildPresentation(
   const masterDeckId = process.env.MASTER_DECK_ID
   if (!masterDeckId) throw new Error('MASTER_DECK_ID не заданий у .env.local — оновіть його і перезапустіть сервер')
 
+  // Step 0: the folder every generated deck lands in. Created by this app, so it is covered
+  // by the drive.file scope — which is the whole point: the app can write here and nowhere
+  // else. Deliberately NOT the brief's own folder, however tidy that would be: that folder
+  // belongs to someone else, and writing into it would require the broad `drive` scope back.
+  //
+  // Never fatal. A deck in the wrong folder is a filing annoyance; a deck that failed to
+  // generate is lost work.
+  const deckFolderId = await ensureDeckFolder(drive)
+
   // Step 1: Copy master deck — user token with drive scope, file owned by user.
   // Google answers "File not found: <id>" for a file the caller may not see, on purpose —
   // it will not confirm that someone else's file exists. Raw, that message reads as if the
@@ -3947,11 +3992,20 @@ export async function buildPresentation(
     copyRes = await drive.files.copy({
       fileId: masterDeckId,
       supportsAllDrives: true,
-      requestBody: { name: title },
+      requestBody: deckFolderId ? { name: title, parents: [deckFolderId] } : { name: title },
     })
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
-    if (/not found|permission|insufficient|forbidden/i.test(msg)) {
+    // Two different failures wear almost the same words here, and the fix for each is the
+    // opposite of the other — so separate them explicitly rather than guessing.
+    if (/insufficient|scope|unauthorized_client|invalid_grant/i.test(msg)) {
+      throw new Error(
+        `Застарілі права доступу. Тулза тепер просить у Google вужчі права (читати файли, ` +
+        `а записувати лише власні) — стара сесія їх не має. Вийдіть з акаунту і зайдіть ` +
+        `знову. Відповідь Google: ${msg}`,
+      )
+    }
+    if (/not found|permission|forbidden/i.test(msg)) {
       throw new Error(
         `Немає доступу до майстер-шаблону (${masterDeckId}) — це службова презентація SKELAR, ` +
         `не ваш бриф. Попросіть розшарити її на ваш акаунт (Редактор), або відкрийте тулзу ` +
