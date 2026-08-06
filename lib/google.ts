@@ -684,14 +684,25 @@ const DECK_FOLDER_MARKER = 'skelarDeckFolder'
 async function ensureDeckFolder(drive: ReturnType<typeof google.drive>): Promise<string | undefined> {
   const FOLDER_MIME = 'application/vnd.google-apps.folder'
   try {
+    // Oldest first, deliberately. Drive's search index is eventually consistent: a folder
+    // created seconds ago may not be findable yet, so two generations in quick succession
+    // can each conclude the folder is missing and create one. Ordering by creation time
+    // makes every later run pick the same — the first — folder, so the split heals itself
+    // instead of compounding. (pageSize 10 rather than 1 so the ordering has something to
+    // order; asking for one row would just return an arbitrary winner.)
     const found = await drive.files.list({
       q: `appProperties has { key='${DECK_FOLDER_MARKER}' and value='1' } ` +
          `and mimeType = '${FOLDER_MIME}' and trashed = false`,
-      fields: 'files(id, name)',
-      pageSize: 1,
+      fields: 'files(id, name, createdTime)',
+      orderBy: 'createdTime',
+      pageSize: 10,
     })
-    const existing = found.data.files?.[0]?.id
+    const matches = found.data.files ?? []
+    const existing = matches[0]?.id
     if (existing) {
+      if (matches.length > 1) {
+        console.warn(`[deck-folder] ${matches.length} own folders exist — using the oldest (${existing}); the others are leftovers from a search-index race and can be merged by hand`)
+      }
       console.log(`[deck-folder] reusing own folder (${existing})`)
       return existing
     }
