@@ -2,10 +2,15 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { signOut } from 'next-auth/react'
+import { signOut, useSession } from 'next-auth/react'
 
 export default function HomePage() {
   const router = useRouter()
+  // Which account the tool is acting as. Worth showing: the browser can be signed into
+  // several Google accounts at once, and only this one's access matters here — a deck the
+  // browser opens fine can still be invisible to the tool. Without it on screen there is
+  // no way to tell the two apart.
+  const { data: session } = useSession()
   const [docUrl, setDocUrl] = useState('')
 
   useEffect(() => {
@@ -110,10 +115,15 @@ export default function HomePage() {
           {loading ? 'Аналізую та генерую презентацію…' : 'Згенерувати презентацію →'}
         </button>
 
-        <div className="flex justify-end">
+        <div className="flex justify-end items-center gap-3">
+          {session?.user?.email && (
+            <span className="text-xs text-[#A2A6B1] truncate max-w-[60%]" title={session.user.email}>
+              {session.user.email}
+            </span>
+          )}
           <button
             onClick={() => signOut({ callbackUrl: '/auth/signin' })}
-            className="text-xs text-[#A2A6B1] hover:text-white transition-colors"
+            className="text-xs text-[#A2A6B1] hover:text-white transition-colors shrink-0"
           >
             Вийти з акаунту
           </button>
