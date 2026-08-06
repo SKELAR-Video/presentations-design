@@ -668,30 +668,43 @@ function pickTextPt(compId: string, text: string, availH?: number): number | nul
 // loose in the root. Returns undefined rather than throwing: filing is a convenience, and
 // losing a finished deck over it would be a bad trade.
 //
-// Under the drive.file scope, files.list only ever returns files THIS app created — which
-// is exactly the lookup wanted here, and the reason the search cannot accidentally match
-// some unrelated folder of the user's with the same name.
+// Found by a private marker, NOT by name. Searching by name looked right and was wrong:
+// drive.file alone would indeed only list this app's own files, but the token also carries
+// drive.readonly, and that widens files.list to everything the user can see. So the search
+// matched the user's OWN "SKELAR Presentation" folder — the one holding the master template
+// — and the copy was then told to write into a folder this app has no right to write to.
+// The deck silently ended up in the Drive root instead.
+//
+// appProperties is per-app private metadata: invisible to the user, unreadable by other
+// apps, and searchable. A folder carrying this key is one this app created, which is exactly
+// the guarantee the name search could not give.
 const DECK_FOLDER_NAME = 'SKELAR Presentation'
+const DECK_FOLDER_MARKER = 'skelarDeckFolder'
 
 async function ensureDeckFolder(drive: ReturnType<typeof google.drive>): Promise<string | undefined> {
   const FOLDER_MIME = 'application/vnd.google-apps.folder'
   try {
     const found = await drive.files.list({
-      q: `name = '${DECK_FOLDER_NAME.replace(/'/g, "\\'")}' and mimeType = '${FOLDER_MIME}' and trashed = false`,
+      q: `appProperties has { key='${DECK_FOLDER_MARKER}' and value='1' } ` +
+         `and mimeType = '${FOLDER_MIME}' and trashed = false`,
       fields: 'files(id, name)',
       pageSize: 1,
     })
     const existing = found.data.files?.[0]?.id
     if (existing) {
-      console.log(`[deck-folder] reusing "${DECK_FOLDER_NAME}" (${existing})`)
+      console.log(`[deck-folder] reusing own folder (${existing})`)
       return existing
     }
     const created = await drive.files.create({
-      requestBody: { name: DECK_FOLDER_NAME, mimeType: FOLDER_MIME },
+      requestBody: {
+        name: DECK_FOLDER_NAME,
+        mimeType: FOLDER_MIME,
+        appProperties: { [DECK_FOLDER_MARKER]: '1' },
+      },
       fields: 'id',
     })
     const id = created.data.id ?? undefined
-    console.log(`[deck-folder] created "${DECK_FOLDER_NAME}" (${id})`)
+    console.log(`[deck-folder] created own folder "${DECK_FOLDER_NAME}" (${id})`)
     return id
   } catch (e: unknown) {
     console.warn(`[deck-folder] could not prepare folder, deck goes to Drive root: ${e instanceof Error ? e.message : String(e)}`)
@@ -3989,11 +4002,26 @@ export async function buildPresentation(
   // drive, and a copy of it, before the id turned out to be this one. Say which file it is.
   let copyRes
   try {
-    copyRes = await drive.files.copy({
-      fileId: masterDeckId,
-      supportsAllDrives: true,
-      requestBody: deckFolderId ? { name: title, parents: [deckFolderId] } : { name: title },
-    })
+    try {
+      copyRes = await drive.files.copy({
+        fileId: masterDeckId,
+        supportsAllDrives: true,
+        requestBody: deckFolderId ? { name: title, parents: [deckFolderId] } : { name: title },
+      })
+    } catch (folderErr: unknown) {
+      // The destination folder is the one part of this call that is optional. If it is the
+      // thing Google objects to, drop it and keep the deck — landing in the root is a filing
+      // problem, failing the generation is lost work. Anything else falls through to the
+      // handlers below, which speak about the master template.
+      if (!deckFolderId) throw folderErr
+      const fMsg = folderErr instanceof Error ? folderErr.message : String(folderErr)
+      console.warn(`[deck-folder] copy into folder refused, retrying into Drive root: ${fMsg}`)
+      copyRes = await drive.files.copy({
+        fileId: masterDeckId,
+        supportsAllDrives: true,
+        requestBody: { name: title },
+      })
+    }
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
     // Two different failures wear almost the same words here, and the fix for each is the
