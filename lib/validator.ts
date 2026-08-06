@@ -2,7 +2,7 @@ import type { slides_v1 } from 'googleapis'
 import { getComposition } from './compositions'
 import type { SlidePlan } from './types'
 import { looseNorm as normLoose } from './coverage'
-import { renderedHeight } from './textfit'
+import { renderedHeight, renderedHeightUniform } from './textfit'
 
 const _FPX   = 9144000 / 1920  // EMU per Figma px
 const _SLIDE_W = 1920
@@ -10,6 +10,14 @@ const _SLIDE_H = 1080
 const _BOUNDS_TOL = 4           // px — rounding slack
 const _V_INSET = 19             // Google Slides' fixed inner padding; mirrors _INSET
 const _V_OVERFLOW_TOL = 8       // px — rounding slack for text_overflow
+
+// ─── Readable body size ──────────────────────────────────────────────────────
+// See docs/rules/typography.md, "Читабельна підлога". Repeated here only as the numbers
+// the check runs on; the reasoning lives in the rule, not in the code.
+const _V_READABLE_PT   = 18     // the floor a body slot should reach
+const _V_TOLERANCE     = 0.20   // below the floor by less than this — drawn, not reported
+// Boxes that carry no reader-facing content and are legitimately small.
+const _V_DECOR_ID = /^(vpill_|date_pill_|logo)/
 
 export type CheckResult = {
   check: string
@@ -62,6 +70,62 @@ function elBounds(el: slides_v1.Schema$PageElement) {
 //
 // Scope: boxes holding 2+ paragraphs. Single-paragraph boxes (titles) are governed by the
 // word-fit and fixed-height rules and would only add noise here.
+// Is the body text big enough to read? text_overflow already asks whether the text stays
+// inside its box — but a box always "fits" if the font is allowed to shrink far enough, so
+// that check alone reports a wall of 10pt type as healthy. This one asks the question the
+// audience asks.
+//
+// Reported per slide with the number of slides the content would need, and the share that
+// would have to go, so the answer is actionable rather than "too much text".
+// Rule and reasoning: docs/rules/typography.md, "Читабельна підлога".
+function checkReadableFont(slide: slides_v1.Schema$Page): CheckResult {
+  const tight: string[] = []   // under the floor, inside tolerance — noted, not failed
+  const over:  string[] = []   // past tolerance — a real decision for a human
+
+  for (const el of slide.pageElements ?? []) {
+    if (!el.shape || el.shape.shapeType !== 'TEXT_BOX') continue
+    if (!el.size || !el.transform) continue
+    if (_V_DECOR_ID.test(el.objectId ?? '')) continue
+
+    const runs = (el.shape.text?.textElements ?? []).map(te => te.textRun).filter(Boolean)
+    const text = runs.map(r => r!.content ?? '').join('')
+    if (!text.trim()) continue
+
+    // The smallest size actually written decides: one oversized lead-in does not make a
+    // card readable if the list under it is at 10pt.
+    const sizes = runs.map(r => r!.style?.fontSize?.magnitude ?? 0).filter(s => s > 0)
+    if (!sizes.length) continue
+    const pt = Math.min(...sizes)
+    if (pt >= _V_READABLE_PT) continue
+
+    const { w, h } = elBounds(el)
+    const innerW = w - 2 * _V_INSET
+    const innerH = h - 2 * _V_INSET
+    if (innerW <= 0 || innerH <= 0) continue
+
+    // What the same text would need at the floor, in the same box.
+    const needed = renderedHeightUniform(text, innerW, _V_READABLE_PT, /[\n\v]/.test(text.trim()))
+    const deficit = needed <= innerH ? 0 : 1 - innerH / needed
+    const tok = elToken(el) ?? el.objectId ?? '?'
+    const line =
+      `${tok}: ${pt}pt (floor ${_V_READABLE_PT}) — at ${_V_READABLE_PT}pt needs ` +
+      `${Math.round(needed)}px of ${Math.round(innerH)}px → split into ` +
+      `${Math.max(2, Math.ceil(needed / innerH))} or cut ${Math.round(deficit * 100)}%`
+
+    if (deficit > _V_TOLERANCE) over.push(line)
+    else tight.push(`${tok}: ${pt}pt (within tolerance)`)
+  }
+
+  if (over.length) {
+    return { check: 'readable_font', pass: false, detail: over.join(' | ') }
+  }
+  return {
+    check: 'readable_font',
+    pass: true,
+    detail: tight.length ? `below floor but inside tolerance — ${tight.join(' | ')}` : undefined,
+  }
+}
+
 function checkTextOverflow(slide: slides_v1.Schema$Page): CheckResult {
   const fails: string[] = []
 
@@ -897,6 +961,7 @@ export async function validateDeck(
 
     checks.push(checkBounds(slide))
     checks.push(checkTextOverflow(slide))
+    checks.push(checkReadableFont(slide))
     checks.push(checkAutofit(slide))
     checks.push(checkFont(slide))
     checks.push(checkMaxChars(planSlide.slots, compId))
