@@ -3936,12 +3936,30 @@ export async function buildPresentation(
   const masterDeckId = process.env.MASTER_DECK_ID
   if (!masterDeckId) throw new Error('MASTER_DECK_ID не заданий у .env.local — оновіть його і перезапустіть сервер')
 
-  // Step 1: Copy master deck — user token with drive scope, file owned by user
-  const copyRes = await drive.files.copy({
-    fileId: masterDeckId,
-    supportsAllDrives: true,
-    requestBody: { name: title },
-  })
+  // Step 1: Copy master deck — user token with drive scope, file owned by user.
+  // Google answers "File not found: <id>" for a file the caller may not see, on purpose —
+  // it will not confirm that someone else's file exists. Raw, that message reads as if the
+  // BRIEF were missing, and the id in it belongs to the master template, which no user ever
+  // pasted anywhere. A whole debugging session went into the brief's sharing settings, its
+  // drive, and a copy of it, before the id turned out to be this one. Say which file it is.
+  let copyRes
+  try {
+    copyRes = await drive.files.copy({
+      fileId: masterDeckId,
+      supportsAllDrives: true,
+      requestBody: { name: title },
+    })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e)
+    if (/not found|permission|insufficient|forbidden/i.test(msg)) {
+      throw new Error(
+        `Немає доступу до майстер-шаблону (${masterDeckId}) — це службова презентація SKELAR, ` +
+        `не ваш бриф. Попросіть розшарити її на ваш акаунт (Редактор), або відкрийте тулзу ` +
+        `з акаунта, для якого доступ уже налаштований. Відповідь Google: ${msg}`,
+      )
+    }
+    throw e
+  }
   const presentationId = copyRes.data.id!
 
   // Step 2: Read slides, build composition → pageId map
