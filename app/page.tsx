@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { signOut, useSession } from 'next-auth/react'
-import { pickBriefFile, pickerConfigured } from '@/lib/picker'
+import { pickBriefFile } from '@/lib/picker'
 
 export default function HomePage() {
   const router = useRouter()
@@ -12,12 +12,11 @@ export default function HomePage() {
   // browser opens fine can still be invisible to the tool. Without it on screen there is
   // no way to tell the two apart.
   const { data: session } = useSession()
+  // Not restored from localStorage any more. Re-arming last session's URL made sense beside
+  // a visible input the person could see and edit; with only the picker left it would leave
+  // a file silently selected while the button still reads "choose a brief" — and the name
+  // on screen would not be the file about to be generated.
   const [docUrl, setDocUrl] = useState('')
-
-  useEffect(() => {
-    const saved = localStorage.getItem('last_doc_url')
-    if (saved) setDocUrl(saved)
-  }, [])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [picking, setPicking] = useState(false)
@@ -33,7 +32,6 @@ export default function HomePage() {
       if (!file) return                       // closed without choosing
       setDocUrl(file.url)
       setPickedName(file.name)
-      localStorage.setItem('last_doc_url', file.url)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Не вдалося відкрити вибір файлу')
     } finally {
@@ -110,29 +108,23 @@ export default function HomePage() {
           </p>
         </div>
 
-        {/* Choosing the brief. The picker is the path that lets this app hold only
-            drive.file: picking a file there grants access to that one file. Pasting a link
-            cannot work that way — the app would have to be allowed to read everything to
-            resolve an arbitrary link. Both are offered while the broad scopes are still in
-            place; the input goes when they do. */}
+        {/* The picker is the only way in now. Pasting a link cannot work under drive.file:
+            the app may only open a file the user handed it through Google's own chooser, so
+            an arbitrary link resolves to a permission error the person has no way to make
+            sense of. The input stayed while the broad scopes did; it goes with them. */}
         <div className="space-y-3">
-          {pickerConfigured() && (
-            <button
-              onClick={handlePick}
-              disabled={picking || loading}
-              className="w-full py-4 rounded-xl border border-[#3B404C] text-white text-sm hover:border-[#A2A6B1] disabled:opacity-50 transition-colors"
-            >
-              {picking ? 'Відкриваю…' : (pickedName ? `Обрано: ${pickedName}` : 'Обрати бриф з Google Drive')}
-            </button>
+          <button
+            onClick={handlePick}
+            disabled={picking || loading}
+            className="w-full py-4 rounded-xl border border-[#3B404C] text-white text-sm hover:border-[#A2A6B1] disabled:opacity-50 transition-colors"
+          >
+            {picking ? 'Відкриваю…' : (pickedName || 'Обрати бриф з Google Drive')}
+          </button>
+          {pickedName && (
+            <p className="text-xs text-[#A2A6B1] text-center">
+              натисніть ще раз, щоб обрати інший файл
+            </p>
           )}
-          <input
-            type="url"
-            value={docUrl}
-            onChange={(e) => { setDocUrl(e.target.value); setPickedName(''); localStorage.setItem('last_doc_url', e.target.value); setError('') }}
-            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-            placeholder={pickerConfigured() ? 'або встав посилання вручну' : 'Додай сюди посилання на Google Slides або Google Doc'}
-            className="w-full rounded-xl bg-[#292D39] border border-[#3B404C] text-white placeholder-[#A2A6B1] px-4 py-4 text-sm focus:outline-none focus:border-[#A2A6B1] transition-colors"
-          />
         </div>
 
         {/* Error */}
