@@ -449,6 +449,14 @@ function bandedColumnTop(
   return Math.min(_FLAT_COL_Y_DEF, wanted)
 }
 
+// Top of a bento ROW — the one number the font search and the layout must agree on.
+// The row's bottom is pinned to the page margin, so this decides how tall a card really
+// is. _CY (300) is the master's resting position; a heading that wraps past the standard
+// zone pushes the row further down, and the row follows the heading, not the constant.
+function bentoRowTop(compId: string, titleText: string | undefined, subBand: number): number {
+  return Math.max(_CY, titleZoneBottom(compId, titleText) + _SUB_GAP + subBand)
+}
+
 // `ctx` carries what a composition needs to know its REAL text area. Timelines need the
 // slide's title (height) and which column this is (the two columns differ in width);
 // without it they fall back to the narrowest/shortest worst case, as before.
@@ -478,7 +486,8 @@ function bentoDims(
   // so inner content height = cardH - 2*_INN — must match pickBentoPt's height check.
   if (compId === 'two_columns') {
     const cw = colWidth(_UW, _GAP, 2)
-    return { w: cw - 2 * _INN, h: _CH - 2 * _INN - sub - numberBandPx(compId, ctx?.titleText, 2) }
+    const rowH = _H - _PAD - bentoRowTop(compId, ctx?.titleText, sub)
+    return { w: cw - 2 * _INN, h: rowH - 2 * _INN - numberBandPx(compId, ctx?.titleText, 2) }
   }
   if (compId === 'two_columns_labeled' || compId === 'two_columns_plain') {
     const cw = colWidth(_UW, 50, 2)  // 50px gap, no INN (flat layout)
@@ -486,7 +495,8 @@ function bentoDims(
   }
   if (compId === 'three_columns') {
     const cw = colWidth(_UW, _GAP, 3)
-    return { w: cw - 2 * _INN, h: _CH - 2 * _INN - sub - numberBandPx(compId, ctx?.titleText, 3) }
+    const rowH = _H - _PAD - bentoRowTop(compId, ctx?.titleText, sub)
+    return { w: cw - 2 * _INN, h: rowH - 2 * _INN - numberBandPx(compId, ctx?.titleText, 3) }
   }
   if (compId === 'bento_right_2') {
     const cardH = colWidth(_RBH, _GAP, 2)
@@ -515,7 +525,8 @@ function bentoDims(
   }
   if (compId === 'bento_bottom_4' || compId === 'four_columns' || compId === 'four_columns_num') {
     const cw = colWidth(_UW, _GAP, 4)  // 407
-    return { w: cw - 2 * _INN, h: _CH - 2 * _INN - sub - numberBandPx(compId, ctx?.titleText, 4) }
+    const rowH = _H - _PAD - bentoRowTop(compId, ctx?.titleText, sub)
+    return { w: cw - 2 * _INN, h: rowH - 2 * _INN - numberBandPx(compId, ctx?.titleText, 4) }
   }
   if (compId === 'four_columns_paren' || compId === 'four_columns_bubble') {
     const cw = colWidth(_UW, 50, 4)  // 392 — flat style, gap=50, no card INN padding
@@ -2310,7 +2321,12 @@ function buildBentoRowLayoutRequests(
     const contentCardH  = maxTextH + 2 * _INN + 2 * VERT_PAD_ROW
     const desiredRowY   = _H - _PAD - Math.max(contentCardH, _BOTTOM_BENTO_H_DEFAULT)
     const subBand  = subtitleBand(compId, processedSlots, titlePtFor(compId, (processedSlots['ЗАГОЛОВОК'] ?? '').trim()))
-    const topFloor = Math.max(_CY, titleZoneBottom(compId, titleText) + _SUB_GAP + subBand)
+    // Same function bentoDims measured with — the font was chosen for this exact box.
+    // These two used to be separate expressions: the font search assumed the master's
+    // 620px of inner card whatever the heading did, while this clamped the row under the
+    // heading's real bottom. A two-line heading therefore had its font picked for a card
+    // 99px taller than the one drawn, a four-line one for 222px more.
+    const topFloor = bentoRowTop(compId, titleText, subBand)
     const rowY = Math.max(desiredRowY, topFloor)   // _CY = 300, plus the subtitle if any
     const cardH = _H - _PAD - rowY
 
