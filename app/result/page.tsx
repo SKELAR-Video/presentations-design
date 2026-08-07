@@ -42,12 +42,25 @@ export default function ResultPage() {
           </a>
         )}
 
-        {/* Deck facts: real numbers from the file */}
-        {deckFacts && <DeckFactsPanel report={deckFacts} />}
-
-        {/* Static validator results (shown only when there are failures) */}
-        {validation && !validation.pass && (
-          <ValidationDetails slides={validation.slides} />
+        {/* Both panels are development instruments, not something the person who asked for
+            a deck needs to read: they speak in element ids, pixel heights and check names.
+            Folded away by default so they stay one click from whoever wants them and out of
+            everyone else's way. Closed on every visit deliberately — a panel that remembers
+            being open would be back to greeting every user with a wall of diagnostics. */}
+        {(deckFacts || (validation && !validation.pass)) && (
+          <details className="text-left group">
+            <summary className="cursor-pointer list-none text-xs text-[#A2A6B1] hover:text-white transition-colors select-none">
+              <span className="inline-block transition-transform group-open:rotate-90">›</span>{' '}
+              Технічні деталі
+              {!overallPass && <span className="ml-2 text-[#FD3433]">є зауваження</span>}
+            </summary>
+            <div className="mt-4 space-y-6">
+              {deckFacts && <DeckFactsPanel report={deckFacts} />}
+              {validation && !validation.pass && (
+                <ValidationDetails slides={validation.slides} />
+              )}
+            </div>
+          </details>
         )}
 
         <div className="flex gap-3">
