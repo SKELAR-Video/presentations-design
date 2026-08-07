@@ -50,6 +50,13 @@ export function pickerConfigured(): boolean {
 export async function pickBriefFile(accessToken: string): Promise<PickedFile | null> {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY
   if (!apiKey) throw new Error('NEXT_PUBLIC_GOOGLE_API_KEY не заданий — вибір файлу недоступний')
+
+  // Which app the file is being granted to. Skipping this does not fail loudly: the chooser
+  // opens, a file comes back, and only the first read of it reports
+  // "The user has not granted the app <n> read access to the file <id>".
+  const cfg = await fetch('/api/picker-config').then(r => r.json()).catch(() => null)
+  if (!cfg?.appId) throw new Error('Не вдалося визначити ідентифікатор застосунку для вибору файлу')
+
   await loadPicker()
   const picker = (window as any).google?.picker
   if (!picker) throw new Error('Picker недоступний')
@@ -68,6 +75,7 @@ export async function pickBriefFile(accessToken: string): Promise<PickedFile | n
     const builder = new picker.PickerBuilder()
       .setOAuthToken(accessToken)
       .setDeveloperKey(apiKey)
+      .setAppId(cfg.appId)
       .setTitle('Оберіть бриф')
       .setCallback((data: any) => {
         if (data.action === picker.Action.PICKED) {
