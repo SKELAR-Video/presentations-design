@@ -731,12 +731,14 @@ function pickTextPt(compId: string, text: string, availH?: number): number | nul
 // loose in the root. Returns undefined rather than throwing: filing is a convenience, and
 // losing a finished deck over it would be a bad trade.
 //
-// Found by a private marker, NOT by name. Searching by name looked right and was wrong:
-// drive.file alone would indeed only list this app's own files, but the token also carries
-// drive.readonly, and that widens files.list to everything the user can see. So the search
-// matched the user's OWN "SKELAR Presentation" folder — the one holding the master template
-// — and the copy was then told to write into a folder this app has no right to write to.
-// The deck silently ended up in the Drive root instead.
+// Found by a private marker, NOT by name. Searching by name was wrong while the token also
+// carried drive.readonly: that scope widens files.list to everything the user can see, so
+// the search matched the user's OWN "SKELAR Presentation" folder — the one holding the
+// master template — and the copy was pointed at a folder this app cannot write to. The deck
+// silently landed in the Drive root.
+// drive.readonly is gone now, so files.list is already limited to this app's own files.
+// The marker stays: it is the thing that makes the lookup correct on its own terms rather
+// than by a scope's side effect, and scopes have widened before.
 //
 // appProperties is per-app private metadata: invisible to the user, unreadable by other
 // apps, and searchable. A folder carrying this key is one this app created, which is exactly
@@ -787,13 +789,12 @@ async function ensureDeckFolder(drive: ReturnType<typeof google.drive>): Promise
 }
 
 // The template this account copies from, built by this app rather than shared with it.
-// Found by the same private marker the output folder uses — a name search would match the
-// user's own files, since drive.readonly widens files.list to everything they can see.
+// Found by the same private marker the output folder uses, for the same reason.
 //
 // Why this exists at all: a shared template has to be readable, and "readable" for an
-// arbitrary file means the broad drive.readonly scope on every user, plus somebody
-// remembering to share it with each new account. A template the app builds itself needs
-// neither. The builder is lib/master.ts — the same code /setup has always used, so the
+// arbitrary file means a broad read scope on every user, plus somebody remembering to
+// share it with each new account. A template the app builds itself needs neither — which
+// is what let drive.readonly come off the consent screen entirely. The builder is lib/master.ts — the same code /setup has always used, so the
 // result is the deck the project already knows, not a second dialect of it.
 async function ensureOwnMaster(
   drive: ReturnType<typeof google.drive>,

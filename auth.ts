@@ -30,24 +30,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       authorization: {
         params: {
-          // Least privilege, deliberately split in two:
-          //   drive.readonly — read ANY file the user can see. Needed because a brief is an
-          //                    arbitrary document the user pastes a link to, and because the
-          //                    master template is somebody else's file.
-          //   drive.file     — create files, and write ONLY to files this app itself created.
-          //                    The generated deck and its folder fall under this; nothing
-          //                    else in the user's Drive can be modified, moved or deleted,
-          //                    even if this code had a bug that tried to.
-          // Replaces the full `drive` scope, which granted write and delete over every file
-          // the user owns — far more than a deck generator ever needs. Note this is also the
-          // concern CLAUDE.md flags as a blocker for opening the tool up; solving it here in
-          // code means no Domain-Wide Delegation setup is required from an admin.
+          // drive.file and nothing else: the app reaches a file only if this app created it,
+          // or if the user handed it over through Google's own picker. It cannot enumerate
+          // a Drive, cannot open a file nobody chose, and cannot touch anything it did not
+          // make. On the consent screen this is one line — "only the specific Google Drive
+          // files you use with this app" — where the previous pair spelled out "See and
+          // download ALL your Google Drive files" and "See ALL your Google Docs documents".
+          //
+          // What had to exist before those two could go:
+          //   · lib/picker.ts       — the user picks the brief, which is what grants access
+          //                           to that one file under this scope
+          //   · ensureOwnMaster()   — the template is built by the app rather than read from
+          //                           somebody else's Drive
+          // Removing either one puts the broad scopes back.
+          //
+          // MASTER_DECK_ID must be unset for this to hold: it points at a shared template
+          // this app did not create, and copying it is exactly the operation drive.file
+          // refuses.
           scope: [
             'openid',
             'email',
             'profile',
-            'https://www.googleapis.com/auth/documents.readonly',
-            'https://www.googleapis.com/auth/drive.readonly',
             'https://www.googleapis.com/auth/drive.file',
           ].join(' '),
           access_type: 'offline',
