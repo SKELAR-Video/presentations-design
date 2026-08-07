@@ -3788,9 +3788,11 @@ const _FLAT4_LEFT    = 90    // left edge of first column (matches Figma)
 const _FLAT4_GAP     = 50    // wider gap for flat style
 const _FLAT4_CW      = colWidth(_UW, _FLAT4_GAP, 4)  // 392
 const _FLAT4_TEXT_Y  = 540   // top of text columns
-const _FLAT4_TEXT_H  = _H - _PAD - _FLAT4_TEXT_Y   // 440
-const _FLAT4_PAREN_Y = 451   // y of "(1)" labels
-const _FLAT4_BUBBLE_Y = 411  // y of circle tops
+// _FLAT4_TEXT_Y stays as the resting position and the cap: columns rise above it when the
+// content needs the room, never sink below it. The former companions of this constant —
+// a fixed text height of 440 and fixed decor rows at 451 ("(N)") and 411 (circles) — are
+// gone: height and decor now follow the columns, keeping the bands those numbers implied
+// (540 − 451 = 89, 540 − 411 = 129, see columnDecorBand).
 const _FLAT4_BUBBLE_D = 75   // circle diameter (px)
 const _FLAT4_MUTED_RGB = { red: 162 / 255, green: 166 / 255, blue: 177 / 255 }  // #A2A6B1
 const _FLAT4_PINK_RGB  = { red: 0xFC / 255, green: 0xCA / 255, blue: 0xCA / 255 }  // #FCCACA
@@ -3804,6 +3806,27 @@ function buildFlatColumnsRequests(
 ): object[] {
   const reqs: object[] = []
   const TOL = 8
+
+  // Same move as three_columns_num: the columns rise toward the title when the content
+  // needs the room, and the decor above them ("(N)" labels or numbered circles) keeps its
+  // band instead of staying at the master's constant Y. Capped at the master's own 540, so
+  // the change can only add area, never take it — see bandedColumnTop.
+  const colTexts = (BENTO_TOKENS[compId] ?? [])
+    .map(t => (processedSlots[t] ?? '').trim())
+    .filter(Boolean)
+  const cardPts = pickBentoCardPts(compId, processedSlots)
+  const colPt = cardPts
+    ? Math.min(...Object.values(cardPts).filter((p): p is number => !!p))
+    : (BENTO_MIN_PT[compId] ?? 10)
+  const subBand = subtitleBand(compId, processedSlots, titlePtFor(compId, processedSlots['ЗАГОЛОВОК']))
+  const colY = colTexts.length
+    ? bandedColumnTop(compId, colTexts, _FLAT4_CW, colPt, subBand, (processedSlots['ЗАГОЛОВОК'] ?? '').trim() || undefined)
+    : _FLAT4_TEXT_Y
+  const colH = _H - _PAD - colY
+  const decorY = colY - columnDecorBand(compId)
+  if (colY !== _FLAT4_TEXT_Y) {
+    console.log(`[flat4-grow] slide ${slideIdx} (${compId}): colY=${colY} colH=${colH} pt=${colPt} decorY=${decorY}`)
+  }
 
   for (const el of slide.pageElements ?? []) {
     if (!el.objectId || !el.transform || !el.size) continue
@@ -3824,7 +3847,7 @@ function buildFlatColumnsRequests(
       if (!m) continue
       const k = parseInt(m[1]) - 1
       const cx = _FLAT4_LEFT + k * (_FLAT4_CW + _FLAT4_GAP)
-      reqs.push(makeElemTransform(el.objectId, cx - _INSET, _FLAT4_TEXT_Y - _INSET, _FLAT4_CW + 2 * _INSET, _FLAT4_TEXT_H + 2 * _INSET, sW, sH))
+      reqs.push(makeElemTransform(el.objectId, cx - _INSET, colY - _INSET, _FLAT4_CW + 2 * _INSET, colH + 2 * _INSET, sW, sH))
       reqs.push(
         {
           updateTextStyle: {
@@ -3867,7 +3890,7 @@ function buildFlatColumnsRequests(
                 width:  { magnitude: _eL(120), unit: 'EMU' },
                 height: { magnitude: _eL(60),  unit: 'EMU' },
               },
-              transform: { scaleX: 1, shearX: 0, translateX: _eL(cx - _INSET), shearY: 0, scaleY: 1, translateY: _eL(_FLAT4_PAREN_Y), unit: 'EMU' },
+              transform: { scaleX: 1, shearX: 0, translateX: _eL(cx - _INSET), shearY: 0, scaleY: 1, translateY: _eL(decorY), unit: 'EMU' },
             },
           },
         },
@@ -3909,7 +3932,7 @@ function buildFlatColumnsRequests(
                 width:  { magnitude: _eL(_FLAT4_BUBBLE_D), unit: 'EMU' },
                 height: { magnitude: _eL(_FLAT4_BUBBLE_D), unit: 'EMU' },
               },
-              transform: { scaleX: 1, shearX: 0, translateX: _eL(cx), shearY: 0, scaleY: 1, translateY: _eL(_FLAT4_BUBBLE_Y), unit: 'EMU' },
+              transform: { scaleX: 1, shearX: 0, translateX: _eL(cx), shearY: 0, scaleY: 1, translateY: _eL(decorY), unit: 'EMU' },
             },
           },
         },
