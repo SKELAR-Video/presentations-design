@@ -55,14 +55,15 @@ export async function pickBriefFile(accessToken: string): Promise<PickedFile | n
   if (!picker) throw new Error('Picker недоступний')
 
   return new Promise<PickedFile | null>((resolve) => {
-    // Two views rather than one all-files view: a brief is a Doc or a deck, and offering
-    // folders or images just invites a pick the pipeline cannot read.
-    const views = [SLIDES_MIME, DOC_MIME].map(mime =>
-      new picker.DocsView(picker.ViewId.DOCS)
-        .setMimeTypes(mime)
-        .setIncludeFolders(true)
-        .setSelectFolderEnabled(false),
-    )
+    // ONE view listing both types, not one view per type. Two views render as two tabs,
+    // and a tab nobody notices is a file nobody can pick: the first attempt showed only
+    // presentations, because the Docs tab sat behind a header that reads as decoration.
+    // Still filtered to Docs and Slides — offering images or folders only invites a pick
+    // the pipeline cannot read.
+    const view = new picker.DocsView(picker.ViewId.DOCS)
+      .setMimeTypes(`${SLIDES_MIME},${DOC_MIME}`)
+      .setIncludeFolders(true)
+      .setSelectFolderEnabled(false)
 
     const builder = new picker.PickerBuilder()
       .setOAuthToken(accessToken)
@@ -86,7 +87,6 @@ export async function pickBriefFile(accessToken: string): Promise<PickedFile | n
           resolve(null)
         }
       })
-    for (const v of views) builder.addView(v)
-    builder.build().setVisible(true)
+    builder.addView(view).build().setVisible(true)
   })
 }
