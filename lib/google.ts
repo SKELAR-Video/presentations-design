@@ -6,6 +6,7 @@ import { validateDeck, type ValidationReport } from './validator'
 import { fixOverflowSlots } from './anthropic'
 import { autoPushIfPass } from './auto-push'
 import { listMarkerSignal, looksLikeAction, splitLeadingFigure } from './columns'
+import { createMasterDeck, MASTER_MARKER } from './master'
 import {
   renderedHeight, renderedHeightUniform, wrappedLines,
   LIST_ITEM_GAP_EM, FIT_MARGIN,
@@ -781,6 +782,40 @@ async function ensureDeckFolder(drive: ReturnType<typeof google.drive>): Promise
     return id
   } catch (e: unknown) {
     console.warn(`[deck-folder] could not prepare folder, deck goes to Drive root: ${e instanceof Error ? e.message : String(e)}`)
+    return undefined
+  }
+}
+
+// The template this account copies from, built by this app rather than shared with it.
+// Found by the same private marker the output folder uses — a name search would match the
+// user's own files, since drive.readonly widens files.list to everything they can see.
+//
+// Why this exists at all: a shared template has to be readable, and "readable" for an
+// arbitrary file means the broad drive.readonly scope on every user, plus somebody
+// remembering to share it with each new account. A template the app builds itself needs
+// neither. The builder is lib/master.ts — the same code /setup has always used, so the
+// result is the deck the project already knows, not a second dialect of it.
+async function ensureOwnMaster(
+  drive: ReturnType<typeof google.drive>,
+  auth2: InstanceType<typeof google.auth.OAuth2>,
+  folderId?: string,
+): Promise<string | undefined> {
+  try {
+    const found = await drive.files.list({
+      q: `appProperties has { key='${MASTER_MARKER}' and value='1' } and trashed = false`,
+      fields: 'files(id, name, createdTime)',
+      orderBy: 'createdTime',   // oldest wins, so a search-index race heals — see ensureDeckFolder
+      pageSize: 10,
+    })
+    const existing = found.data.files?.[0]?.id
+    if (existing) {
+      console.log(`[master] reusing own template (${existing})`)
+      return existing
+    }
+    console.log('[master] no own template yet — building one')
+    return await createMasterDeck(auth2, folderId)
+  } catch (e: unknown) {
+    console.error(`[master] could not prepare own template: ${e instanceof Error ? e.message : String(e)}`)
     return undefined
   }
 }
@@ -4119,9 +4154,6 @@ export async function buildPresentation(
   const drive = google.drive({ version: 'v3', auth })
   const slidesApi = google.slides({ version: 'v1', auth })
   const logoUrl = getLogoUrl()
-  const masterDeckId = process.env.MASTER_DECK_ID
-  if (!masterDeckId) throw new Error('MASTER_DECK_ID не заданий у .env.local — оновіть його і перезапустіть сервер')
-
   // Step 0: the folder every generated deck lands in. Created by this app, so it is covered
   // by the drive.file scope — which is the whole point: the app can write here and nowhere
   // else. Deliberately NOT the brief's own folder, however tidy that would be: that folder
@@ -4130,6 +4162,14 @@ export async function buildPresentation(
   // Never fatal. A deck in the wrong folder is a filing annoyance; a deck that failed to
   // generate is lost work.
   const deckFolderId = await ensureDeckFolder(drive)
+
+  // The template this account will copy from. Preferably one this app built for it: such a
+  // deck is covered by the narrow drive.file scope, needs no sharing, and cannot go missing
+  // for a new user — which is exactly what happened earlier today, when a second account
+  // met "File not found" on a template nobody had shared with it. A configured
+  // MASTER_DECK_ID still wins when set, so an existing setup is untouched.
+  const masterDeckId = process.env.MASTER_DECK_ID || await ensureOwnMaster(drive, auth, deckFolderId)
+  if (!masterDeckId) throw new Error('Не вдалося ні знайти, ні створити майстер-шаблон')
 
   // Step 1: Copy master deck — user token with drive scope, file owned by user.
   // Google answers "File not found: <id>" for a file the caller may not see, on purpose —
