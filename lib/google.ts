@@ -388,14 +388,65 @@ function labelMetrics(slots: Record<string, string>): { pt: number; boxH: number
   return { pt, boxH, band: boxH + _FLAT_LABEL_GAP }
 }
 
-// The highest the columns may go: TITLE_GAP below the title zone, plus the label band for
-// the labelled variant (its ПІДПИС rides along, keeping its 89px band).
+// Layouts that carry a decorative band directly above their columns — a ПІДПИС row, a row
+// of numbered circles, a row of "(N)" labels. The band is part of the column's own stack,
+// so the columns start that much lower, and — the point of listing them here — the band
+// travels with the columns when they grow instead of staying at a constant Y.
+const _BANDED_COLUMN_COMPS = new Set([
+  'two_columns_labeled', 'three_columns_num', 'four_columns_paren', 'four_columns_bubble',
+])
+
+// The highest the columns may go: TITLE_GAP below the title zone, plus the decor band for
+// the families that have one (its ПІДПИС / circles / "(N)" ride along, keeping their band).
 function flatColumnsTopMin(compId: string, subBand = 0, labelBand = _FLAT_LABEL_BAND, titleText?: string): number {
   const firstContentY = titleZoneBottom(compId, titleText) + _SUB_GAP + subBand
-  return compId === 'two_columns_labeled' ? firstContentY + labelBand : firstContentY
+  return _BANDED_COLUMN_COMPS.has(compId) ? firstContentY + labelBand : firstContentY
 }
 function flatColumnsMaxH(compId: string, subBand = 0, labelBand = _FLAT_LABEL_BAND, titleText?: string): number {
   return _H - _PAD - flatColumnsTopMin(compId, subBand, labelBand, titleText)
+}
+
+// ─── Numbered / parenthesised column families: decor band above the columns ──
+// The master draws these with everything at a constant Y — circles at 411, "(N)" at 451,
+// columns at 540 — which froze the text area at 440px while the neighbouring families grew
+// to 620px. Same content, 41% less room, purely because the decor could not follow.
+// The band is what sits between the top of the decor and the top of the text; the columns
+// grow upward and the decor keeps this distance above them.
+const _3CN_BUBBLE_D   = 75            // numbered circle diameter
+const _3CN_BUBBLE_GAP = 54            // circle bottom → text top
+const _3CN_BAND       = _3CN_BUBBLE_D + _3CN_BUBBLE_GAP   // 129 — matches the master (540 − 411)
+const _FLAT4_PAREN_BAND = 89          // "(N)" label band — matches the master (540 − 451)
+
+// Decor band for a banded family, or the ПІДПИС band as the default.
+function columnDecorBand(compId: string): number {
+  if (compId === 'three_columns_num' || compId === 'four_columns_bubble') return _3CN_BAND
+  if (compId === 'four_columns_paren') return _FLAT4_PAREN_BAND
+  return _FLAT_LABEL_BAND
+}
+
+// Where a banded family's columns actually start, given their content. Bottom is pinned to
+// the page margin; the top rises only as far as the content needs and the title allows,
+// and never sinks below the master's own 540 so a short slide still looks as drawn.
+function bandedColumnTop(
+  compId: string, colTexts: string[], innerW: number, pt: number, subBand: number, titleText?: string,
+): number {
+  const band = columnDecorBand(compId)
+  const needed = colTexts.length
+    ? Math.ceil(Math.max(...colTexts.map(t => measuredTextHeight(t, innerW, pt))))
+    : 0
+  // Rise only as far as the content needs, and no higher than the title (plus the band)
+  // allows…
+  const wanted = Math.max(
+    flatColumnsTopMin(compId, subBand, band, titleText),
+    Math.min(_FLAT_COL_Y_DEF, _H - _PAD - needed),
+  )
+  // …but never lower than the master's own 540. Without this cap the change backfires on
+  // exactly the slides it was meant to help: a three-line title puts the title-derived
+  // minimum at 590, which would leave 390px of text area where the frozen layout gave 440.
+  // Demanding a full TITLE_GAP under a long heading is more correct typographically and
+  // costs area — and this change is about finding room that already exists, not about
+  // re-opening how tightly circles may sit under a heading. Strictly better or equal.
+  return Math.min(_FLAT_COL_Y_DEF, wanted)
 }
 
 // `ctx` carries what a composition needs to know its REAL text area. Timelines need the
@@ -452,7 +503,7 @@ function bentoDims(
   }
   if (compId === 'three_columns_num') {
     const cw = colWidth(_UW, 50, 3)  // 540 — no card INN padding
-    return { w: cw, h: _H - _PAD - 540 - sub }
+    return { w: cw, h: flatColumnsMaxH(compId, sub, columnDecorBand(compId), ctx?.titleText) }
   }
   if (compId === 'three_columns_timeline' || compId === 'two_columns_timeline') {
     const isThree = compId === 'three_columns_timeline'
@@ -468,7 +519,7 @@ function bentoDims(
   }
   if (compId === 'four_columns_paren' || compId === 'four_columns_bubble') {
     const cw = colWidth(_UW, 50, 4)  // 392 — flat style, gap=50, no card INN padding
-    return { w: cw, h: _H - _PAD - 540 - sub }
+    return { w: cw, h: flatColumnsMaxH(compId, sub, columnDecorBand(compId), ctx?.titleText) }
   }
   return null
 }
@@ -3337,12 +3388,48 @@ function expandPlanWithVariants(plan: SlidePlan): {
   return { expanded: { ...plan, slides: expandedSlides }, variantMap }
 }
 
-function buildThreeColumnsNumRequests(pageId: string): object[] {
+function buildThreeColumnsNumRequests(
+  pageId: string,
+  slide?: slides_v1.Schema$Page,
+  slots: Record<string, string> = {},
+  colObjIds: (string | undefined)[] = [],
+  subBand = 0,
+): object[] {
   const _3CN_GAP    = 50
   const _3CN_COL_W  = colWidth(_UW, _3CN_GAP, 3)  // 540
-  const _3CN_BUBBLE_D = 75
-  const _3CN_BUBBLE_Y = 411
   const reqs: object[] = []
+
+  // Where the columns end up. The master froze them at 540 with the circles at 411; now the
+  // pair moves together — the text grows upward toward the title and the circles keep their
+  // band above it. Without `slide` (no elements to move) the master's own position stands.
+  const titleText = (slots['ЗАГОЛОВОК'] ?? '').trim() || undefined
+  const colTexts  = [1, 2, 3]
+    .map(k => (slots[`КОЛОНКА_${k}`] ?? '').trim())
+    .filter(Boolean)
+  const cardPts = pickBentoCardPts('three_columns_num', slots)
+  const colPt   = cardPts
+    ? Math.min(...[1, 2, 3].map(k => cardPts[`КОЛОНКА_${k}`]).filter((p): p is number => !!p))
+    : BENTO_MIN_PT['three_columns_num']
+  const colY = slide && colTexts.length
+    ? bandedColumnTop('three_columns_num', colTexts, _3CN_COL_W, colPt, subBand, titleText)
+    : _FLAT_COL_Y_DEF
+  const colH = _H - _PAD - colY
+  const _3CN_BUBBLE_Y = colY - _3CN_BAND
+
+  if (slide) {
+    for (const el of slide.pageElements ?? []) {
+      const idx = colObjIds.findIndex(id => id && id === el.objectId)
+      if (idx < 0 || !el.size || !el.transform) continue
+      const sW = el.size.width?.magnitude  ?? 0
+      const sH = el.size.height?.magnitude ?? 0
+      const cx = _PAD + idx * (_3CN_COL_W + _3CN_GAP)
+      reqs.push(makeElemTransform(
+        el.objectId!, cx - _INSET, colY - _INSET,
+        _3CN_COL_W + 2 * _INSET, colH + 2 * _INSET, sW, sH,
+      ))
+    }
+    console.log(`[3cn-grow] ${pageId}: colY=${colY} colH=${colH} pt=${colPt} bubbleY=${_3CN_BUBBLE_Y}`)
+  }
   // The digit lives INSIDE the ellipse. It used to be a separate TEXT_BOX laid over the
   // circle and centred by arithmetic — (bubble − line height) / 2 — which is a guess about
   // where Slides puts a glyph inside its line box, and the guess sat low every time. A
@@ -4799,12 +4886,19 @@ export async function buildPresentation(
     requests.push(...buildAgendaRequests(slide, plan.slides[i].slots, pageId, i, rowDefs))
   }
 
-  // ── three_columns_num: create numbered red pills ──────────────────────────────
+  // ── three_columns_num: grow the columns, then draw the circles above them ─────
   for (let i = 0; i < plan.slides.length; i++) {
     if (plan.slides[i].composition !== 'three_columns_num') continue
     const pageId = planPageIds[i]
     if (!pageId) continue
-    requests.push(...buildThreeColumnsNumRequests(pageId))
+    const slots = plan.slides[i].slots
+    requests.push(...buildThreeColumnsNumRequests(
+      pageId,
+      updatedSlides.find(s => s.objectId === pageId),
+      slots,
+      [1, 2, 3].map(k => slotObjectIds[i]?.[`КОЛОНКА_${k}`]),
+      subtitleBand('three_columns_num', slots, titlePtFor('three_columns_num', slots['ЗАГОЛОВОК'])),
+    ))
   }
 
 
