@@ -181,7 +181,28 @@ export async function GET(request: NextRequest) {
   const auth2 = getOAuth2Client(session.accessToken)
   const slidesApi = google.slides({ version: 'v1', auth: auth2 })
 
-  const pres = await slidesApi.presentations.get({ presentationId })
+  // Nothing here was wrapped, so every failure — an expired session, a deck belonging to
+  // another account, a shape this parser trips over — surfaced identically: HTTP 500 with
+  // an empty body. Diagnosing from that is guesswork, and this endpoint exists precisely
+  // to answer "what actually happened".
+  let pres
+  try {
+    pres = await slidesApi.presentations.get({ presentationId })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e)
+    const denied = /not found|permission|forbidden/i.test(msg)
+    return NextResponse.json(
+      {
+        error: denied
+          ? `Немає доступу до цього дека під поточним акаунтом (${session.user?.email ?? 'невідомий'}). ` +
+            `Деки, створені іншим акаунтом, не видно. Відповідь Google: ${msg}`
+          : `Не вдалося прочитати дек: ${msg}`,
+        presentationId,
+        signedInAs: session.user?.email ?? null,
+      },
+      { status: denied ? 404 : 502 },
+    )
+  }
   const slides = pres.data.slides ?? []
 
   const result: SlideInfo[] = slides.map((slide, slideIndex) => {
