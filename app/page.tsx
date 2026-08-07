@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { signOut, useSession } from 'next-auth/react'
+import { pickBriefFile, pickerConfigured } from '@/lib/picker'
 
 export default function HomePage() {
   const router = useRouter()
@@ -19,6 +20,26 @@ export default function HomePage() {
   }, [])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [picking, setPicking] = useState(false)
+  const [pickedName, setPickedName] = useState('')
+
+  async function handlePick() {
+    const token = (session as { accessToken?: string } | null)?.accessToken
+    if (!token) { setError('Сесія застаріла — вийдіть і зайдіть знову'); return }
+    setPicking(true)
+    setError('')
+    try {
+      const file = await pickBriefFile(token)
+      if (!file) return                       // closed without choosing
+      setDocUrl(file.url)
+      setPickedName(file.name)
+      localStorage.setItem('last_doc_url', file.url)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Не вдалося відкрити вибір файлу')
+    } finally {
+      setPicking(false)
+    }
+  }
 
   async function handleSubmit() {
     if (!docUrl.trim()) { setError('Додайте посилання'); return }
@@ -89,14 +110,27 @@ export default function HomePage() {
           </p>
         </div>
 
-        {/* Link input */}
+        {/* Choosing the brief. The picker is the path that lets this app hold only
+            drive.file: picking a file there grants access to that one file. Pasting a link
+            cannot work that way — the app would have to be allowed to read everything to
+            resolve an arbitrary link. Both are offered while the broad scopes are still in
+            place; the input goes when they do. */}
         <div className="space-y-3">
+          {pickerConfigured() && (
+            <button
+              onClick={handlePick}
+              disabled={picking || loading}
+              className="w-full py-4 rounded-xl border border-[#3B404C] text-white text-sm hover:border-[#A2A6B1] disabled:opacity-50 transition-colors"
+            >
+              {picking ? 'Відкриваю…' : (pickedName ? `Обрано: ${pickedName}` : 'Обрати бриф з Google Drive')}
+            </button>
+          )}
           <input
             type="url"
             value={docUrl}
-            onChange={(e) => { setDocUrl(e.target.value); localStorage.setItem('last_doc_url', e.target.value); setError('') }}
+            onChange={(e) => { setDocUrl(e.target.value); setPickedName(''); localStorage.setItem('last_doc_url', e.target.value); setError('') }}
             onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-            placeholder="Додай сюди посилання на Google Slides або Google Doc"
+            placeholder={pickerConfigured() ? 'або встав посилання вручну' : 'Додай сюди посилання на Google Slides або Google Doc'}
             className="w-full rounded-xl bg-[#292D39] border border-[#3B404C] text-white placeholder-[#A2A6B1] px-4 py-4 text-sm focus:outline-none focus:border-[#A2A6B1] transition-colors"
           />
         </div>
