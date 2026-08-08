@@ -19,10 +19,17 @@ import { google } from 'googleapis'
 // Unset id = logging off. Deliberately: a tool that refuses to generate because a
 // bookkeeping row failed would be trading the product for the paperwork.
 
-const HEADER = [
+export const HEADER = [
   'Дата', 'Користувач', 'Бриф', 'Презентація',
-  'Токени вхід', 'Токени вихід', 'Викликів моделі', 'Слайдів',
+  'Модель', 'Токени вхід', 'Токени вихід', 'Викликів моделі', 'Слайдів',
 ]
+
+// Sheets reads an ISO timestamp as text, which makes it useless for sorting or for a pivot
+// by month. This form it parses as a real date-time.
+function sheetTimestamp(d = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
 
 // Only what writing rows to one known sheet requires. The service account helper that
 // already existed in lib/google.ts asks for full drive + presentations, which is far more
@@ -66,6 +73,10 @@ export type UsageRow = {
   userEmail?: string
   briefName?: string
   deckUrl: string
+  // Which model did the mapping. Token counts alone cannot be turned into money later:
+  // rates differ per model and change over time, so a column of numbers with no record of
+  // what produced them stops being convertible the day the model is switched.
+  model?: string
   inputTokens: number
   outputTokens: number
   calls: number
@@ -82,13 +93,25 @@ export async function logGeneration(row: UsageRow): Promise<void> {
   try {
     const sheets = google.sheets({ version: 'v4', auth })
 
-    // Write the header once, on the first row ever appended, so a freshly created blank
-    // sheet is readable without anyone having to set it up by hand.
-    const existing = await sheets.spreadsheets.values.get({
+    // Header written once, so a freshly created blank sheet is readable without anyone
+    // setting it up by hand. Detected by its CONTENT, not by A1 being empty: the first
+    // version checked emptiness, and the diagnostic endpoint's own test row landed in A1
+    // first — so the sheet was "not empty", the header was skipped, and the columns went
+    // out unlabelled. Anything that writes a row before the header would have done it.
+    const first = await sheets.spreadsheets.values.get({
       spreadsheetId: sheetId,
       range: 'A1:A1',
     })
-    if (!existing.data.values?.length) {
+    if (first.data.values?.[0]?.[0] !== HEADER[0]) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: sheetId,
+        requestBody: {
+          requests: [{ insertDimension: {
+            range: { sheetId: 0, dimension: 'ROWS', startIndex: 0, endIndex: 1 },
+            inheritFromBefore: false,
+          } }],
+        },
+      })
       await sheets.spreadsheets.values.update({
         spreadsheetId: sheetId,
         range: 'A1',
@@ -104,10 +127,11 @@ export async function logGeneration(row: UsageRow): Promise<void> {
       insertDataOption: 'INSERT_ROWS',
       requestBody: {
         values: [[
-          new Date().toISOString(),
+          sheetTimestamp(),
           row.userEmail ?? '',
           row.briefName ?? '',
           row.deckUrl,
+          row.model ?? '',
           row.inputTokens,
           row.outputTokens,
           row.calls,

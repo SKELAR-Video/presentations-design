@@ -42,14 +42,26 @@ export async function GET() {
       const meta = await sheets.spreadsheets.get({ spreadsheetId: sheetId })
       steps.push({ step: 'таблиця доступна роботу', ok: true, detail: `назва: «${meta.data.properties?.title ?? '—'}»` })
 
-      await sheets.spreadsheets.values.append({
+      // Writing is the only way to prove the robot may write, so the check writes — and
+      // then removes what it wrote. The first version left its test row behind, which
+      // landed in A1 before the header ever existed and cost the sheet its column names.
+      const written = await sheets.spreadsheets.values.append({
         spreadsheetId: sheetId,
         range: 'A1',
-        valueInputOption: 'USER_ENTERED',
+        valueInputOption: 'RAW',
         insertDataOption: 'INSERT_ROWS',
-        requestBody: { values: [[new Date().toISOString(), 'ПЕРЕВІРКА', 'тестовий рядок — можна видалити']] },
+        requestBody: { values: [['ПЕРЕВІРКА ДОСТУПУ — рядок буде прибрано']] },
       })
-      steps.push({ step: 'запис у таблицю', ok: true, detail: 'додано тестовий рядок' })
+      const rowIdx = Number(written.data.updates?.updatedRange?.match(/(\d+)(?::|$)/)?.[1] ?? 0)
+      if (rowIdx > 0) {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: sheetId,
+          requestBody: { requests: [{ deleteDimension: {
+            range: { sheetId: 0, dimension: 'ROWS', startIndex: rowIdx - 1, endIndex: rowIdx },
+          } }] },
+        })
+      }
+      steps.push({ step: 'запис у таблицю', ok: true, detail: 'дозволено (тестовий рядок прибрано)' })
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       let hint = msg

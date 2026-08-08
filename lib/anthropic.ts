@@ -16,7 +16,7 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 // Counted per mapping run rather than in a module-level total: this code runs serverless,
 // where one process may handle several requests and is discarded without warning, so a
 // running total in memory is both shared between users and lost at random.
-export type TokenUsage = { inputTokens: number; outputTokens: number; calls: number }
+export type TokenUsage = { inputTokens: number; outputTokens: number; calls: number; model?: string }
 
 function emptyUsage(): TokenUsage {
   return { inputTokens: 0, outputTokens: 0, calls: 0 }
@@ -24,10 +24,13 @@ function emptyUsage(): TokenUsage {
 
 // Anthropic reports usage on every response, including the ones we end up discarding —
 // a rejected retry still cost money, so it still counts.
-function addUsage(acc: TokenUsage, msg: { usage?: { input_tokens?: number; output_tokens?: number } }): void {
+function addUsage(acc: TokenUsage, msg: { model?: string; usage?: { input_tokens?: number; output_tokens?: number } }): void {
   acc.inputTokens  += msg.usage?.input_tokens  ?? 0
   acc.outputTokens += msg.usage?.output_tokens ?? 0
   acc.calls        += 1
+  // The main mapping model, not the last one to answer: the cheap section-count probe runs
+  // on Haiku and would otherwise overwrite the name of the model that did the actual work.
+  if (!acc.model && msg.model) acc.model = msg.model
 }
 
 // ─── Verbatim mapping mode ────────────────────────────────────────────────────

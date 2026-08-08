@@ -77,6 +77,7 @@ export async function POST(req: NextRequest) {
       userEmail:    session.user?.email ?? undefined,
       briefName:    body.briefName,
       deckUrl:      url,
+      model:        plan.usage?.model,
       inputTokens:  plan.usage?.inputTokens ?? 0,
       outputTokens: plan.usage?.outputTokens ?? 0,
       calls:        plan.usage?.calls ?? 0,

@@ -58,7 +58,7 @@ export type SlidePlan = {
   // retry, and the section-count probe. Rides on the plan rather than being returned
   // separately so it survives the trip map → browser → generate without changing any
   // signature; the generator is where the deck (and so the row worth logging) exists.
-  usage?: { inputTokens: number; outputTokens: number; calls: number }
+  usage?: { inputTokens: number; outputTokens: number; calls: number; model?: string }
 }
 
 export type CompositionSlot = {
