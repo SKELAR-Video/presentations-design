@@ -85,6 +85,12 @@ export default function HomePage() {
       if (!genRes.ok) throw new Error(genData.error ?? 'Помилка генерації деку')
 
       sessionStorage.setItem('deck_url', genData.url)
+      sessionStorage.setItem('deck_id', genData.presentationId)
+      // The plan the generator actually built, not the one sent — it rewrites compositions
+      // and adds variant slides, so this is the only version whose slide numbers match the
+      // report the result page reads.
+      if (genData.plan) sessionStorage.setItem('deck_plan', JSON.stringify(genData.plan))
+      sessionStorage.setItem('deck_title', pickedName || 'SKELAR Presentation')
       if (genData.validation) sessionStorage.setItem('deck_validation', JSON.stringify(genData.validation))
       if (genData.deckFacts) sessionStorage.setItem('deck_facts', JSON.stringify(genData.deckFacts))
       router.push('/result')

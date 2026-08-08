@@ -3022,6 +3022,15 @@ function getOAuth2Client(accessToken: string) {
   return oauth2
 }
 
+// Removes a deck this app generated. Permitted under drive.file precisely because the app
+// created the file — the same scope that stops it from touching anything else in the Drive.
+// Used when a repaired deck replaces the one it was built from, so the folder does not fill
+// up with supplanted copies.
+export async function deleteDeck(accessToken: string, presentationId: string): Promise<void> {
+  const drive = google.drive({ version: 'v3', auth: getOAuth2Client(accessToken) })
+  await drive.files.delete({ fileId: presentationId })
+}
+
 function getServerGoogleAuth() {
   const keyJson = process.env.GOOGLE_SERVICE_ACCOUNT_KEY
   if (!keyJson) throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY не заданий в env — вставте JSON сервіс-акаунту в цю змінну')
@@ -4102,7 +4111,17 @@ export async function buildPresentation(
   accessToken: string,
   plan: SlidePlan,
   title: string,
-): Promise<{ url: string; presentationId: string; validation: ValidationReport; deckFacts: DeckFactReport }> {
+): Promise<{
+  url: string
+  presentationId: string
+  validation: ValidationReport
+  deckFacts: DeckFactReport
+  // The plan as actually built, not as handed in. Guards rewrite compositions and slot
+  // names, and expandPlanWithVariants adds slides — so slide 4 of the report is not slide 4
+  // of the caller's plan. Anything that acts on the report (splitting an overloaded sheet,
+  // above all) has to work from this one or it will edit the wrong slide.
+  plan: SlidePlan
+}> {
   // Guard: fix LLM slot-naming mistakes. Uses /_\d+$/ (ASCII-only) — immune to
   // Cyrillic/Latin lookalike homoglyphs that break direct string-key access.
   plan = {
@@ -6028,5 +6047,5 @@ export async function buildPresentation(
     }
   }
 
-  return { url, presentationId, validation, deckFacts }
+  return { url, presentationId, validation, deckFacts, plan }
 }

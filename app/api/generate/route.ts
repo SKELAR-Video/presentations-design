@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
-import { buildPresentation } from '@/lib/google'
+import { buildPresentation, deleteDeck } from '@/lib/google'
 import { logGeneration } from '@/lib/stats'
 import type { SlidePlan } from '@/lib/types'
 
@@ -13,7 +13,15 @@ export async function POST(req: NextRequest) {
   const accessToken = session.accessToken
   if (!accessToken) return NextResponse.json({ error: 'No Google access token' }, { status: 401 })
 
-  const body = await req.json() as { plan: SlidePlan; title: string; briefName?: string }
+  const body = await req.json() as {
+    plan: SlidePlan
+    title: string
+    briefName?: string
+    // Set when this generation replaces one the person chose to repair. The old deck is
+    // removed only after the new one exists — a failed repair must leave them with the deck
+    // they already had, not with nothing.
+    replaces?: string
+  }
 
   if (!body.plan?.slides?.length) {
     return NextResponse.json({ error: 'План слайдів порожній' }, { status: 400 })
@@ -69,7 +77,7 @@ export async function POST(req: NextRequest) {
   }))
 
   try {
-    const { url, presentationId, validation, deckFacts } = await buildPresentation(accessToken, plan, title || 'SKELAR Presentation')
+    const { url, presentationId, validation, deckFacts, plan: builtPlan } = await buildPresentation(accessToken, plan, title || 'SKELAR Presentation')
     // Logged here, not in the mapping step: this is where a deck actually exists, so a row
     // means a presentation was produced rather than merely attempted. The token figures
     // travelled with the plan from mapping. Awaited but never fatal — see lib/stats.ts.
@@ -81,9 +89,21 @@ export async function POST(req: NextRequest) {
       inputTokens:  plan.usage?.inputTokens ?? 0,
       outputTokens: plan.usage?.outputTokens ?? 0,
       calls:        plan.usage?.calls ?? 0,
-      slideCount:   plan.slides.length,
+      slideCount:   builtPlan.slides.length,
     })
-    return NextResponse.json({ url, presentationId, validation, deckFacts, _planSnapshot })
+
+    // Ordered deliberately: the replacement exists before the original is removed. Deleting
+    // first would turn any failure past this point into a lost deck. Failing to delete is
+    // only an extra file in a folder, so it never breaks the response.
+    if (body.replaces && body.replaces !== presentationId) {
+      try {
+        await deleteDeck(accessToken, body.replaces)
+      } catch (e: unknown) {
+        console.warn(`[generate] не вдалося видалити замінений дек ${body.replaces}: ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+
+    return NextResponse.json({ url, presentationId, validation, deckFacts, plan: builtPlan, _planSnapshot })
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e)
     console.error('[generate] error:', message)

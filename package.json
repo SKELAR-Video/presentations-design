@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "check-deck": "node scripts/check-deck.js",
-    "check-split": "tsx scripts/check-split.ts",
+    "check-split": "npx tsx scripts/check-split.ts",
     "validate-fixture": "tsc --project scripts/tsconfig.fixture.json && node .fx-build/scripts/validate-fixture.js"
   },
   "dependencies": {
