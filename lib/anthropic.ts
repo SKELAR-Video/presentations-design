@@ -13,15 +13,26 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 // switching models meant finding all five and getting all five right; the Модель column in
 // the usage sheet would have quietly recorded whichever one was missed.
 //
-// Sonnet 5 costs the same per token as 4.6 and is stronger on exactly this kind of work.
-const MAPPING_MODEL = 'claude-sonnet-5'
+// Back on 4.6 after a reported quality regression on Sonnet 5: slides coming out under the
+// wrong composition and titles going missing. Both are decisions this step makes, and the
+// model was the only thing that changed in it — the repair panel added the same day does
+// nothing until a person presses a button in it.
+//
+// Not a verdict on Sonnet 5. The prompt here was written and tuned against 4.6 over a long
+// time, and 4.6 fills gaps that a more literal reader leaves empty; the honest reading is
+// that the prompt, not the model, is what is 4.6-shaped. Worth returning to deliberately —
+// with the prompt reviewed and one brief generated on each model side by side — rather than
+// as a one-line swap in the middle of other work, which is what this was.
+const MAPPING_MODEL = 'claude-sonnet-4-6'
 
-// Sonnet 5 thinks by default when this is left out — 4.6 did not. That matters here because
-// max_tokens is a ceiling on thinking AND answer together: thinking would eat into the same
-// 8192 the JSON plan has to fit in, and a plan cut off mid-JSON fails to parse, which costs
-// a retry at best. Turning it off makes this a like-for-like swap, so if anything changes,
-// the model is the only thing that changed. Thinking is worth trying on its own afterwards,
-// with room in max_tokens made for it first.
+// Stated explicitly rather than left to the model's default, so the behaviour does not
+// change silently underneath a model swap: 4.6 runs without thinking when the field is
+// omitted, Sonnet 5 runs with it. Written down, both behave the same, and a future swap
+// moves one variable instead of two.
+//
+// Off, because max_tokens is a ceiling on thinking AND answer together: thinking would eat
+// into the same 8192 the JSON plan has to fit in, and a plan cut off mid-JSON does not
+// parse. Turning it on is worth trying — after max_tokens has room made for it.
 const MAPPING_THINKING = { type: 'disabled' } as const
 
 // ─── Token accounting ─────────────────────────────────────────────────────────
