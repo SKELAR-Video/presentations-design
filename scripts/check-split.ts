@@ -154,5 +154,33 @@ console.log(`${applyOk ? 'PASS' : 'FAIL'}  applySplits: порядок і гру
 console.log(`      слайдів: ${applied.slides.length} (очікували 4), у групі: ${applied.slides.filter(s => s.splitGroup).length} (очікували 2)`)
 console.log(`      ${applied.notes.join(' | ')}`)
 
+// ─── Re-expansion is idempotent ───────────────────────────────────────────────
+// The repair flow feeds an already-expanded plan back into the generator, so expanding
+// twice must give the same deck as expanding once. Before the variantOf marker it did not:
+// every design variant was expanded into variants of its own, one sheet became N², and a
+// slide numbered 8 came back numbered 20 without a word of its content changing.
+import { expandPlanWithVariants } from '../lib/google'
+import type { SlidePlan } from '../lib/types'
+
+const variantPlan: SlidePlan = {
+  theme: 'dark',
+  slides: [
+    slide('v1', 'three_columns', {
+      'ЗАГОЛОВОК': 'Три напрямки',
+      'КОЛОНКА_1': 'Перший\nОпис першого напрямку',
+      'КОЛОНКА_2': 'Другий\nОпис другого напрямку',
+      'КОЛОНКА_3': 'Третій\nОпис третього напрямку',
+    }),
+    slide('v2', 'title_body', { 'ЗАГОЛОВОК': 'Підсумок', 'ТЕКСТ': 'Один\nДва' }),
+  ],
+}
+
+const once  = expandPlanWithVariants(variantPlan).expanded
+const twice = expandPlanWithVariants(once).expanded
+const stable = once.slides.length === twice.slides.length
+if (!stable) failed++
+console.log(`${stable ? 'PASS' : 'FAIL'}  повторне розгортання варіантів нічого не додає`)
+console.log(`      один раз: ${once.slides.length} слайдів, двічі: ${twice.slides.length} (мають збігатись)`)
+
 console.log(`\n${failed === 0 ? 'ALL PASS' : `${failed} FAIL`}`)
 process.exit(failed === 0 ? 0 : 1)

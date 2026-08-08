@@ -39,6 +39,12 @@ export type Slide = {
   // heading by design, so the checks that police repetition have to be able to tell this
   // apart from the model heading two unrelated sheets identically.
   splitGroup?: string
+  // Set by expandPlanWithVariants on each design variant it produces. Its only job is to
+  // stop a second expansion: a plan that has already been expanded now comes back into the
+  // generator when a person repairs a deck, and without this marker every variant is
+  // expanded into variants of its own — one sheet turns into N², and slide 8 becomes
+  // slide 20 without a single word changing.
+  variantOf?: string
 }
 
 export type SlidePlan = {

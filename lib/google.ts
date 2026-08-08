@@ -3260,7 +3260,7 @@ function remapSlotsForVariant(
 
 type VariantInfo = { variantIdx: number; totalVariants: number }
 
-function expandPlanWithVariants(plan: SlidePlan): {
+export function expandPlanWithVariants(plan: SlidePlan): {
   expanded: SlidePlan
   variantMap: Map<number, VariantInfo>
 } {
@@ -3340,6 +3340,14 @@ function expandPlanWithVariants(plan: SlidePlan): {
         composition: plain,
         slots: remapSlotsForVariant(slide.slots, slide.composition, plain),
       }
+    }
+
+    // Already a variant of something. Expanding it again would produce variants of a
+    // variant: the repair flow hands this function a plan it has already expanded once, and
+    // without this guard one sheet becomes N² slides.
+    if (slide.variantOf) {
+      expandedSlides.push(slide)
+      continue
     }
 
     const group = VARIANT_GROUPS.find(g => g.includes(slide.composition))
@@ -3439,6 +3447,7 @@ function expandPlanWithVariants(plan: SlidePlan): {
       expandedSlides.push({
         ...slide,
         id: `${slide.id}_v${vi + 1}`,
+        variantOf: slide.id,
         composition: varComp,
         slots: varSlots,
         flags: { ...(slide.flags ?? {}) },
