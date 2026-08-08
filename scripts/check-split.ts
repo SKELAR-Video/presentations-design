@@ -144,7 +144,7 @@ const plan: Slide[] = [
   CASES[0].slide,
   slide('c', 'closing', { 'ЗАГОЛОВОК': 'Дякую' }),
 ]
-const applied = applySplits(plan, [{ ...CASES[0].overload, slideIndex: 1 }], new Set([1]))
+const applied = applySplits(plan, [{ ...CASES[0].overload, slideIndex: 1 }], new Map([[1, 'split' as const]]))
 const orderOk = applied.slides[0].id === 'a' && applied.slides[applied.slides.length - 1].id === 'c'
 const countOk = applied.slides.length === 4
 const groupOk = applied.slides.filter(s => s.splitGroup === 'split_1').length === 2
@@ -166,7 +166,7 @@ const bothOverloads = [
   { ...CASES[0].overload, slideIndex: 0 },
   { ...CASES[2].overload, slideIndex: 1 },
 ]
-const decided = applySplits(twoOffered, bothOverloads, new Set([0]))
+const decided = applySplits(twoOffered, bothOverloads, new Map([[0, 'split' as const], [1, 'keep' as const]]))
 const keptFlagged  = decided.slides.filter(s => s.keepSmall).length === 1
 const keptIsRight  = decided.slides.find(s => s.keepSmall)?.id === 'kept'
 const partsClean   = decided.slides.filter(s => s.splitGroup).every(s => !s.keepSmall)
@@ -175,6 +175,17 @@ if (!decideOk) failed++
 console.log(`${decideOk ? 'PASS' : 'FAIL'}  відмова запам'ятовується, частини її не успадковують`)
 console.log(`      з keepSmall: ${decided.slides.filter(s => s.keepSmall).map(s => s.id).join(', ') || '—'} (очікували: kept)`)
 console.log(`      частин розкладеного: ${decided.slides.filter(s => s.splitGroup).length}, з них помилково прийнятих: ${decided.slides.filter(s => s.splitGroup && s.keepSmall).length} (очікували 0)`)
+
+// A slide sent to shortening must come back untouched by applySplits — in particular
+// without keepSmall, which would silence the very next measurement of a slide that was just
+// rewritten so it could be measured again.
+const shortened = applySplits(twoOffered, bothOverloads, new Map([[1, 'shorten' as const]]))
+const shortenOk = shortened.slides.length === 2
+  && shortened.slides.every(s => !s.keepSmall)
+  && shortened.slides.every(s => !s.splitGroup)
+if (!shortenOk) failed++
+console.log(`${shortenOk ? 'PASS' : 'FAIL'}  слайд, відданий на скорочення, не позначається прийнятим`)
+console.log(`      слайдів: ${shortened.slides.length} (очікували 2), з keepSmall: ${shortened.slides.filter(s => s.keepSmall).length} (очікували 0)`)
 
 // ─── Re-expansion is idempotent ───────────────────────────────────────────────
 // The repair flow feeds an already-expanded plan back into the generator, so expanding

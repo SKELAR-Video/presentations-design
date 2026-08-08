@@ -392,6 +392,7 @@ function checkContentIntegrity(
   slots: Record<string, string>,
   compId: string,
   sourceText?: string,
+  shortenedFrom?: Record<string, string>,
 ): CheckResult {
   const comp = getComposition(compId)
   if (!comp) return { check: 'content_integrity', pass: true, detail: 'composition not found — skipped' }
@@ -413,6 +414,10 @@ function checkContentIntegrity(
 
     // (b) verbatim check — needs the original brief to compare against
     if (!sourceText) continue
+    // A slot a person chose to shorten is deliberately no longer verbatim. Reporting it as
+    // lost content would be the check contradicting the decision it was told about; the
+    // words it replaced are not gone, they are in the slide's speaker notes.
+    if (shortenedFrom?.[name]?.trim()) continue
     const isKpiValue = /^КАРТКА_\d+_ЗНАЧЕННЯ$/.test(name)
     const lines = v.split('\n').map(l => l.trim()).filter(Boolean)
     for (const line of lines) {
@@ -942,8 +947,11 @@ export function checkContentCoverage(plan: SlidePlan): CheckResult {
 
   // Every slot value of the whole deck, normalised once — final slots plus the
   // pre-render snapshot, so deliberate render-time rewrites are not read as loss.
+  // Originals of shortened slots count as present, because they are: they were written into
+  // the slide's speaker notes, in the same file. The line left the slide, not the deck.
   const deckBlob = normLoose([
     ...plan.slides.flatMap(s => Object.values(s.slots)),
+    ...plan.slides.flatMap(s => Object.values(s.shortenedFrom ?? {})),
     ...(plan.preRenderSlots ?? []),
   ].join(' \n '))
 
@@ -1065,7 +1073,7 @@ export async function validateDeck(
     checks.push(checkAutofit(slide))
     checks.push(checkFont(slide))
     checks.push(checkMaxChars(planSlide.slots, compId))
-    checks.push(checkContentIntegrity(planSlide.slots, compId, plan.sourceText))
+    checks.push(checkContentIntegrity(planSlide.slots, compId, plan.sourceText, planSlide.shortenedFrom))
     checks.push(checkBadge(slide, compId, planSlide.slots))
     checks.push(checkLogoOverlap(slide, compId, planSlide.slots))
     // Flat-list rules (plan-level, always run)

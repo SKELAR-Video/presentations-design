@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ValidationReport, SlideValidation, SlideOverload } from '@/lib/validator'
 import type { DeckFactReport, SlideDeckFacts, DeckFact, SlidePlan } from '@/lib/types'
-import { applySplits } from '@/lib/split'
+import { applySplits, splitSlide, type Decision } from '@/lib/split'
 
 export default function ResultPage() {
   const router = useRouter()
@@ -16,6 +16,7 @@ export default function ResultPage() {
   const [fixing, setFixing]         = useState(false)
   const [fixError, setFixError]     = useState('')
   const [fixNotes, setFixNotes]     = useState<string[]>([])
+  const [fixStage, setFixStage]     = useState('')
 
   useEffect(() => {
     const stored = sessionStorage.getItem('deck_url')
@@ -38,6 +39,16 @@ export default function ResultPage() {
   const overloads = allOverloads.filter(o => !o.accepted)
   const accepted  = allOverloads.filter(o => o.accepted)
 
+  // Whether splitting can actually do anything for each slide, decided by running the real
+  // splitter rather than guessing from the numbers. A sheet written as one unbroken
+  // paragraph has nothing to divide, and offering "розкласти" as its default would be an
+  // offer that fails the moment it is accepted — there, shortening is the only repair left.
+  const splittable = new Set(
+    overloads
+      .filter(o => plan?.slides[o.slideIndex] && splitSlide(plan.slides[o.slideIndex], o))
+      .map(o => o.slideIndex),
+  )
+
   // What the folded diagnostics are for: anything wrong that the panel above does NOT
   // already say in plain words. readable_font is excluded because the panel is that check,
   // restated for a person — repeating it as "readable_font: ТЕКСТ 12pt (floor 18)" adds a
@@ -55,13 +66,45 @@ export default function ResultPage() {
   // its promise is worse than no button.
   const canRepair = Boolean(plan && deckId && overloads.length > 0)
 
-  async function handleFix(chosen: Set<number>) {
+  async function handleFix(decisions: Map<number, Decision>) {
     if (!plan || !deckId) return
     setFixing(true)
     setFixError('')
     setFixNotes([])
     try {
-      const { slides, notes } = applySplits(plan.slides, overloads, chosen)
+      const allNotes: string[] = []
+      let slides = plan.slides
+
+      // Shortening first, and by itself: it rewrites slots in place, so slide numbers still
+      // match the report. Splitting changes how many slides there are, so it has to come
+      // after — the other order would send the shortener at the wrong slide.
+      const targets = [...decisions.entries()]
+        .filter(([, d]) => d === 'shorten')
+        .map(([slideIndex]) => {
+          const o = overloads.find(x => x.slideIndex === slideIndex)!
+          const worst = [...o.slots].sort((a, b) => b.cutPct - a.cutPct)[0]
+          return { slideIndex, slot: worst.slot, cutPct: worst.cutPct }
+        })
+
+      if (targets.length) {
+        setFixStage('Скорочую текст…')
+        const res = await fetch('/api/shorten', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slides, targets }),
+        })
+        const text = await res.text()
+        const data = text.trim() ? JSON.parse(text) : {}
+        if (!res.ok) throw new Error(data.error ?? `Помилка скорочення (${res.status})`)
+        slides = data.slides
+        allNotes.push(...(data.notes ?? []))
+      }
+
+      setFixStage('Перезбираю презентацію…')
+      const applied = applySplits(slides, overloads, decisions)
+      slides = applied.slides
+      allNotes.push(...applied.notes)
+      const notes = allNotes
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -91,6 +134,7 @@ export default function ResultPage() {
       setFixError(e instanceof Error ? e.message : 'Невідома помилка')
     } finally {
       setFixing(false)
+      setFixStage('')
     }
   }
 
@@ -121,6 +165,8 @@ export default function ResultPage() {
             overloads={overloads}
             acceptedCount={accepted.length}
             fixing={fixing}
+            stage={fixStage}
+            splittable={splittable}
             error={fixError}
             notes={fixNotes}
             onFix={handleFix}
@@ -178,35 +224,39 @@ export default function ResultPage() {
 // docs/rules/typography.md) — but it is a default, not a verdict, and the deck above is
 // already usable if the person closes the tab instead.
 function OverloadPanel({
-  overloads, acceptedCount, fixing, error, notes, onFix,
+  overloads, acceptedCount, fixing, stage, error, notes, splittable, onFix,
 }: {
   overloads: SlideOverload[]
   acceptedCount: number
   fixing: boolean
+  stage: string
   error: string
   notes: string[]
-  onFix: (chosen: Set<number>) => void
+  splittable: Set<number>
+  onFix: (decisions: Map<number, Decision>) => void
 }) {
-  const [split, setSplit] = useState<Set<number>>(
-    () => new Set(overloads.map(o => o.slideIndex)),
+  // Splitting loses nothing at all, so it is the default wherever it can work. Where it
+  // cannot, the default falls to shortening rather than to an option that would fail the
+  // moment it is accepted.
+  const initial = () => new Map<number, Decision>(
+    overloads.map(o => [o.slideIndex, splittable.has(o.slideIndex) ? 'split' : 'shorten']),
   )
+  const [decisions, setDecisions] = useState<Map<number, Decision>>(initial)
 
   // Re-armed whenever a rebuild returns a different set of slides: the previous answers were
   // about slides that no longer exist under those numbers.
   useEffect(() => {
-    setSplit(new Set(overloads.map(o => o.slideIndex)))
+    setDecisions(initial())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overloads])
 
-  function toggle(idx: number, wantSplit: boolean) {
-    setSplit(prev => {
-      const next = new Set(prev)
-      if (wantSplit) next.add(idx); else next.delete(idx)
-      return next
-    })
+  function choose(idx: number, decision: Decision) {
+    setDecisions(prev => new Map(prev).set(idx, decision))
   }
 
   const count = overloads.length
   const word = count === 1 ? 'слайд' : count < 5 ? 'слайди' : 'слайдів'
+  const toDo = [...decisions.values()].filter(d => d !== 'keep').length
 
   return (
     <div className="text-left border border-[#3B404C] rounded-xl p-5 space-y-4">
@@ -230,28 +280,27 @@ function OverloadPanel({
               </p>
             </div>
             <div className="flex gap-1 shrink-0">
-              <button
-                onClick={() => toggle(o.slideIndex, true)}
-                disabled={fixing}
-                className={`text-xs px-3 py-1.5 rounded-lg border transition-colors disabled:opacity-50 ${
-                  split.has(o.slideIndex)
-                    ? 'border-[#FD3433] text-white'
-                    : 'border-[#292D39] text-[#A2A6B1] hover:border-[#A2A6B1]'
-                }`}
-              >
-                Розкласти на {o.slidesNeeded}
-              </button>
-              <button
-                onClick={() => toggle(o.slideIndex, false)}
-                disabled={fixing}
-                className={`text-xs px-3 py-1.5 rounded-lg border transition-colors disabled:opacity-50 ${
-                  !split.has(o.slideIndex)
-                    ? 'border-[#FD3433] text-white'
-                    : 'border-[#292D39] text-[#A2A6B1] hover:border-[#A2A6B1]'
-                }`}
-              >
-                Лишити
-              </button>
+              {([
+                ['split',   `Розкласти на ${o.slidesNeeded}`],
+                ['shorten', `Скоротити на ${Math.max(...o.slots.map(s => s.cutPct))}%`],
+                ['keep',    'Лишити'],
+              ] as [Decision, string][]).map(([value, label]) => (
+                <button
+                  key={value}
+                  onClick={() => choose(o.slideIndex, value)}
+                  disabled={fixing || (value === 'split' && !splittable.has(o.slideIndex))}
+                  title={value === 'split' && !splittable.has(o.slideIndex)
+                    ? 'Суцільний текст без переносів — ділити нема на чому'
+                    : undefined}
+                  className={`text-xs px-3 py-1.5 rounded-lg border transition-colors disabled:opacity-50 ${
+                    decisions.get(o.slideIndex) === value
+                      ? 'border-[#FD3433] text-white'
+                      : 'border-[#292D39] text-[#A2A6B1] hover:border-[#A2A6B1]'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
         ))}
@@ -266,18 +315,19 @@ function OverloadPanel({
       )}
 
       <button
-        onClick={() => onFix(split)}
-        disabled={fixing || split.size === 0}
+        onClick={() => onFix(decisions)}
+        disabled={fixing || toDo === 0}
         className="w-full py-3 rounded-xl border border-[#FD3433] text-white text-sm hover:bg-[#FD3433]/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         {fixing
-          ? 'Перезбираю презентацію…'
-          : split.size === 0
-            ? 'Нічого не обрано'
-            : `Розкласти ${split.size} і перезібрати`}
+          ? (stage || 'Перезбираю презентацію…')
+          : toDo === 0
+            ? 'Усе лишається як є'
+            : `Виправити ${toDo} і перезібрати`}
       </button>
       <p className="text-xs text-[#A2A6B1]">
         Стара версія видаляється тільки після того, як нова успішно зібралась.
+        Скорочений текст переписує модель — оригінал із ТЗ лишається в нотатках слайда.
       </p>
       {acceptedCount > 0 && (
         <p className="text-xs text-[#A2A6B1] border-t border-[#292D39] pt-3">

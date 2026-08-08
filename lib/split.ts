@@ -148,27 +148,35 @@ export function splitSlide(slide: Slide, overload: SlideOverload): SplitResult |
 // Parts of one sheet are tied together by `splitGroup` so the checks that care about
 // repetition — no_duplicate_title above all — can tell a deliberate split from the model
 // accidentally heading two different sheets the same way.
+export type Decision = 'split' | 'shorten' | 'keep'
+
 export function applySplits(
   slides: Slide[],
   overloads: SlideOverload[],
-  chosen: Set<number>,
+  decisions: Map<number, Decision>,
 ): { slides: Slide[]; notes: string[] } {
   const byIndex = new Map(overloads.map(o => [o.slideIndex, o]))
-  const offered = new Set(overloads.map(o => o.slideIndex))
   const out: Slide[] = []
   const notes: string[] = []
 
   slides.forEach((slide, i) => {
-    if (!offered.has(i)) { out.push(slide); return }
+    const decision = decisions.get(i)
+    // Not offered, or already handled elsewhere. Shortening happens before this runs and
+    // rewrites the slot in place, so those slides need nothing here — least of all a
+    // keepSmall marker, which would silence the next measurement of a slide that was just
+    // rewritten precisely so it could be measured again.
+    if (!decision || decision === 'shorten') { out.push(slide); return }
 
-    if (!chosen.has(i)) {
+    if (decision === 'keep') {
       // Offered and declined. Recorded on the slide so the rebuild does not report the
       // answer back as a fresh problem and ask again.
       out.push({ ...slide, keepSmall: true })
       return
     }
 
-    const result = splitSlide(slide, byIndex.get(i)!)
+    const overload = byIndex.get(i)
+    if (!overload) { out.push(slide); return }
+    const result = splitSlide(slide, overload)
     if (!result) {
       // Nothing divisible on this slide — a single unbroken paragraph, or one card. Kept
       // whole rather than cut mid-sentence, and said out loud instead of silently ignored.
