@@ -1,4 +1,4 @@
-import { auditShortening, extractFigures, extractNames, originalTextNote } from '../lib/shorten'
+import { auditShortening, extractFigures, extractNames, originalTextNote, shortenPrompt } from '../lib/shorten'
 
 // The audit is the whole safety of shortening, so it is tested the way a lock is tested:
 // by trying to open it. Each case states what the audit must SAY, not merely that it runs.
@@ -132,6 +132,32 @@ if (!noteOk) failed++
 console.log(`${noteOk ? 'PASS' : 'FAIL'}  оригінал іде в нотатки, і тільки коли є що класти`)
 console.log(`      без скорочення: ${noNote ? 'нотатки немає' : 'НОТАТКА Є — помилка'}`)
 console.log(`      зі скороченням: ${note.split('\n')[0]}`)
+
+// Numbering a bullet is the shape of a list, not a claim about the world. Counting it as a
+// figure rejected an honest rewrite for "inventing" the number 1 on the first live run.
+const numbered = auditShortening(
+  'Аналітика ринку і збір даних\nРобота з партнерами\nМаркетинг і залучення',
+  '1. Аналітика ринку\n2. Партнери\n3. Маркетинг',
+  30,
+)
+const enumOk = numbered.ok
+if (!enumOk) failed++
+console.log(`${enumOk ? 'PASS' : 'FAIL'}  нумерація списку не рахується вигаданими числами`)
+console.log(`      ${numbered.ok ? 'прийнято' : `відхилено: ${numbered.problems.join('; ')}`}`)
+
+// Trimming words inside every line tops out around a fifth of the text. Demanding half while
+// also forbidding the removal of any item is arithmetically impossible — and that is exactly
+// what the first live run asked for: 8% delivered where 53% was needed.
+const body = ['Перший пункт про щось важливе', 'Другий пункт про інше', 'Третій пункт',
+              'Четвертий пункт', 'П’ятий пункт', 'Шостий пункт'].join('\n')
+const deep    = shortenPrompt(body, 53)
+const shallow = shortenPrompt(body, 15)
+const promptOk = deep.includes('ПРИБРАТИ найменш важливі пункти')
+  && !shallow.includes('ПРИБРАТИ найменш важливі пункти')
+  && shallow.includes('скільки рядків було, стільки має лишитись')
+if (!promptOk) failed++
+console.log(`${promptOk ? 'PASS' : 'FAIL'}  глибокий зріз дозволяє викидати пункти, дрібний — ні`)
+console.log(`      53%: ${deep.includes('ПРИБРАТИ') ? 'можна викидати' : 'НЕ можна — помилка'}; 15%: ${shallow.includes('ПРИБРАТИ') ? 'можна — помилка' : 'структура зберігається'}`)
 
 console.log(`\n${failed === 0 ? 'ALL PASS' : `${failed} FAIL`}`)
 process.exit(failed === 0 ? 0 : 1)

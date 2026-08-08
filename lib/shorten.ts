@@ -32,8 +32,14 @@ export function normalizeFigure(raw: string): string {
     .replace(/\.$/, '')
 }
 
+// A leading "1." or "2)" is the shape of a list, not a fact about the world. Counting it as
+// a figure made the audit reject an honest rewrite for "inventing" the number 1, purely
+// because the model numbered its bullets — see the first live run.
+const ENUMERATION = /^\s*\d{1,2}\s*[.)]\s+/
+
 export function extractFigures(text: string): string[] {
-  return (text.match(FIGURE) ?? [])
+  const body = text.split('\n').map(l => l.replace(ENUMERATION, '')).join('\n')
+  return (body.match(FIGURE) ?? [])
     .map(normalizeFigure)
     .filter(f => /\d/.test(f))
 }
@@ -132,14 +138,28 @@ export function originalTextNote(
   return `ОРИГІНАЛ З ТЗ (текст на слайді скорочено за рішенням людини)\n\n${blocks.join('\n\n')}\n`
 }
 
+// How much has to go decides what the model is allowed to do. Trimming words inside every
+// line has a ceiling somewhere around a fifth of the text; asking for half while also
+// forbidding the removal of any item is asking for something arithmetically impossible.
+// The first live run proved it: 8% cut where 53% was needed, 15% where 39% was, on a prompt
+// that ordered "as many lines out as came in".
+const DROP_ITEMS_ABOVE_PCT = 25
+
 export function shortenPrompt(text: string, targetCutPct: number): string {
+  const lines = text.split('\n').filter(l => l.trim()).length
+  const mayDropItems = targetCutPct > DROP_ITEMS_ABOVE_PCT && lines > 2
+
+  const structureRule = mayDropItems
+    ? `3. Щоб зрізати стільки, доведеться ПРИБРАТИ найменш важливі пункти цілком — це дозволено і очікувано. Залиши приблизно ${Math.max(2, Math.round(lines * (1 - targetCutPct / 100)))} з ${lines} пунктів, кожен окремим рядком. Пункти, які лишились, не зливай в один абзац.`
+    : `3. Зберігай структуру: скільки рядків було, стільки має лишитись. Кожен рядок скорочуй окремо.`
+
   return `Скороти цей текст для слайда презентації приблизно на ${targetCutPct}%.
 
 ПРАВИЛА:
-1. Прибирай слова — не переписуй зміст своїми словами.
+1. Прибирай слова й цілі пункти — не переписуй зміст своїми словами.
 2. НЕ додавай жодного числа, назви, імені чи факту, якого немає в оригіналі.
-3. Зберігай структуру: скільки рядків було, стільки має лишитись. Кожен рядок скорочуй окремо.
-4. Не додавай заголовків, пояснень, лапок чи коментарів.
+${structureRule}
+4. Не додавай заголовків, пояснень, лапок, коментарів і нумерації, якої не було.
 5. Мова та сама, що в оригіналі.
 
 Поверни ТІЛЬКИ скорочений текст, без нічого зайвого.
