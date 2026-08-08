@@ -49,3 +49,4 @@ next-env.d.ts
 
 # diagnostic run artifacts
 scripts/.last-plan.json
+lib/layout.ts
