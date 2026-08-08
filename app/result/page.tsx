@@ -32,6 +32,19 @@ export default function ResultPage() {
 
   const overallPass = deckFacts ? deckFacts.pass : (validation?.pass ?? true)
   const overloads = validation?.overloads ?? []
+
+  // What the folded diagnostics are for: anything wrong that the panel above does NOT
+  // already say in plain words. readable_font is excluded because the panel is that check,
+  // restated for a person — repeating it as "readable_font: ТЕКСТ 12pt (floor 18)" adds a
+  // wall of jargon and no information.
+  //
+  // Gating this on overallPass was wrong: that flag is computed from the bento/KPI facts
+  // alone and knows nothing about the static checks, so a deck failing validation still
+  // counted as passing and hid its own diagnostics.
+  const hasOtherFails =
+    (deckFacts ? !deckFacts.pass : false) ||
+    (validation?.slides ?? []).some(sv =>
+      sv.checks.some(c => !c.pass && c.check !== 'readable_font'))
   // The repair needs the plan whose slide numbers match the report. Without it the panel
   // could still describe the problem but could not act on it, and a button that cannot keep
   // its promise is worse than no button.
@@ -115,7 +128,7 @@ export default function ResultPage() {
             being open would be back to greeting every user with a wall of diagnostics.
             Absent entirely on a clean deck: an always-present "technical details" line is
             still the validator greeting someone who has no question. */}
-        {!overallPass && (deckFacts || (validation && !validation.pass)) && (
+        {hasOtherFails && (
           <details className="text-left group">
             <summary className="cursor-pointer list-none text-xs text-[#A2A6B1] hover:text-white transition-colors select-none">
               <span className="inline-block transition-transform group-open:rotate-90">›</span>{' '}
