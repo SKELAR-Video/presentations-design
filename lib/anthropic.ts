@@ -7,6 +7,22 @@ import type { SourceSlide } from '@/app/api/fetch-doc/route'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
+// ─── Which model does the mapping ─────────────────────────────────────────────
+// One name in one place. It used to be the same string typed out at five call sites, so
+// switching models meant finding all five and getting all five right; the Модель column in
+// the usage sheet would have quietly recorded whichever one was missed.
+//
+// Sonnet 5 costs the same per token as 4.6 and is stronger on exactly this kind of work.
+const MAPPING_MODEL = 'claude-sonnet-5'
+
+// Sonnet 5 thinks by default when this is left out — 4.6 did not. That matters here because
+// max_tokens is a ceiling on thinking AND answer together: thinking would eat into the same
+// 8192 the JSON plan has to fit in, and a plan cut off mid-JSON fails to parse, which costs
+// a retry at best. Turning it off makes this a like-for-like swap, so if anything changes,
+// the model is the only thing that changed. Thinking is worth trying on its own afterwards,
+// with room in max_tokens made for it first.
+const MAPPING_THINKING = { type: 'disabled' } as const
+
 // ─── Token accounting ─────────────────────────────────────────────────────────
 // Mapping is the only paid step, and it can make more than one call: the first pass, plus
 // a retry when content would otherwise be lost, plus a section-count probe for briefs with
@@ -416,7 +432,8 @@ JSON з рівно ${slides.length} елементами в "slides".`
 
   const usage = emptyUsage()
   const message = await client.messages.create({
-    model: 'claude-sonnet-4-6',
+    model: MAPPING_MODEL,
+    thinking: MAPPING_THINKING,
     max_tokens: 8192,
     system: SYSTEM_1TO1,
     messages: [{ role: 'user', content: userMessage }],
@@ -512,7 +529,8 @@ ${report}
 
     try {
       const retry = await client.messages.create({
-        model: 'claude-sonnet-4-6',
+        model: MAPPING_MODEL,
+        thinking: MAPPING_THINKING,
         max_tokens: 8192,
         system: SYSTEM_1TO1,
         messages: [
@@ -706,7 +724,8 @@ ${fragmentsList}
 Поверни JSON з планом слайдів.`
 
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
+    model: MAPPING_MODEL,
+    thinking: MAPPING_THINKING,
     max_tokens: 8192,
     system: SYSTEM_VERBATIM,
     messages: [{ role: 'user', content: userMessage }],
@@ -747,7 +766,8 @@ ${fragmentsList}
 ${sheetSummary}
 Поверни JSON з РІВНО ${targetCount} слайдами. Аркуш з одним рядком → "section". Не зливай аркуші.`
     const retry = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: MAPPING_MODEL,
+      thinking: MAPPING_THINKING,
       max_tokens: 8192,
       system: SYSTEM_VERBATIM,
       messages: [
@@ -898,7 +918,8 @@ ${sheetSummary}
 Поверни виправлений JSON з РІВНО ${mapping.slides.length} слайдами.`
 
     const ciRetry = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: MAPPING_MODEL,
+      thinking: MAPPING_THINKING,
       max_tokens: 8192,
       system: SYSTEM_VERBATIM,
       messages: [
