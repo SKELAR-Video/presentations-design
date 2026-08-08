@@ -3261,6 +3261,64 @@ function remapSlotsForVariant(
 
 type VariantInfo = { variantIdx: number; totalVariants: number }
 
+// ─── Downgrading must take the content with it ────────────────────────────────
+// A composition downgrade changes which layout draws the slide; on its own it does NOT
+// change what the slots are called. So a two_columns slide with one filled column becomes
+// title_body — a composition that has no КОЛОНКА_1 — and the text is left addressed to a
+// slot the master cannot place. The slide renders empty.
+//
+// Latent for a long time, because the model normally fills as many cards as the composition
+// it chose declares. Human-driven splitting produces single-card slides routinely, which is
+// what brought it out: ten split slides, ten blanks.
+//
+// The badges downgrade a few lines below already did this by hand (ПУНКТИ → ТЕКСТ). This is
+// the same move, for every downgrade rather than one.
+export function rehomeSlotsAfterDowngrade(
+  slots: Record<string, string>,
+  fromComp: string,
+  toComp: string,
+): Record<string, string> {
+  const target = getComposition(toComp)
+  if (!target) return slots
+  const declared = new Set(target.slots.map(s => s.name))
+  const out: Record<string, string> = {}
+  const homeless: string[] = []
+
+  // Numbered card/column slots, in order, so the text keeps the sequence the brief had.
+  const numbered = Object.keys(slots)
+    .filter(k => /^(КОЛОНКА|КАРТКА)_\d+$/.test(k) && slots[k]?.trim())
+    .sort((a, b) => Number(a.match(/_(\d+)$/)![1]) - Number(b.match(/_(\d+)$/)![1]))
+
+  for (const [key, value] of Object.entries(slots)) {
+    if (/^(КОЛОНКА|КАРТКА)_\d+$/.test(key)) continue
+    if (declared.has(key)) out[key] = value
+    else if (value?.trim()) homeless.push(value.trim())
+  }
+
+  // Renumber what survives from 1: the target may declare fewer card slots than the source,
+  // and a slot beyond its scale is a slot the master cannot place.
+  const targetCards = target.slots
+    .map(s => s.name)
+    .filter(n => /^(КОЛОНКА|КАРТКА)_\d+$/.test(n))
+  numbered.forEach((key, idx) => {
+    const home = targetCards[idx]
+    if (home) out[home] = slots[key]
+    else homeless.push(slots[key].trim())
+  })
+
+  // Whatever the target has no card slot for goes into its body, if it has one. Joining is
+  // the honest fallback: the words stay on the slide they belong to, in order.
+  if (homeless.length) {
+    if (declared.has('ТЕКСТ')) {
+      const existing = (out['ТЕКСТ'] ?? '').trim()
+      out['ТЕКСТ'] = [existing, ...homeless].filter(Boolean).join('\n')
+    } else {
+      console.warn(`[downgrade] ${fromComp} → ${toComp}: ${homeless.length} блоків нема куди покласти`)
+    }
+  }
+  return out
+}
+
 export function expandPlanWithVariants(plan: SlidePlan): {
   expanded: SlidePlan
   variantMap: Map<number, VariantInfo>
@@ -4324,18 +4382,21 @@ export async function buildPresentation(
     for (const slide of plan.slides) {
       if (slide.composition !== 'columns_flex') continue
       const filled = ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3', 'КОЛОНКА_4'].filter(t => !!slide.slots[t]).length
-      if (filled < 2) slide.composition = 'title_body'
+      if (filled < 2) {
+        slide.slots = rehomeSlotsAfterDowngrade(slide.slots, slide.composition, 'title_body')
+        slide.composition = 'title_body'
+      }
     }
     // four_columns/four_columns_num: КОЛОНКА_N slots — downgrade if < 4 filled.
     for (const slide of plan.slides) {
       if (slide.composition !== 'four_columns' && slide.composition !== 'four_columns_num') continue
       const filled = ['КОЛОНКА_1', 'КОЛОНКА_2', 'КОЛОНКА_3', 'КОЛОНКА_4'].filter(t => !!slide.slots[t]).length
       if (filled < 4) {
-        if (slide.composition === 'four_columns_num') {
-          slide.composition = filled >= 3 ? 'three_columns_num' : filled === 2 ? 'two_columns' : 'title_body'
-        } else {
-          slide.composition = filled >= 3 ? 'three_columns' : filled === 2 ? 'two_columns' : 'title_body'
-        }
+        const target = slide.composition === 'four_columns_num'
+          ? (filled >= 3 ? 'three_columns_num' : filled === 2 ? 'two_columns' : 'title_body')
+          : (filled >= 3 ? 'three_columns'     : filled === 2 ? 'two_columns' : 'title_body')
+        slide.slots = rehomeSlotsAfterDowngrade(slide.slots, slide.composition, target)
+        slide.composition = target
       }
     }
     for (const slide of plan.slides) {
@@ -4344,7 +4405,10 @@ export async function buildPresentation(
       const filled = tokens.filter(t => !!slide.slots[t]).length
       if (filled >= tokens.length) continue
       const target = DOWNGRADE[slide.composition]?.[filled]
-      if (target) slide.composition = target
+      if (target) {
+        slide.slots = rehomeSlotsAfterDowngrade(slide.slots, slide.composition, target)
+        slide.composition = target
+      }
     }
   }
 

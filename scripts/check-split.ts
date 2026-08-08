@@ -187,6 +187,49 @@ if (!shortenOk) failed++
 console.log(`${shortenOk ? 'PASS' : 'FAIL'}  слайд, відданий на скорочення, не позначається прийнятим`)
 console.log(`      слайдів: ${shortened.slides.length} (очікували 2), з keepSmall: ${shortened.slides.filter(s => s.keepSmall).length} (очікували 0)`)
 
+// ─── A short row is not split at all ──────────────────────────────────────────
+// Two cards dealt into one and one are two slides that each look like a mistake. The first
+// real run did exactly that to ten sheets; the person's word for the result was "купа
+// пустих слайдів". Splitting must refuse here so the panel offers shortening instead.
+for (const n of [2, 3]) {
+  const slots: Record<string, string> = { 'ЗАГОЛОВОК': 'Напрямки' }
+  for (let k = 1; k <= n; k++) slots[`КОЛОНКА_${k}`] = `Блок ${k}\nОпис блоку номер ${k}`
+  const short = splitSlide(slide(`row${n}`, 'three_columns', slots), overload([{ slot: 'КОЛОНКА_1', needed: 730, avail: 540 }], 2))
+  const ok = short === null
+  if (!ok) failed++
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ряд із ${n} карток не ділиться`)
+  console.log(`      результат: ${short ? `${short.slides.length} частин — ${short.note}` : 'не ділиться (очікували саме це)'}`)
+}
+
+// ─── Downgrade takes the content with it ──────────────────────────────────────
+// Changing the composition does not rename the slots. A two_columns slide with one filled
+// column becomes title_body — which has no КОЛОНКА_1 — and the text ends up addressed to a
+// slot the master cannot place. That is what rendered ten blank slides.
+import { rehomeSlotsAfterDowngrade } from '../lib/google'
+
+const orphaned = rehomeSlotsAfterDowngrade(
+  { 'ЗАГОЛОВОК': 'Один блок', 'КОЛОНКА_1': 'Аналітика\nЗбір даних по ринку' },
+  'two_columns',
+  'title_body',
+)
+const rehomeOk = orphaned['ЗАГОЛОВОК'] === 'Один блок'
+  && (orphaned['ТЕКСТ'] ?? '').includes('Збір даних по ринку')
+  && !('КОЛОНКА_1' in orphaned)
+if (!rehomeOk) failed++
+console.log(`${rehomeOk ? 'PASS' : 'FAIL'}  зниження композиції переносить текст у слот нової`)
+console.log(`      слоти після: ${Object.keys(orphaned).join(', ')} (КОЛОНКА_1 не має лишитись)`)
+
+// Same move where the target still has cards, just fewer of them.
+const narrowed = rehomeSlotsAfterDowngrade(
+  { 'ЗАГОЛОВОК': 'Два блоки', 'КОЛОНКА_1': 'Перший', 'КОЛОНКА_3': 'Третій' },
+  'three_columns',
+  'two_columns',
+)
+const renumberOk = narrowed['КОЛОНКА_1'] === 'Перший' && narrowed['КОЛОНКА_2'] === 'Третій'
+if (!renumberOk) failed++
+console.log(`${renumberOk ? 'PASS' : 'FAIL'}  картки перенумеровуються з 1 під нову композицію`)
+console.log(`      ${Object.entries(narrowed).filter(([k]) => k.startsWith('КОЛОНКА')).map(([k, v]) => `${k}=${v}`).join(', ')}`)
+
 // ─── Re-expansion is idempotent ───────────────────────────────────────────────
 // The repair flow feeds an already-expanded plan back into the generator, so expanding
 // twice must give the same deck as expanding once. Before the variantOf marker it did not:

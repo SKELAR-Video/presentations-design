@@ -17,6 +17,11 @@ import type { SlideOverload } from './validator'
 
 const NUMBERED = /_(\d+)$/
 
+// A row of cards is a row. Two cards split into one and one are two slides that each look
+// like a mistake, so a sheet is only dealt across parts when every part keeps a real row.
+const MIN_CARDS_PER_PART = 2
+const MIN_CARDS_TO_SPLIT = MIN_CARDS_PER_PART * 2
+
 // Slots that are not the content being divided: they identify the sheet rather than carry
 // its body. The title rides along on every part (unnumbered — a reader should not be told
 // they are looking at "3/5 of a thought"); the subtitle introduces the sheet once and would
@@ -69,10 +74,17 @@ function splitByCards(slide: Slide, parts: number): SplitResult | null {
     .filter(k => NUMBERED.test(k) && slide.slots[k]?.trim())
     .sort((a, b) => Number(a.match(NUMBERED)![1]) - Number(b.match(NUMBERED)![1]))
 
-  if (numbered.length < 2) return null
+  // Fewer than four cards cannot be dealt into parts without leaving a part holding one.
+  // A single card on a layout built for a row reads as a mistake — the first real run split
+  // ten such sheets and the person's word for the result was "купа пустих слайдів".
+  // Below four, splitting is refused so the panel offers shortening instead, which is the
+  // repair that actually helps a short row.
+  if (numbered.length < MIN_CARDS_TO_SPLIT) return null
 
-  const groups = balancedGroups(numbered, parts, k => slide.slots[k].length)
-  if (groups.length < 2) return null
+  // Capped so no part ends up with a single card, whatever the measurement asked for.
+  const maxParts = Math.floor(numbered.length / MIN_CARDS_PER_PART)
+  const groups = balancedGroups(numbered, Math.min(parts, maxParts), k => slide.slots[k].length)
+  if (groups.length < 2 || groups.some(g => g.length < MIN_CARDS_PER_PART)) return null
 
   const slides = groups.map((group, gi) => {
     const slots: Record<string, string> = {}
@@ -137,6 +149,14 @@ export function splitSlide(slide: Slide, overload: SlideOverload): SplitResult |
 
   const byCards = splitByCards(slide, parts)
   if (byCards) return byCards
+
+  // Line-splitting copies every other slot onto every part, which is right for a sheet whose
+  // body is one block and wrong for a row of cards: the untouched cards would be duplicated
+  // onto each part. So once a sheet has a row, cards are the only way it may be divided —
+  // and if the row is too short for that, it is not divided at all.
+  const cardCount = Object.keys(slide.slots)
+    .filter(k => NUMBERED.test(k) && slide.slots[k]?.trim()).length
+  if (cardCount > 1) return null
 
   // Widest overloaded slot first — with a single body slot there is normally just one.
   const target = [...overload.slots].sort((a, b) => b.neededPx - a.neededPx)[0]
