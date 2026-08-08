@@ -54,6 +54,11 @@ export type SlidePlan = {
   // line found in either this snapshot or the final slots, so deliberate rewrites don't
   // read as content loss.
   preRenderSlots?: string[]
+  // What the mapping stage cost, summed across every call it made — the first pass, any
+  // retry, and the section-count probe. Rides on the plan rather than being returned
+  // separately so it survives the trip map → browser → generate without changing any
+  // signature; the generator is where the deck (and so the row worth logging) exists.
+  usage?: { inputTokens: number; outputTokens: number; calls: number }
 }
 
 export type CompositionSlot = {

@@ -7,6 +7,29 @@ import type { SourceSlide } from '@/app/api/fetch-doc/route'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
+// ─── Token accounting ─────────────────────────────────────────────────────────
+// Mapping is the only paid step, and it can make more than one call: the first pass, plus
+// a retry when content would otherwise be lost, plus a section-count probe for briefs with
+// no sheet markers. A number that counted only the first call would understate exactly the
+// briefs that cost the most.
+//
+// Counted per mapping run rather than in a module-level total: this code runs serverless,
+// where one process may handle several requests and is discarded without warning, so a
+// running total in memory is both shared between users and lost at random.
+export type TokenUsage = { inputTokens: number; outputTokens: number; calls: number }
+
+function emptyUsage(): TokenUsage {
+  return { inputTokens: 0, outputTokens: 0, calls: 0 }
+}
+
+// Anthropic reports usage on every response, including the ones we end up discarding —
+// a rejected retry still cost money, so it still counts.
+function addUsage(acc: TokenUsage, msg: { usage?: { input_tokens?: number; output_tokens?: number } }): void {
+  acc.inputTokens  += msg.usage?.input_tokens  ?? 0
+  acc.outputTokens += msg.usage?.output_tokens ?? 0
+  acc.calls        += 1
+}
+
 // ─── Verbatim mapping mode ────────────────────────────────────────────────────
 // LLM assigns input fragment INDICES to slots — it never writes prose.
 // Text in each slot = verbatim line(s) from the original input.
@@ -388,6 +411,7 @@ ${slidesText}
 
 JSON з рівно ${slides.length} елементами в "slides".`
 
+  const usage = emptyUsage()
   const message = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 8192,
@@ -395,6 +419,7 @@ JSON з рівно ${slides.length} елементами в "slides".`
     messages: [{ role: 'user', content: userMessage }],
   })
 
+  addUsage(usage, message)
   const content = message.content[0]
   if (content.type !== 'text') throw new Error('Unexpected response type from Anthropic')
   const raw = content.text.trim()
@@ -493,6 +518,7 @@ ${report}
           { role: 'user', content: retryPrompt },
         ],
       })
+      addUsage(usage, retry)
       const rc = retry.content[0]
       if (rc.type === 'text') {
         const m2 = parse1to1Mapping(rc.text.trim())
@@ -525,6 +551,7 @@ ${report}
     console.log(`[mapSlides1to1] slide ${i + 1} (${slide.composition}): src_lines=${sourceLines(slides[i]).length} slots=${Object.keys(slide.slots).join(',') || '(none)'} lost=${missing[i]?.length ?? 0}`)
   })
 
+  console.log(`[usage] mapSlides1to1: ${usage.calls} calls, in=${usage.inputTokens} out=${usage.outputTokens}`)
   return {
     theme,
     sheetCount: slides.length,
@@ -532,6 +559,7 @@ ${report}
     // silently no-ops on every slide of a Slides brief (it needs sourceText to compare).
     sourceText: slides.flatMap(s => s.texts).join('\n'),
     slides: built,
+    usage,
   }
 }
 
@@ -609,7 +637,7 @@ export async function fixOverflowSlots(
 
 // Detect number of logical sections via Haiku — asks for a NUMBERED LIST so we can
 // count items instead of trusting a single integer output (more robust).
-async function detectSectionCount(text: string): Promise<number> {
+async function detectSectionCount(text: string, usage?: TokenUsage): Promise<number> {
   const response = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 400,
@@ -619,6 +647,7 @@ async function detectSectionCount(text: string): Promise<number> {
       content: `Визнач усі тематичні секції (слайди) у цьому брифі для презентації.\nДля кожної секції виведи рядок у форматі: "1. <перші кілька слів заголовку>"\nПерша — обкладинка. Остання — закриваючий слайд.\n\n${text.slice(0, 4000)}`,
     }],
   })
+  if (usage) addUsage(usage, response)
   const raw = response.content[0].type === 'text' ? response.content[0].text.trim() : ''
   const lines = raw.split('\n').filter(l => /^\d+\./.test(l.trim()))
   const n = lines.length
@@ -627,12 +656,13 @@ async function detectSectionCount(text: string): Promise<number> {
 }
 
 export async function mapToPlan(text: string, theme: Theme): Promise<SlidePlan> {
+  const usage = emptyUsage()
   const { sheets, fragments, sheetRanges, hasDelimiters } = parseSheets(text)
   // Only explicit ___ delimiters guarantee 1-sheet-per-slide
   const hasSheets = hasDelimiters && sheets.length >= 2
 
   // Target count: delimiter count (authoritative) OR Haiku numbered-list detection
-  const targetCount = hasSheets ? sheets.length : await detectSectionCount(text)
+  const targetCount = hasSheets ? sheets.length : await detectSectionCount(text, usage)
 
   // Compact catalog: slot names + max_chars so LLM knows what fits
   const catalogDescription = PHASE0_COMPOSITIONS.map((c) => {
@@ -678,6 +708,7 @@ ${fragmentsList}
     system: SYSTEM_VERBATIM,
     messages: [{ role: 'user', content: userMessage }],
   })
+  addUsage(usage, response)
   const content = response.content[0]
   if (content.type !== 'text') throw new Error('Unexpected response type from Anthropic')
 
@@ -722,6 +753,7 @@ ${sheetSummary}
         { role: 'user', content: retryPrompt },
       ],
     })
+    addUsage(usage, retry)
     const retryContent = retry.content[0]
     if (retryContent.type !== 'text') throw new Error('Unexpected retry response type')
     raw = retryContent.text.trim()
@@ -872,6 +904,7 @@ ${sheetSummary}
         { role: 'user', content: retryPrompt },
       ],
     })
+    addUsage(usage, ciRetry)
     const ciContent = ciRetry.content[0]
     if (ciContent.type === 'text') {
       try {
@@ -1005,5 +1038,6 @@ ${sheetSummary}
     ? sheetRanges.map(([start, end]) => fragments.slice(start, end + 1).filter(Boolean))
     : undefined
 
-  return { theme, slides, sourceText: text, sheetCount: targetCount >= 2 ? targetCount : undefined, fragmentGroups }
+  console.log(`[usage] mapToPlan: ${usage.calls} calls, in=${usage.inputTokens} out=${usage.outputTokens}`)
+  return { theme, slides, sourceText: text, sheetCount: targetCount >= 2 ? targetCount : undefined, fragmentGroups, usage }
 }

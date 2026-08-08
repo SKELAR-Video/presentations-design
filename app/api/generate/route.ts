@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { buildPresentation } from '@/lib/google'
+import { logGeneration } from '@/lib/stats'
 import type { SlidePlan } from '@/lib/types'
 
 export const maxDuration = 300
@@ -12,7 +13,7 @@ export async function POST(req: NextRequest) {
   const accessToken = session.accessToken
   if (!accessToken) return NextResponse.json({ error: 'No Google access token' }, { status: 401 })
 
-  const body = await req.json() as { plan: SlidePlan; title: string }
+  const body = await req.json() as { plan: SlidePlan; title: string; briefName?: string }
 
   if (!body.plan?.slides?.length) {
     return NextResponse.json({ error: 'План слайдів порожній' }, { status: 400 })
@@ -69,6 +70,18 @@ export async function POST(req: NextRequest) {
 
   try {
     const { url, presentationId, validation, deckFacts } = await buildPresentation(accessToken, plan, title || 'SKELAR Presentation')
+    // Logged here, not in the mapping step: this is where a deck actually exists, so a row
+    // means a presentation was produced rather than merely attempted. The token figures
+    // travelled with the plan from mapping. Awaited but never fatal — see lib/stats.ts.
+    await logGeneration({
+      userEmail:    session.user?.email ?? undefined,
+      briefName:    body.briefName,
+      deckUrl:      url,
+      inputTokens:  plan.usage?.inputTokens ?? 0,
+      outputTokens: plan.usage?.outputTokens ?? 0,
+      calls:        plan.usage?.calls ?? 0,
+      slideCount:   plan.slides.length,
+    })
     return NextResponse.json({ url, presentationId, validation, deckFacts, _planSnapshot })
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e)

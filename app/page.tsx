@@ -79,7 +79,7 @@ export default function HomePage() {
       const genRes = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan: mapData.plan, title: 'SKELAR Presentation' }),
+        body: JSON.stringify({ plan: mapData.plan, title: 'SKELAR Presentation', briefName: pickedName }),
       })
       const genData = await safeJson(genRes, 'generate')
       if (!genRes.ok) throw new Error(genData.error ?? 'Помилка генерації деку')
