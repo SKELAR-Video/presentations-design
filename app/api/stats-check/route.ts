@@ -64,5 +64,11 @@ export async function GET() {
     }
   }
 
-  return NextResponse.json({ ok: steps.every(s => s.ok), steps })
+  // Spelled out because a browser opening this URL directly guesses the encoding otherwise,
+  // and guesses Latin-1 — which turns every Ukrainian word in these messages into mojibake.
+  // The messages are the entire point of the endpoint.
+  return NextResponse.json(
+    { ok: steps.every(s => s.ok), steps },
+    { headers: { 'Content-Type': 'application/json; charset=utf-8' } },
+  )
 }
