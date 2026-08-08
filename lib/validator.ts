@@ -32,11 +32,39 @@ export type SlideValidation = {
   pass: boolean
 }
 
+// ─── Overload: the same finding as readable_font, in numbers instead of prose ──
+// readable_font already knows everything needed to offer a person a choice — which slot,
+// how short it fell, how many slides the text would need. It packed all of it into one
+// English sentence, which is fine for a log and useless for anything else: an interface
+// cannot lay out a sentence, and a splitter cannot divide by one.
+//
+// So the check now reports twice — the sentence for the diagnostics panel, these numbers
+// for everyone else. Same measurement, taken once, from the finished file; there is no
+// second estimate that could disagree with the first.
+export type OverloadSlot = {
+  slot: string          // slot name from the plan (ТЕКСТ, КАРТКА_2, …)
+  pt: number            // size actually written into the file
+  neededPx: number      // height this text needs at the readable floor
+  availPx: number       // height the box actually has
+  slidesNeeded: number  // how many slides the text would need, at the floor
+  cutPct: number        // or how much of it would have to go, in one slide
+}
+
+export type SlideOverload = {
+  slideIndex: number
+  composition: string
+  slots: OverloadSlot[]
+  slidesNeeded: number  // the worst slot decides the slide
+}
+
 export type ValidationReport = {
   pass: boolean
   presentationId: string
   slides: SlideValidation[]
   summary: string
+  // Slides where a human has a decision to make. Empty on a healthy deck — which is the
+  // signal the result page uses to stay quiet.
+  overloads: SlideOverload[]
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -78,9 +106,13 @@ function elBounds(el: slides_v1.Schema$PageElement) {
 // Reported per slide with the number of slides the content would need, and the share that
 // would have to go, so the answer is actionable rather than "too much text".
 // Rule and reasoning: docs/rules/typography.md, "Читабельна підлога".
-function checkReadableFont(slide: slides_v1.Schema$Page): CheckResult {
+function checkReadableFont(
+  slide: slides_v1.Schema$Page,
+  slotByObjectId?: Map<string, string>,
+): { check: CheckResult; over: OverloadSlot[] } {
   const tight: string[] = []   // under the floor, inside tolerance — noted, not failed
   const over:  string[] = []   // past tolerance — a real decision for a human
+  const overSlots: OverloadSlot[] = []
 
   for (const el of slide.pageElements ?? []) {
     if (!el.shape || el.shape.shapeType !== 'TEXT_BOX') continue
@@ -106,23 +138,50 @@ function checkReadableFont(slide: slides_v1.Schema$Page): CheckResult {
     // What the same text would need at the floor, in the same box.
     const needed = renderedHeightUniform(text, innerW, _V_READABLE_PT, /[\n\v]/.test(text.trim()))
     const deficit = needed <= innerH ? 0 : 1 - innerH / needed
-    const tok = elToken(el) ?? el.objectId ?? '?'
+    const slidesNeeded = Math.max(2, Math.ceil(needed / innerH))
+    // The generator's own name for this box, when the caller supplied the map. The old
+    // fallback chain stays for the sentence: {{TOKEN}} survives only in boxes that were
+    // never filled, and an objectId at least identifies the shape in the file.
+    const slotName = (el.objectId && slotByObjectId?.get(el.objectId)) ?? null
+    const tok = slotName ?? elToken(el) ?? el.objectId ?? '?'
     const line =
       `${tok}: ${pt}pt (floor ${_V_READABLE_PT}) — at ${_V_READABLE_PT}pt needs ` +
       `${Math.round(needed)}px of ${Math.round(innerH)}px → split into ` +
-      `${Math.max(2, Math.ceil(needed / innerH))} or cut ${Math.round(deficit * 100)}%`
+      `${slidesNeeded} or cut ${Math.round(deficit * 100)}%`
 
-    if (deficit > _V_TOLERANCE) over.push(line)
-    else tight.push(`${tok}: ${pt}pt (within tolerance)`)
+    if (deficit > _V_TOLERANCE) {
+      over.push(line)
+      // Only slots the plan can address get into the structured list. A box we cannot name
+      // is still worth reporting in the sentence, but offering to split something we can't
+      // point at in the plan would be an offer we cannot keep.
+      if (slotName) {
+        overSlots.push({
+          slot: slotName,
+          pt,
+          neededPx: Math.round(needed),
+          availPx: Math.round(innerH),
+          slidesNeeded,
+          cutPct: Math.round(deficit * 100),
+        })
+      }
+    } else {
+      tight.push(`${tok}: ${pt}pt (within tolerance)`)
+    }
   }
 
   if (over.length) {
-    return { check: 'readable_font', pass: false, detail: over.join(' | ') }
+    return {
+      check: { check: 'readable_font', pass: false, detail: over.join(' | ') },
+      over: overSlots,
+    }
   }
   return {
-    check: 'readable_font',
-    pass: true,
-    detail: tight.length ? `below floor but inside tolerance — ${tight.join(' | ')}` : undefined,
+    check: {
+      check: 'readable_font',
+      pass: true,
+      detail: tight.length ? `below floor but inside tolerance — ${tight.join(' | ')}` : undefined,
+    },
+    over: [],
   }
 }
 
@@ -940,11 +999,13 @@ export async function validateDeck(
   presentationId: string,
   plan: SlidePlan,
   planPageIds: string[],
+  slotObjectIds?: Array<Record<string, string>>,
 ): Promise<ValidationReport> {
   const pres      = await slidesApi.presentations.get({ presentationId })
   const allSlides = pres.data.slides ?? []
   const themeCheck = checkTheme(plan)
   const results: SlideValidation[] = []
+  const overloads: SlideOverload[] = []
 
   for (let i = 0; i < plan.slides.length; i++) {
     const pageId    = planPageIds[i]
@@ -961,7 +1022,25 @@ export async function validateDeck(
 
     checks.push(checkBounds(slide))
     checks.push(checkTextOverflow(slide))
-    checks.push(checkReadableFont(slide))
+
+    // Slot names come from the generator's own token → objectId map, inverted. Guessing
+    // them back from the file is not possible: by the time the deck exists the {{TOKEN}}
+    // placeholders have been replaced by the very text we are measuring.
+    const slotByObjectId = new Map<string, string>()
+    for (const [slotName, objId] of Object.entries(slotObjectIds?.[i] ?? {})) {
+      if (objId) slotByObjectId.set(objId, slotName)
+    }
+    const readable = checkReadableFont(slide, slotByObjectId)
+    checks.push(readable.check)
+    if (readable.over.length) {
+      overloads.push({
+        slideIndex: i,
+        composition: compId,
+        slots: readable.over,
+        slidesNeeded: Math.max(...readable.over.map(s => s.slidesNeeded)),
+      })
+    }
+
     checks.push(checkAutofit(slide))
     checks.push(checkFont(slide))
     checks.push(checkMaxChars(planSlide.slots, compId))
@@ -1023,5 +1102,5 @@ export async function validateDeck(
     ? `✅ PASS — all ${results.length} slides valid`
     : `❌ FAIL — ${failCount}/${results.length} slides have issues`
 
-  return { pass, presentationId, slides: results, summary }
+  return { pass, presentationId, slides: results, summary, overloads }
 }

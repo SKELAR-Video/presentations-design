@@ -5954,7 +5954,7 @@ export async function buildPresentation(
 
   const url = `https://docs.google.com/presentation/d/${presentationId}/edit`
 
-  let validation = await validateDeck(slidesApi, presentationId, plan, planPageIds)
+  let validation = await validateDeck(slidesApi, presentationId, plan, planPageIds, slotObjectIds)
   console.log('[validator]', validation.summary)
   for (const sv of validation.slides) {
     if (!sv.pass) {
@@ -6010,7 +6010,7 @@ export async function buildPresentation(
     }
 
     console.log(`[repair] applied ${validFixes.length}/${targets.length} fix(es) — re-validating`)
-    validation = await validateDeck(slidesApi, presentationId, plan, planPageIds)
+    validation = await validateDeck(slidesApi, presentationId, plan, planPageIds, slotObjectIds)
     console.log('[validator after repair]', validation.summary)
   }
 
