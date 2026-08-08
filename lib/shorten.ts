@@ -119,6 +119,19 @@ export function auditShortening(
   return { ok: problems.length === 0, problems, cutPct }
 }
 
+// The note written into a shortened slide's speaker notes. Plain prose, not JSON: this one
+// is for a person — the client asking "where did my paragraph go" — while the ##SLOTS##
+// block beside it is for the deck inspector. Returns null when nothing was shortened, so
+// untouched slides carry no note at all.
+export function originalTextNote(
+  shortenedFrom: Record<string, string> | undefined,
+): string | null {
+  const entries = Object.entries(shortenedFrom ?? {}).filter(([, v]) => v?.trim())
+  if (!entries.length) return null
+  const blocks = entries.map(([slot, original]) => `[${slot}]\n${original.trim()}`)
+  return `ОРИГІНАЛ З ТЗ (текст на слайді скорочено за рішенням людини)\n\n${blocks.join('\n\n')}\n`
+}
+
 export function shortenPrompt(text: string, targetCutPct: number): string {
   return `Скороти цей текст для слайда презентації приблизно на ${targetCutPct}%.
 

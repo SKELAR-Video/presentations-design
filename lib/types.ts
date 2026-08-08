@@ -53,6 +53,13 @@ export type Slide = {
   // Deliberately per-plan and not remembered across briefs: a new deck is a new set of
   // slides, and an answer given about one of them says nothing about another.
   keepSmall?: boolean
+  // Slot name → the text as it stood in the brief, kept when a person chose to shorten it.
+  // Shortening is the one repair that changes the client's words (docs/rules/content-mapping.md),
+  // so the words it replaced have to remain somewhere in the file: they go into the slide's
+  // speaker notes, invisible in the deck and in presentation mode, one glance away in the
+  // editor. Without this the original exists only in the brief, and the person comparing the
+  // two has to keep both open to see what was cut.
+  shortenedFrom?: Record<string, string>
 }
 
 export type SlidePlan = {

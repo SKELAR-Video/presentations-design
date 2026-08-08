@@ -7,6 +7,7 @@ import { fixOverflowSlots } from './anthropic'
 import { autoPushIfPass } from './auto-push'
 import { listMarkerSignal, looksLikeAction, splitLeadingFigure } from './columns'
 import { createMasterDeck, MASTER_MARKER } from './master'
+import { originalTextNote } from './shorten'
 import {
   renderedHeight, renderedHeightUniform, wrappedLines,
   LIST_ITEM_GAP_EM, FIT_MARGIN,
@@ -5698,6 +5699,14 @@ export async function buildPresentation(
     const slots = bentoProcessedSlots.get(i) ?? plan.slides[i].slots
     const payload = JSON.stringify({ composition: plan.slides[i].composition, slots })
     requests.push({ insertText: { objectId: notesObjId, insertionIndex: 0, text: `##SLOTS##\n${payload}\n` } })
+
+    // Written after the machine block so it lands ABOVE it: both go in at index 0, so the
+    // later insert ends up first, and the person opening the notes should meet their own
+    // text rather than a line of JSON.
+    const original = originalTextNote(plan.slides[i].shortenedFrom)
+    if (original) {
+      requests.push({ insertText: { objectId: notesObjId, insertionIndex: 0, text: `${original}\n` } })
+    }
   }
 
   // Variant pill + speaker notes for every variant slide.

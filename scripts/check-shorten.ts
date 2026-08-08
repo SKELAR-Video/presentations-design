@@ -1,4 +1,4 @@
-import { auditShortening, extractFigures, extractNames } from '../lib/shorten'
+import { auditShortening, extractFigures, extractNames, originalTextNote } from '../lib/shorten'
 
 // The audit is the whole safety of shortening, so it is tested the way a lock is tested:
 // by trying to open it. Each case states what the audit must SAY, not merely that it runs.
@@ -118,6 +118,20 @@ const nameOk = names.includes('rozetka') && names.includes('ebrd') && names.incl
 if (!nameOk) failed++
 console.log(`${nameOk ? 'PASS' : 'FAIL'}  назви ловляться, початок речення — ні`)
 console.log(`      ${extractNames(nameText).join(' | ')}`)
+
+// The note that keeps the client's words in the file. Untouched slides must carry none —
+// a note on every slide is noise, and noise is how a real one gets skipped.
+const noNote = originalTextNote(undefined) === null && originalTextNote({}) === null
+  && originalTextNote({ 'ТЕКСТ': '   ' }) === null
+const note = originalTextNote({ 'ТЕКСТ': 'Повний абзац із ТЗ, який скоротили' }) ?? ''
+const noteOk = noNote
+  && note.includes('Повний абзац із ТЗ, який скоротили')
+  && note.includes('[ТЕКСТ]')
+  && note.includes('ОРИГІНАЛ З ТЗ')
+if (!noteOk) failed++
+console.log(`${noteOk ? 'PASS' : 'FAIL'}  оригінал іде в нотатки, і тільки коли є що класти`)
+console.log(`      без скорочення: ${noNote ? 'нотатки немає' : 'НОТАТКА Є — помилка'}`)
+console.log(`      зі скороченням: ${note.split('\n')[0]}`)
 
 console.log(`\n${failed === 0 ? 'ALL PASS' : `${failed} FAIL`}`)
 process.exit(failed === 0 ? 0 : 1)
