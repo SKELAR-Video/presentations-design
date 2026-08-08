@@ -29,20 +29,37 @@ const HEADER = [
 // than a log needs and was never wired to anything.
 const SHEETS_SCOPE = ['https://www.googleapis.com/auth/spreadsheets']
 
+// Accepts the key either base64-encoded or as plain JSON. The helper this replaces assumed
+// base64, but it was dead code — nothing ever called it — so the assumption was never once
+// tested against the value actually sitting in the deployment. Trying both costs a line and
+// removes a whole class of silent failure.
+export function readServiceCredentials(): { ok: true; email: string; credentials: unknown } | { ok: false; reason: string } {
+  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_KEY
+  if (!raw) return { ok: false, reason: 'GOOGLE_SERVICE_ACCOUNT_KEY не заданий' }
+
+  const attempts: string[] = [raw.trim()]
+  try { attempts.push(Buffer.from(raw.trim(), 'base64').toString('utf-8')) } catch { /* not base64 */ }
+
+  for (const text of attempts) {
+    try {
+      const parsed = JSON.parse(text) as { client_email?: string }
+      if (parsed.client_email) return { ok: true, email: parsed.client_email, credentials: parsed }
+    } catch { /* try the next form */ }
+  }
+  return { ok: false, reason: 'GOOGLE_SERVICE_ACCOUNT_KEY не є ні JSON, ні base64 від JSON (або в ньому немає client_email)' }
+}
+
 function serviceAuth(): InstanceType<typeof google.auth.GoogleAuth> | null {
-  const keyJson = process.env.GOOGLE_SERVICE_ACCOUNT_KEY
-  if (!keyJson) return null
-  try {
-    const decoded = Buffer.from(keyJson.trim(), 'base64').toString('utf-8')
-    return new google.auth.GoogleAuth({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      credentials: JSON.parse(decoded) as any,
-      scopes: SHEETS_SCOPE,
-    })
-  } catch (e) {
-    console.warn(`[stats] GOOGLE_SERVICE_ACCOUNT_KEY не читається: ${e instanceof Error ? e.message : String(e)}`)
+  const creds = readServiceCredentials()
+  if (!creds.ok) {
+    console.warn(`[stats] ${creds.reason}`)
     return null
   }
+  return new google.auth.GoogleAuth({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    credentials: creds.credentials as any,
+    scopes: SHEETS_SCOPE,
+  })
 }
 
 export type UsageRow = {
