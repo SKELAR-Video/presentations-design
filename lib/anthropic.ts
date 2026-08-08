@@ -4,6 +4,7 @@ import type { Slide, SlidePlan, Theme } from './types'
 import { applyCoverageFallback, looseNorm, missingSourceLines } from './coverage'
 import { countSourceColumns, applyColumnCapacityFallback, applyTitleFallback } from './columns'
 import type { SourceSlide } from '@/app/api/fetch-doc/route'
+import { auditShortening, shortenPrompt } from './shorten'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -1064,4 +1065,47 @@ ${sheetSummary}
 
   console.log(`[usage] mapToPlan: ${usage.calls} calls, in=${usage.inputTokens} out=${usage.outputTokens}`)
   return { theme, slides, sourceText: text, sheetCount: targetCount >= 2 ? targetCount : undefined, fragmentGroups, usage }
+}
+
+// ─── Shortening one overloaded slot ───────────────────────────────────────────
+// The only place in this tool where the model writes text rather than pointing at it. Kept
+// behind lib/shorten.ts's audit: a result that invents a figure or a name is thrown away,
+// not repaired, because a "mostly right" rewrite of someone's brief is worse than no
+// rewrite at all. One retry, then it gives up and says so — see docs/rules/content-mapping.md.
+export async function shortenSlot(
+  text: string,
+  targetCutPct: number,
+): Promise<{ ok: true; text: string; cutPct: number; usage: TokenUsage }
+         | { ok: false; reason: string; usage: TokenUsage }> {
+  const usage = emptyUsage()
+  let lastProblems: string[] = ['модель не повернула тексту']
+
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const prompt = attempt === 1
+      ? shortenPrompt(text, targetCutPct)
+      : `${shortenPrompt(text, targetCutPct)}
+
+Попередня спроба була відхилена: ${lastProblems.join('; ')}. Виправ саме це.`
+
+    const message = await client.messages.create({
+      model: MAPPING_MODEL,
+      thinking: MAPPING_THINKING,
+      max_tokens: 2048,
+      system: 'Ти скорочуєш текст для слайдів. Прибираєш зайві слова, нічого не вигадуєш.',
+      messages: [{ role: 'user', content: prompt }],
+    })
+    addUsage(usage, message)
+
+    const block = message.content[0]
+    const candidate = block?.type === 'text' ? block.text.trim() : ''
+    const audit = auditShortening(text, candidate, targetCutPct)
+    if (audit.ok) {
+      console.log(`[shorten] спроба ${attempt}: -${audit.cutPct}% (ціль ${targetCutPct}%)`)
+      return { ok: true, text: candidate, cutPct: audit.cutPct, usage }
+    }
+    lastProblems = audit.problems
+    console.warn(`[shorten] спроба ${attempt} відхилена: ${audit.problems.join('; ')}`)
+  }
+
+  return { ok: false, reason: lastProblems.join('; '), usage }
 }

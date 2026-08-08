@@ -9,6 +9,7 @@
     "lint": "eslint",
     "check-deck": "node scripts/check-deck.js",
     "check-split": "npx tsx scripts/check-split.ts",
+    "check-shorten": "npx tsx scripts/check-shorten.ts",
     "validate-fixture": "tsc --project scripts/tsconfig.fixture.json && node .fx-build/scripts/validate-fixture.js"
   },
   "dependencies": {
