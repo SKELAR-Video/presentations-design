@@ -856,6 +856,12 @@ function checkNoDuplicateTitle(plan: SlidePlan, slideIndex: number): CheckResult
   if (areVariantSiblings(plan.slides[slideIndex - 1], plan.slides[slideIndex])) {
     return { check: 'no_duplicate_title', pass: true, detail: 'variant siblings — shared title expected' }
   }
+  // Parts of one sheet a human chose to split. The repeated heading is the point: the rule
+  // bans a title invented twice, not one sheet continuing onto the next slide.
+  const group = plan.slides[slideIndex].splitGroup
+  if (group && plan.slides[slideIndex - 1].splitGroup === group) {
+    return { check: 'no_duplicate_title', pass: true, detail: 'split parts — shared title expected' }
+  }
   const cur  = (plan.slides[slideIndex].slots['ЗАГОЛОВОК'] ?? '').trim()
   const prev = (plan.slides[slideIndex - 1].slots['ЗАГОЛОВОК'] ?? '').trim()
   // The rule bans INVENTED repetition. When the brief itself heads two sheets the same

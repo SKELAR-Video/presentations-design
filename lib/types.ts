@@ -35,6 +35,10 @@ export type Slide = {
   // were stripped from the text. Bullets are a signal, not content — they must not reach
   // the slide, but their answer has to survive them.
   signalMarkers?: Record<string, boolean>
+  // Set on every part of a sheet a human chose to split (lib/split.ts). Parts share a
+  // heading by design, so the checks that police repetition have to be able to tell this
+  // apart from the model heading two unrelated sheets identically.
+  splitGroup?: string
 }
 
 export type SlidePlan = {
