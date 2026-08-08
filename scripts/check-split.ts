@@ -154,6 +154,28 @@ console.log(`${applyOk ? 'PASS' : 'FAIL'}  applySplits: порядок і гру
 console.log(`      слайдів: ${applied.slides.length} (очікували 4), у групі: ${applied.slides.filter(s => s.splitGroup).length} (очікували 2)`)
 console.log(`      ${applied.notes.join(' | ')}`)
 
+// ─── A declined offer is recorded, not forgotten ──────────────────────────────
+// Two slides offered, one split, one declined. The declined one must come back carrying
+// keepSmall (or the rebuild asks the same question again), and the parts of the split one
+// must NOT carry it (an answer about their parent was not an answer about them).
+const twoOffered: Slide[] = [
+  CASES[0].slide,                                    // splittable — chosen
+  { ...CASES[2].slide, id: 'kept' },                 // declined
+]
+const bothOverloads = [
+  { ...CASES[0].overload, slideIndex: 0 },
+  { ...CASES[2].overload, slideIndex: 1 },
+]
+const decided = applySplits(twoOffered, bothOverloads, new Set([0]))
+const keptFlagged  = decided.slides.filter(s => s.keepSmall).length === 1
+const keptIsRight  = decided.slides.find(s => s.keepSmall)?.id === 'kept'
+const partsClean   = decided.slides.filter(s => s.splitGroup).every(s => !s.keepSmall)
+const decideOk = keptFlagged && keptIsRight && partsClean
+if (!decideOk) failed++
+console.log(`${decideOk ? 'PASS' : 'FAIL'}  відмова запам'ятовується, частини її не успадковують`)
+console.log(`      з keepSmall: ${decided.slides.filter(s => s.keepSmall).map(s => s.id).join(', ') || '—'} (очікували: kept)`)
+console.log(`      частин розкладеного: ${decided.slides.filter(s => s.splitGroup).length}, з них помилково прийнятих: ${decided.slides.filter(s => s.splitGroup && s.keepSmall).length} (очікували 0)`)
+
 // ─── Re-expansion is idempotent ───────────────────────────────────────────────
 // The repair flow feeds an already-expanded plan back into the generator, so expanding
 // twice must give the same deck as expanding once. Before the variantOf marker it did not:

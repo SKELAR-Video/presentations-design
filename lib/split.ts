@@ -154,23 +154,34 @@ export function applySplits(
   chosen: Set<number>,
 ): { slides: Slide[]; notes: string[] } {
   const byIndex = new Map(overloads.map(o => [o.slideIndex, o]))
+  const offered = new Set(overloads.map(o => o.slideIndex))
   const out: Slide[] = []
   const notes: string[] = []
 
   slides.forEach((slide, i) => {
-    const overload = chosen.has(i) ? byIndex.get(i) : undefined
-    if (!overload) { out.push(slide); return }
+    if (!offered.has(i)) { out.push(slide); return }
 
-    const result = splitSlide(slide, overload)
+    if (!chosen.has(i)) {
+      // Offered and declined. Recorded on the slide so the rebuild does not report the
+      // answer back as a fresh problem and ask again.
+      out.push({ ...slide, keepSmall: true })
+      return
+    }
+
+    const result = splitSlide(slide, byIndex.get(i)!)
     if (!result) {
       // Nothing divisible on this slide — a single unbroken paragraph, or one card. Kept
       // whole rather than cut mid-sentence, and said out loud instead of silently ignored.
+      // Not marked as accepted: the person asked for a repair and did not get one, so the
+      // question is still open and should be asked again.
       notes.push(`слайд ${i + 1}: нема на чому ділити, лишено як є`)
       out.push(slide)
       return
     }
     const group = `split_${i}`
-    out.push(...result.slides.map(s => ({ ...s, splitGroup: group })))
+    // keepSmall is cleared on the parts: these are new slides with new boxes, and an answer
+    // given about the slide they came from was not given about them.
+    out.push(...result.slides.map(s => ({ ...s, splitGroup: group, keepSmall: undefined })))
     notes.push(`слайд ${i + 1}: ${result.note}`)
   })
 

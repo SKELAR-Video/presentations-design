@@ -45,6 +45,14 @@ export type Slide = {
   // expanded into variants of its own — one sheet turns into N², and slide 8 becomes
   // slide 20 without a single word changing.
   variantOf?: string
+  // A person was shown that this slide's text falls below the readable floor and chose to
+  // keep it that way. Carried on the plan, not held in the page, so it survives the rebuild
+  // that follows the decision — otherwise the very next validation would report the choice
+  // back as a defect and ask the same question again.
+  //
+  // Deliberately per-plan and not remembered across briefs: a new deck is a new set of
+  // slides, and an answer given about one of them says nothing about another.
+  keepSmall?: boolean
 }
 
 export type SlidePlan = {

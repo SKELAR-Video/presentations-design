@@ -55,6 +55,10 @@ export type SlideOverload = {
   composition: string
   slots: OverloadSlot[]
   slidesNeeded: number  // the worst slot decides the slide
+  // The person already saw this one and chose to keep the small type. Still measured and
+  // still reported — a decision that vanishes from the screen is indistinguishable from one
+  // that was never made — but it is no longer a question, and no longer a failure.
+  accepted?: boolean
 }
 
 export type ValidationReport = {
@@ -1037,13 +1041,24 @@ export async function validateDeck(
       if (objId) slotByObjectId.set(objId, slotName)
     }
     const readable = checkReadableFont(slide, slotByObjectId)
-    checks.push(readable.check)
+    // An accepted slide is not a passing slide that happens to be small — it is a slide
+    // whose size stopped being the machine's call. docs/rules/typography.md puts it as
+    // "readability is the default state; departing from it is a person's decision, not the
+    // code's", and a check that keeps failing after that decision is arguing with its own
+    // rule. The measurement is untouched; only the verdict is.
+    const accepted = Boolean(planSlide.keepSmall)
+    checks.push(
+      accepted && !readable.check.pass
+        ? { check: 'readable_font', pass: true, detail: `дрібний шрифт лишено за рішенням людини — ${readable.check.detail ?? ''}`.trim() }
+        : readable.check,
+    )
     if (readable.over.length) {
       overloads.push({
         slideIndex: i,
         composition: compId,
         slots: readable.over,
         slidesNeeded: Math.max(...readable.over.map(s => s.slidesNeeded)),
+        accepted,
       })
     }
 

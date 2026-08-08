@@ -31,7 +31,12 @@ export default function ResultPage() {
   }, [router])
 
   const overallPass = deckFacts ? deckFacts.pass : (validation?.pass ?? true)
-  const overloads = validation?.overloads ?? []
+  const allOverloads = validation?.overloads ?? []
+  // Only the still-open questions reach the panel. A slide whose small type was accepted is
+  // kept in `allOverloads` — the decision stays visible as a footnote — but it no longer
+  // counts toward the headline and no longer reopens on every rebuild.
+  const overloads = allOverloads.filter(o => !o.accepted)
+  const accepted  = allOverloads.filter(o => o.accepted)
 
   // What the folded diagnostics are for: anything wrong that the panel above does NOT
   // already say in plain words. readable_font is excluded because the panel is that check,
@@ -114,6 +119,7 @@ export default function ResultPage() {
         {canRepair && (
           <OverloadPanel
             overloads={overloads}
+            acceptedCount={accepted.length}
             fixing={fixing}
             error={fixError}
             notes={fixNotes}
@@ -172,9 +178,10 @@ export default function ResultPage() {
 // docs/rules/typography.md) — but it is a default, not a verdict, and the deck above is
 // already usable if the person closes the tab instead.
 function OverloadPanel({
-  overloads, fixing, error, notes, onFix,
+  overloads, acceptedCount, fixing, error, notes, onFix,
 }: {
   overloads: SlideOverload[]
+  acceptedCount: number
   fixing: boolean
   error: string
   notes: string[]
@@ -272,6 +279,12 @@ function OverloadPanel({
       <p className="text-xs text-[#A2A6B1]">
         Стара версія видаляється тільки після того, як нова успішно зібралась.
       </p>
+      {acceptedCount > 0 && (
+        <p className="text-xs text-[#A2A6B1] border-t border-[#292D39] pt-3">
+          Ще {acceptedCount} {acceptedCount === 1 ? 'слайд лишено' : 'слайдів лишено'} дрібним
+          шрифтом за твоїм рішенням — більше не питаю.
+        </p>
+      )}
     </div>
   )
 }
