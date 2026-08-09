@@ -116,10 +116,24 @@ export function auditShortening(
 
   // Line count is structure, not text: a bulleted list that comes back as one paragraph is
   // a different slide, whatever the words say.
-  const origLines = original.split('\n').filter(l => l.trim()).length
-  const newLines  = shortened.split('\n').filter(l => l.trim()).length
-  if (origLines > 1 && newLines === 1) {
-    problems.push(`список злився в один абзац: було ${origLines} рядків, став 1`)
+  const origList = original.split('\n').map(l => l.trim()).filter(Boolean)
+  const newList  = shortened.split('\n').map(l => l.trim()).filter(Boolean)
+  if (origList.length > 1 && newList.length === 1) {
+    problems.push(`список злився в один абзац: було ${origList.length} рядків, став 1`)
+  }
+
+  // The first line of a card is its group heading — the generator draws it a step larger,
+  // and it is what reads as the highlight on the slide. Dropping it is not shortening, it is
+  // restructuring: the card loses its heading and the line beneath is promoted into a role
+  // it was not written for.
+  //
+  // Detected exactly rather than by similarity: if the new opening line is a line that stood
+  // LATER in the original, the heading was deleted rather than trimmed. Rewording the
+  // heading stays allowed — that produces a first line matching nothing, which passes.
+  // Seen on deck 1sOCs…HPPg, slide 6: "Proof of Talents" and "Місце для амбітного старту"
+  // both gone, while the untouched sibling variant kept them.
+  if (origList.length > 1 && newList.length && origList.slice(1).includes(newList[0])) {
+    problems.push(`викинуто заголовок групи: "${origList[0].slice(0, 40)}"`)
   }
 
   return { ok: problems.length === 0, problems, cutPct }
@@ -159,8 +173,9 @@ export function shortenPrompt(text: string, targetCutPct: number): string {
 1. Прибирай слова й цілі пункти — не переписуй зміст своїми словами.
 2. НЕ додавай жодного числа, назви, імені чи факту, якого немає в оригіналі.
 ${structureRule}
-4. Не додавай заголовків, пояснень, лапок, коментарів і нумерації, якої не було.
-5. Мова та сама, що в оригіналі.
+4. ПЕРШИЙ рядок — це заголовок картки. Він має лишитись першим рядком: скоротити його слова можна, викинути — ні.
+5. Не додавай заголовків, пояснень, лапок, коментарів і нумерації, якої не було.
+6. Мова та сама, що в оригіналі.
 
 Поверни ТІЛЬКИ скорочений текст, без нічого зайвого.
 

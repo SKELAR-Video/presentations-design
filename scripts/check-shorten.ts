@@ -159,5 +159,25 @@ if (!promptOk) failed++
 console.log(`${promptOk ? 'PASS' : 'FAIL'}  глибокий зріз дозволяє викидати пункти, дрібний — ні`)
 console.log(`      53%: ${deep.includes('ПРИБРАТИ') ? 'можна викидати' : 'НЕ можна — помилка'}; 15%: ${shallow.includes('ПРИБРАТИ') ? 'можна — помилка' : 'структура зберігається'}`)
 
+// The first line of a card is its heading — the generator draws it larger, and it is what
+// reads as the highlight. Dropping it restructures the card rather than shortening it.
+const beheaded = auditShortening(
+  'Proof of Talents\nУчасть в програмах SKELAR — це круто\nПрограми дають цінний досвід\nМожливість вчитися у зірок ринку',
+  'Участь в програмах SKELAR — це круто\nМожливість вчитися у зірок ринку',
+  40,
+)
+const rewordedHead = auditShortening(
+  'Proof of Talents\nУчасть в програмах SKELAR — це круто\nПрограми дають цінний досвід\nМожливість вчитися у зірок ринку',
+  'Talents\nУчасть в програмах SKELAR — це круто\nВчитися у зірок ринку',
+  40,
+)
+const headOk = !beheaded.ok
+  && beheaded.problems.join(' ').includes('викинуто заголовок групи')
+  && rewordedHead.ok
+if (!headOk) failed++
+console.log(`${headOk ? 'PASS' : 'FAIL'}  заголовок картки можна скоротити, але не викинути`)
+console.log(`      викинутий: ${beheaded.ok ? 'ПРИЙНЯТО — помилка' : beheaded.problems.join('; ')}`)
+console.log(`      скорочений: ${rewordedHead.ok ? 'прийнято' : `ВІДХИЛЕНО — помилка: ${rewordedHead.problems.join('; ')}`}`)
+
 console.log(`\n${failed === 0 ? 'ALL PASS' : `${failed} FAIL`}`)
 process.exit(failed === 0 ? 0 : 1)
