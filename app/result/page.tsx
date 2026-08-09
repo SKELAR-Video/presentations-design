@@ -51,6 +51,21 @@ export default function ResultPage() {
   // splitter rather than guessing from the numbers. A sheet written as one unbroken
   // paragraph has nothing to divide, and offering "розкласти" as its default would be an
   // offer that fails the moment it is accepted — there, shortening is the only repair left.
+  // A sheet lives in the deck once per design variant, and the variants hold different
+  // amounts: the same words fit a wide two-column layout and overflow a narrow photo one.
+  // When at least one variant carries the sheet readably, the tight variant is not a slide
+  // to repair — it is a design that cannot hold this content, and the honest move is to drop
+  // it. Repairing it instead left the deck showing one sheet both whole and split in two,
+  // which is what read as arbitrary (deck 1aORD…4Hjk, slides 27–29).
+  const sheetOf = (i: number) => plan?.slides[i]?.variantOf ?? plan?.slides[i]?.id ?? `#${i}`
+  const overloadedIdx = new Set(overloads.map(o => o.slideIndex))
+  const hasFittingSibling = new Set(
+    overloads
+      .filter(o => (plan?.slides ?? []).some((s, i) =>
+        i !== o.slideIndex && sheetOf(i) === sheetOf(o.slideIndex) && !overloadedIdx.has(i)))
+      .map(o => o.slideIndex),
+  )
+
   const splittable = new Set(
     overloads
       .filter(o => plan?.slides[o.slideIndex] && splitSlide(plan.slides[o.slideIndex], o))
@@ -205,6 +220,7 @@ export default function ResultPage() {
             fixing={fixing}
             stage={fixStage}
             splittable={splittable}
+            droppable={hasFittingSibling}
             worstCut={o => worstCutFor(o.slideIndex, [...o.slots].sort((a, b) => b.cutPct - a.cutPct)[0].slot)}
             error={fixError}
             notes={fixNotes}
@@ -293,7 +309,7 @@ function RepairSummary({ notes, leftOver }: { notes: string[]; leftOver: number 
 const DEEP_CUT_PCT = 50
 
 function OverloadPanel({
-  overloads, acceptedCount, fixing, stage, error, notes, splittable, worstCut, onFix,
+  overloads, acceptedCount, fixing, stage, error, notes, splittable, droppable, worstCut, onFix,
 }: {
   overloads: SlideOverload[]
   acceptedCount: number
@@ -302,6 +318,7 @@ function OverloadPanel({
   error: string
   notes: string[]
   splittable: Set<number>
+  droppable: Set<number>
   worstCut: (o: SlideOverload) => number
   onFix: (decisions: Map<number, Decision>) => void
 }) {
@@ -309,7 +326,12 @@ function OverloadPanel({
   // cannot, the default falls to shortening rather than to an option that would fail the
   // moment it is accepted.
   const initial = () => new Map<number, Decision>(
-    overloads.map(o => [o.slideIndex, splittable.has(o.slideIndex) ? 'split' : 'shorten']),
+    overloads.map(o => [
+      o.slideIndex,
+      droppable.has(o.slideIndex) ? 'drop'
+        : splittable.has(o.slideIndex) ? 'split'
+        : 'shorten',
+    ]),
   )
   const [decisions, setDecisions] = useState<Map<number, Decision>>(initial)
 
@@ -346,7 +368,9 @@ function OverloadPanel({
             <div className="min-w-0">
               <p className="text-sm text-white">Слайд {o.slideIndex + 1}</p>
               <p className="text-xs text-[#A2A6B1]">
-                тексту на {o.slidesNeeded} слайди, або зрізати {worstCut(o)}%
+                {droppable.has(o.slideIndex)
+                  ? 'цей дизайн не вміщує текст — той самий аркуш є в іншому варіанті'
+                  : `тексту на ${o.slidesNeeded} слайди, або зрізати ${worstCut(o)}%`}
               </p>
               {worstCut(o) >= DEEP_CUT_PCT && decisions.get(o.slideIndex) === 'shorten' && (
                 <p className="text-xs text-[#FD3433] mt-0.5">
@@ -356,6 +380,9 @@ function OverloadPanel({
             </div>
             <div className="flex gap-1 shrink-0">
               {([
+                ...(droppable.has(o.slideIndex)
+                  ? [['drop', 'Прибрати варіант'] as [Decision, string]]
+                  : []),
                 ['split',   `Розкласти на ${o.slidesNeeded}`],
                 ['shorten', `Скоротити на ${worstCut(o)}%`],
                 ['keep',    'Лишити'],

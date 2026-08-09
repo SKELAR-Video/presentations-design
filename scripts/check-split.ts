@@ -187,6 +187,21 @@ if (!shortenOk) failed++
 console.log(`${shortenOk ? 'PASS' : 'FAIL'}  слайд, відданий на скорочення, не позначається прийнятим`)
 console.log(`      слайдів: ${shortened.slides.length} (очікували 2), з keepSmall: ${shortened.slides.filter(s => s.keepSmall).length} (очікували 0)`)
 
+// ─── Dropping a variant removes the slide and nothing else ────────────────────
+// When a sheet reads fine in one design and overflows another, the tight design is dropped
+// rather than repaired — otherwise the deck shows one sheet both whole and cut in two.
+const twoVariants: Slide[] = [
+  { ...CASES[0].slide, id: 'sheet_v1', variantOf: 'sheet' },
+  { ...CASES[0].slide, id: 'sheet_v2', variantOf: 'sheet' },
+]
+const dropped = applySplits(twoVariants, [{ ...CASES[0].overload, slideIndex: 1 }], new Map([[1, 'drop' as const]]))
+const dropOk = dropped.slides.length === 1
+  && dropped.slides[0].id === 'sheet_v1'
+  && dropped.notes.join(' ').includes('варіант дизайну прибрано')
+if (!dropOk) failed++
+console.log(`${dropOk ? 'PASS' : 'FAIL'}  прибраний варіант зникає, сусідній лишається цілим`)
+console.log(`      лишилось слайдів: ${dropped.slides.length} (очікували 1), id: ${dropped.slides.map(s => s.id).join(', ')}`)
+
 // ─── The slot being divided is never treated as an introduction ───────────────
 // ПІДЗАГОЛОВОК introduces the sheet on a column layout and IS the body on `closing`.
 // Dropping it from parts 2+ left a closing slide holding nothing but its heading, and took

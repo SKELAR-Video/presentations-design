@@ -179,7 +179,7 @@ export function splitSlide(slide: Slide, overload: SlideOverload): SplitResult |
 // Parts of one sheet are tied together by `splitGroup` so the checks that care about
 // repetition — no_duplicate_title above all — can tell a deliberate split from the model
 // accidentally heading two different sheets the same way.
-export type Decision = 'split' | 'shorten' | 'keep'
+export type Decision = 'split' | 'shorten' | 'keep' | 'drop'
 
 export function applySplits(
   slides: Slide[],
@@ -197,6 +197,15 @@ export function applySplits(
     // keepSmall marker, which would silence the next measurement of a slide that was just
     // rewritten precisely so it could be measured again.
     if (!decision || decision === 'shorten') { out.push(slide); return }
+
+    // The sheet reads fine in another of its designs, so this one is dropped rather than
+    // repaired. A design that cannot hold the content is not one of the options — repairing
+    // it would leave the deck showing the same sheet both whole and cut up, which is what
+    // made the splitting look arbitrary in the first place.
+    if (decision === 'drop') {
+      notes.push(`слайд ${i + 1}: варіант дизайну прибрано — контент лишився в іншому`)
+      return
+    }
 
     if (decision === 'keep') {
       // Offered and declined. Recorded on the slide so the rebuild does not report the
