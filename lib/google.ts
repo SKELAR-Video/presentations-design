@@ -4555,7 +4555,17 @@ export async function buildPresentation(
   // Snapshot slot text as the mapping stage left it — the steps below deliberately rewrite
   // it (number compaction, ПІДПИС de-duplication, label extraction). content_coverage
   // accepts a source line found in either state, so those rewrites don't read as loss.
-  plan.preRenderSlots = plan.slides.flatMap(s => Object.values(s.slots))
+  //
+  // Added to, never replaced. A repaired deck is generated from the plan the previous run
+  // produced, whose slots are already rewritten — so a fresh snapshot holds "2M+" where the
+  // brief said "2 000 000+ застосунків доступно користувачам", and the brief's own line has
+  // no surviving trace anywhere. The content was all still there; only its verbatim form was
+  // gone, and coverage reported that as loss. Keeping the earlier snapshot keeps the link
+  // back to the brief across as many repair rounds as a person cares to run.
+  plan.preRenderSlots = [
+    ...(plan.preRenderSlots ?? []),
+    ...plan.slides.flatMap(s => Object.values(s.slots)),
+  ]
 
   // Step 2.84: a number the layout is going to draw must not also stand in the text.
   // The brief writes its steps as "01" / "Відбір" / description; the numbered layouts draw
