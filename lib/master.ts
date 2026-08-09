@@ -440,6 +440,17 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
 // files, a private per-app marker cannot.
 export const MASTER_MARKER = 'skelarMasterDeck'
 
+// The marker's VALUE is the template's version, and the lookup matches on it. Without this
+// the marker was a bare '1': the first template a person ever generated was found and reused
+// for good, so every later change to the master — a new composition, a moved box, a fixed
+// placeholder — reached new users only. Anyone who had generated once kept the old template
+// silently, and no amount of deploying could reach them.
+//
+// Bump this whenever the master's slides change. A mismatch reads as "no template yet" and
+// a fresh one is built; the old file is left alone rather than deleted, because by then it
+// may be a deck someone edited by hand.
+export const MASTER_VERSION = '2'
+
 export async function createMasterDeck(
   auth2: InstanceType<typeof google.auth.OAuth2>,
   parentFolderId?: string,
@@ -456,7 +467,7 @@ export async function createMasterDeck(
   // Tag it, and file it beside the decks, in one update.
   await driveApi.files.update({
     fileId: presentationId,
-    requestBody: { appProperties: { [MASTER_MARKER]: '1' } },
+    requestBody: { appProperties: { [MASTER_MARKER]: MASTER_VERSION } },
     ...(parentFolderId ? { addParents: parentFolderId } : {}),
     fields: 'id',
   })

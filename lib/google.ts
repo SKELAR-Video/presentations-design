@@ -6,7 +6,7 @@ import { validateDeck, type ValidationReport } from './validator'
 import { fixOverflowSlots } from './anthropic'
 import { autoPushIfPass } from './auto-push'
 import { listMarkerSignal, looksLikeAction, splitLeadingFigure } from './columns'
-import { createMasterDeck, MASTER_MARKER } from './master'
+import { createMasterDeck, MASTER_MARKER, MASTER_VERSION } from './master'
 import { originalTextNote } from './shorten'
 import {
   renderedHeight, renderedHeightUniform, wrappedLines,
@@ -828,7 +828,7 @@ async function ensureOwnMaster(
 ): Promise<string | undefined> {
   try {
     const found = await drive.files.list({
-      q: `appProperties has { key='${MASTER_MARKER}' and value='1' } and trashed = false`,
+      q: `appProperties has { key='${MASTER_MARKER}' and value='${MASTER_VERSION}' } and trashed = false`,
       fields: 'files(id, name, createdTime)',
       orderBy: 'createdTime',   // oldest wins, so a search-index race heals — see ensureDeckFolder
       pageSize: 10,
@@ -838,7 +838,7 @@ async function ensureOwnMaster(
       console.log(`[master] reusing own template (${existing})`)
       return existing
     }
-    console.log('[master] no own template yet — building one')
+    console.log(`[master] no template of version ${MASTER_VERSION} — building one`)
     return await createMasterDeck(auth2, folderId)
   } catch (e: unknown) {
     console.error(`[master] could not prepare own template: ${e instanceof Error ? e.message : String(e)}`)
