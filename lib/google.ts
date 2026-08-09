@@ -4482,6 +4482,24 @@ export async function buildPresentation(
     }
   }
 
+  // Step 2.505: a bare `cover` is `cover_title_only` under another name.
+  // `cover` draws a heading, an optional subtitle and a DATE that has to come from the brief;
+  // `cover_title_only` draws one large centred heading and fills the date in itself. When the
+  // model picks `cover` for a first slide that carries nothing but a title, the subtitle and
+  // date boxes stay empty and the cover comes out as small left-aligned type on a photo, with
+  // no date at all — which is what "перший слайд не такий, як мав бути" was about.
+  //
+  // Chosen by what the slide actually holds rather than by trusting the pick: the two
+  // compositions differ only in whether those extra slots are used, so a `cover` with none of
+  // them filled is not a different design, it is the same design missing its date.
+  for (const slide of plan.slides) {
+    if (slide.composition !== 'cover') continue
+    const hasExtras = ['ПІДЗАГОЛОВОК', 'ДАТА'].some(k => (slide.slots[k] ?? '').trim())
+    if (hasExtras) continue
+    console.log('[cover] порожні ПІДЗАГОЛОВОК і ДАТА → cover_title_only')
+    slide.composition = 'cover_title_only'
+  }
+
   // Step 2.51: Downgrade badges → title_body if any ПУНКТИ item exceeds 20 chars.
   // LLM sometimes copies long source text verbatim despite prompt instructions.
   for (const slide of plan.slides) {
