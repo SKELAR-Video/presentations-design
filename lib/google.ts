@@ -362,8 +362,12 @@ const _FLAT_TITLE_H    = 245   // create-master: flat-column ЗАГОЛОВОК 
 const _FLAT_LABEL_BAND = 120   // ПІДПИС_N band above the columns (was 89 in the master)
 
 // How far into a line a colon may sit and still read as a label rather than punctuation
-// inside a sentence. Same figure the label-extraction paths use elsewhere in this file.
-const _COLON_LABEL_MAX = 60
+// inside a sentence. Deliberately tighter than the 60 the label-EXTRACTION paths use: those
+// decide which slot text belongs in, and being generous there costs nothing, while here the
+// same generosity paints half a sentence white the moment it happens to end on a colon
+// ("…щоб усе працювало правильно і надійно: без винятків"). Real labels are short — "Медіа:",
+// "Бренд:", "Цільові спеціальності:" — so the bound is set just above the longest of them.
+const _COLON_LABEL_MAX = 30
 // Of that band, this much is the label BOX; the rest is the gap down to the column. The
 // font search used to measure the whole 89px band while the master box stayed 50px tall,
 // so a two-line label was sized for room it did not have (85px of text in a 50px box).
@@ -2169,7 +2173,7 @@ function splitCardHeader(text: string): { header: string; bodyLines: string[] } 
 // composition, falling back to one flat text slot. Without this, that fallback reads as
 // one undifferentiated wall of text with no bullets or hierarchy. Applies the same
 // per-group header+bullet treatment as a bento card, group by group.
-function formatTitleBodyText(text: string): string {
+export function formatTitleBodyText(text: string): string {
   if (!text.trim()) return text
   const groups = text.split(/\n\s*\n/).map(g => g.trim()).filter(Boolean)
   if (groups.length === 0) return text
@@ -2185,7 +2189,7 @@ function formatTitleBodyText(text: string): string {
 // as {start, end} character offsets — for FIXED_RANGE white-color styling. By
 // construction a group is either "header\nbody" (real \n = header present) or a plain
 // \v-joined (or single-line) body with no \n at all.
-function findGroupHeaderRanges(text: string): Array<{ start: number; end: number }> {
+export function findGroupHeaderRanges(text: string): Array<{ start: number; end: number }> {
   const ranges: Array<{ start: number; end: number }> = []
   let offset = 0
   for (const group of text.split('\n\n')) {
@@ -2206,7 +2210,7 @@ function findGroupHeaderRanges(text: string): Array<{ start: number; end: number
 //
 // Walks line by line, counting \n and \v alike: \v is a soft break inside one paragraph,
 // and a label at the head of one is still a label.
-function findColonLabelRanges(text: string): Array<{ start: number; end: number }> {
+export function findColonLabelRanges(text: string): Array<{ start: number; end: number }> {
   const ranges: Array<{ start: number; end: number }> = []
   let offset = 0
   for (const line of text.split(/([\n\v])/)) {
@@ -5492,32 +5496,18 @@ export async function buildPresentation(
           }
         }
 
-        // Plain colon-split: on each line, the part up to and including ":" → WHITE.
-        //
-        // Per LINE, not per box. indexOf on the whole slot found the first colon anywhere in
-        // the block and painted everything before it white — so on a body whose first line
-        // has no colon at all, that line went white in full and the next one turned grey
-        // mid-word: "Медіа: охо|плення" (deck 1F2YV…ft4ic, slide 27). The colon marks a
-        // label on its own line; a line without one is simply not a label.
-        let lineStart = 0
-        for (const line of slotValue.split(/(?=[\n\v])|(?<=[\n\v])/)) {
-          if (/^[\n\v]+$/.test(line)) { lineStart += line.length; continue }
-          const idx = line.indexOf(':')
-          // Bounded so a colon deep inside a sentence doesn't turn half a paragraph white.
-          if (idx > 0 && idx <= _COLON_LABEL_MAX) {
-            const end = Math.min(lineStart + idx + 1, actualLen)
-            if (end > lineStart) {
-              fixedRangeStyleRequests.push({
-                updateTextStyle: {
-                  objectId: el.objectId,
-                  style: { foregroundColor: { opaqueColor: { rgbColor: _WHITE } } },
-                  fields: 'foregroundColor',
-                  textRange: { type: 'FIXED_RANGE', startIndex: lineStart, endIndex: end },
-                },
-              })
-            }
-          }
-          lineStart += line.length
+        // Plain colon-split, from the shared helper — same rule as everywhere else.
+        for (const range of findColonLabelRanges(slotValue)) {
+          const end = Math.min(range.end, actualLen)
+          if (end <= range.start) continue
+          fixedRangeStyleRequests.push({
+            updateTextStyle: {
+              objectId: el.objectId,
+              style: { foregroundColor: { opaqueColor: { rgbColor: _WHITE } } },
+              fields: 'foregroundColor',
+              textRange: { type: 'FIXED_RANGE', startIndex: range.start, endIndex: end },
+            },
+          })
         }
       }
     }
@@ -5697,8 +5687,8 @@ export async function buildPresentation(
       if (BENTO_TOKENS[compId]?.includes(slot.name)) continue  // already handled above
 
       const slotValue = slots[slot.name] ?? ''
-      const colonIdx  = slotValue.indexOf(':')
-      if (colonIdx < 0) continue
+      const labelRanges = findColonLabelRanges(slotValue)
+      if (!labelRanges.length) continue
 
       for (const el of slide.pageElements ?? []) {
         if (!el.objectId) continue
@@ -5707,23 +5697,26 @@ export async function buildPresentation(
           .map(te => te.textRun?.content ?? '').join('')
         if (!elText.includes(`{{${slot.name}}}`)) continue
 
-        // Clamp endIndex to actual text length that replaceAllText will insert.
-        // slotValue reflects all pre-batch mutations (compactNumber, de-dup, etc.).
-        // addNbsp (applied in replaceAllText loop) keeps the same code-unit count.
-        const rawEnd = colonIdx + 1
-        const endIdx = Math.min(rawEnd, slotValue.length)
-        if (endIdx <= 0) continue
-        if (rawEnd !== endIdx) {
-          console.warn(`[colon-split] clamped endIndex ${rawEnd}→${endIdx} for ${compId}/${slot.name}`)
+        // Per line, from the shared helper. This was the third copy of the colon rule in
+        // this file, and the last one still reading the whole slot with a single indexOf —
+        // so on a multi-line body it painted everything from the top of the box down to the
+        // first colon anywhere in it. The other two copies had already been fixed; the
+        // symptom stayed because this one is generic and runs for every composition.
+        //
+        // Clamped to the text that replaceAllText will actually insert. addNbsp, applied in
+        // that loop, keeps the same code-unit count, so offsets survive it.
+        for (const range of labelRanges) {
+          const endIdx = Math.min(range.end, slotValue.length)
+          if (endIdx <= range.start) continue
+          fixedRangeStyleRequests.push({
+            updateTextStyle: {
+              objectId: el.objectId,
+              style: { foregroundColor: { opaqueColor: { rgbColor: _WHITE } } },
+              fields: 'foregroundColor',
+              textRange: { type: 'FIXED_RANGE', startIndex: range.start, endIndex: endIdx },
+            },
+          })
         }
-        fixedRangeStyleRequests.push({
-          updateTextStyle: {
-            objectId: el.objectId,
-            style: { foregroundColor: { opaqueColor: { rgbColor: _WHITE } } },
-            fields: 'foregroundColor',
-            textRange: { type: 'FIXED_RANGE', startIndex: 0, endIndex: endIdx },
-          },
-        })
       }
     }
   }
