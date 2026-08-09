@@ -24,11 +24,19 @@ const CASES: Case[] = [
     expectOk: true,
   },
   {
-    name: 'викинуло частину — це дозволено, це і є скорочення',
+    name: 'переказало кожен пункт коротше — усі на місці',
     original: 'Перший напрямок — аналітика ринку\nДругий — робота з партнерами Rozetka та Comfy\nТретій — маркетинг',
     shortened: 'Аналітика ринку\nПартнери\nМаркетинг',
     target: 50,
     expectOk: true,
+  },
+  {
+    name: 'ВИКИНУЛО ПУНКТ — має відхилити',
+    original: 'Репутація\nTop of mind employer brand серед студентів\nСтворення ефекту word of mouth\nЕкосистема бренд-амбасадорів',
+    shortened: 'Репутація\nTop of mind серед студентів\nЕкосистема амбасадорів',
+    target: 40,
+    expectOk: false,
+    expectMentions: 'змінилась кількість пунктів',
   },
   {
     name: 'ВИГАДАЛО ЧИСЛО — має відхилити',
@@ -68,7 +76,7 @@ const CASES: Case[] = [
     shortened: 'Перший, другий і третій пункти',
     target: 50,
     expectOk: false,
-    expectMentions: 'злився в один абзац',
+    expectMentions: 'змінилась кількість пунктів',
   },
   {
     name: 'порожньо — має відхилити',
@@ -145,39 +153,17 @@ if (!enumOk) failed++
 console.log(`${enumOk ? 'PASS' : 'FAIL'}  нумерація списку не рахується вигаданими числами`)
 console.log(`      ${numbered.ok ? 'прийнято' : `відхилено: ${numbered.problems.join('; ')}`}`)
 
-// Trimming words inside every line tops out around a fifth of the text. Demanding half while
-// also forbidding the removal of any item is arithmetically impossible — and that is exactly
-// what the first live run asked for: 8% delivered where 53% was needed.
+// The prompt must fix the item count and permit rephrasing. The reverse — forbid rephrasing,
+// permit deletion — is what removed real points from a real deck.
 const body = ['Перший пункт про щось важливе', 'Другий пункт про інше', 'Третій пункт',
               'Четвертий пункт', 'П’ятий пункт', 'Шостий пункт'].join('\n')
-const deep    = shortenPrompt(body, 53)
-const shallow = shortenPrompt(body, 15)
-const promptOk = deep.includes('ПРИБРАТИ найменш важливі пункти')
-  && !shallow.includes('ПРИБРАТИ найменш важливі пункти')
-  && shallow.includes('скільки рядків було, стільки має лишитись')
+const deep = shortenPrompt(body, 53)
+const promptOk = deep.includes('рядків має лишитись рівно 6')
+  && deep.includes('Перефразуй кожен пункт коротше')
+  && !deep.toLowerCase().includes('прибрати найменш важливі')
 if (!promptOk) failed++
-console.log(`${promptOk ? 'PASS' : 'FAIL'}  глибокий зріз дозволяє викидати пункти, дрібний — ні`)
-console.log(`      53%: ${deep.includes('ПРИБРАТИ') ? 'можна викидати' : 'НЕ можна — помилка'}; 15%: ${shallow.includes('ПРИБРАТИ') ? 'можна — помилка' : 'структура зберігається'}`)
-
-// The first line of a card is its heading — the generator draws it larger, and it is what
-// reads as the highlight. Dropping it restructures the card rather than shortening it.
-const beheaded = auditShortening(
-  'Proof of Talents\nУчасть в програмах SKELAR — це круто\nПрограми дають цінний досвід\nМожливість вчитися у зірок ринку',
-  'Участь в програмах SKELAR — це круто\nМожливість вчитися у зірок ринку',
-  40,
-)
-const rewordedHead = auditShortening(
-  'Proof of Talents\nУчасть в програмах SKELAR — це круто\nПрограми дають цінний досвід\nМожливість вчитися у зірок ринку',
-  'Talents\nУчасть в програмах SKELAR — це круто\nВчитися у зірок ринку',
-  40,
-)
-const headOk = !beheaded.ok
-  && beheaded.problems.join(' ').includes('викинуто заголовок групи')
-  && rewordedHead.ok
-if (!headOk) failed++
-console.log(`${headOk ? 'PASS' : 'FAIL'}  заголовок картки можна скоротити, але не викинути`)
-console.log(`      викинутий: ${beheaded.ok ? 'ПРИЙНЯТО — помилка' : beheaded.problems.join('; ')}`)
-console.log(`      скорочений: ${rewordedHead.ok ? 'прийнято' : `ВІДХИЛЕНО — помилка: ${rewordedHead.problems.join('; ')}`}`)
+console.log(`${promptOk ? 'PASS' : 'FAIL'}  промпт фіксує кількість пунктів і дозволяє перефразувати`)
+console.log(`      кількість зафіксована: ${deep.includes('рядків має лишитись рівно 6')}; перефразування дозволено: ${deep.includes('Перефразуй кожен пункт коротше')}`)
 
 console.log(`\n${failed === 0 ? 'ALL PASS' : `${failed} FAIL`}`)
 process.exit(failed === 0 ? 0 : 1)

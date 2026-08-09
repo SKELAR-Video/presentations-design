@@ -114,12 +114,14 @@ export function auditShortening(
     problems.push(`скоротилось на ${cutPct}%, потрібно було близько ${targetCutPct}%`)
   }
 
-  // Line count is structure, not text: a bulleted list that comes back as one paragraph is
-  // a different slide, whatever the words say.
+  // Item count is structure, and structure belongs to whoever wrote the brief. Every point
+  // must still be there — reworded, not removed. This replaces a weaker rule that only
+  // objected when a whole list collapsed into one paragraph, which let 5 bullets come back
+  // as 3 and call it shortening.
   const origList = original.split('\n').map(l => l.trim()).filter(Boolean)
   const newList  = shortened.split('\n').map(l => l.trim()).filter(Boolean)
-  if (origList.length > 1 && newList.length === 1) {
-    problems.push(`список злився в один абзац: було ${origList.length} рядків, став 1`)
+  if (origList.length !== newList.length) {
+    problems.push(`змінилась кількість пунктів: було ${origList.length}, стало ${newList.length}`)
   }
 
   // The first line of a card is its group heading — the generator draws it a step larger,
@@ -152,30 +154,37 @@ export function originalTextNote(
   return `ОРИГІНАЛ З ТЗ (текст на слайді скорочено за рішенням людини)\n\n${blocks.join('\n\n')}\n`
 }
 
-// How much has to go decides what the model is allowed to do. Trimming words inside every
-// line has a ceiling somewhere around a fifth of the text; asking for half while also
-// forbidding the removal of any item is asking for something arithmetically impossible.
-// The first live run proved it: 8% cut where 53% was needed, 15% where 39% was, on a prompt
-// that ordered "as many lines out as came in".
-const DROP_ITEMS_ABOVE_PCT = 25
-
+// The number of items on a slide is the slide's structure, and structure is the client's,
+// not ours. An earlier version let the model delete whole bullets once the required cut went
+// past a quarter — that reached the target, and it did so by removing points the brief made
+// ("Створення ефекту word of mouth", "Університет навчив тебе думати. Ми навчимо тебе
+// діяти"). Shortening a deck must not decide which of someone's arguments survives.
+//
+// The trade was backwards. That version also forbade rephrasing — "remove words, do not
+// restate" — and trimming words inside fixed sentences tops out somewhere near a fifth of
+// the text, which is exactly why deleting an item became the only way to reach 39%.
+//
+// So: rephrasing is allowed, deleting is not. Saying the same point in fewer words
+// compresses far more than shaving adjectives, and it leaves every point standing. When even
+// that cannot reach the target, the honest answer is to refuse and say so — the person can
+// then shorten the brief themselves, where they know what matters.
 export function shortenPrompt(text: string, targetCutPct: number): string {
   const lines = text.split('\n').filter(l => l.trim()).length
-  const mayDropItems = targetCutPct > DROP_ITEMS_ABOVE_PCT && lines > 2
-
-  const structureRule = mayDropItems
-    ? `3. Щоб зрізати стільки, доведеться ПРИБРАТИ найменш важливі пункти цілком — це дозволено і очікувано. Залиши приблизно ${Math.max(2, Math.round(lines * (1 - targetCutPct / 100)))} з ${lines} пунктів, кожен окремим рядком. Пункти, які лишились, не зливай в один абзац.`
-    : `3. Зберігай структуру: скільки рядків було, стільки має лишитись. Кожен рядок скорочуй окремо.`
 
   return `Скороти цей текст для слайда презентації приблизно на ${targetCutPct}%.
 
-ПРАВИЛА:
-1. Прибирай слова й цілі пункти — не переписуй зміст своїми словами.
-2. НЕ додавай жодного числа, назви, імені чи факту, якого немає в оригіналі.
-${structureRule}
-4. ПЕРШИЙ рядок — це заголовок картки. Він має лишитись першим рядком: скоротити його слова можна, викинути — ні.
+ГОЛОВНЕ ПРАВИЛО: рядків має лишитись рівно ${lines} — стільки ж, скільки зараз.
+Кожен пункт лишається на місці. Жоден не можна викинути чи злити з іншим.
+
+ЯК СКОРОЧУВАТИ:
+1. Перефразуй кожен пункт коротше — тією ж мовою, зберігаючи його думку повністю.
+2. Прибирай зайві слова, повтори, службові звороти. Думку — ні.
+3. НЕ додавай жодного числа, назви, імені чи факту, якого немає в оригіналі.
+4. ПЕРШИЙ рядок — заголовок картки. Він лишається першим: скоротити можна, викинути ні.
 5. Не додавай заголовків, пояснень, лапок, коментарів і нумерації, якої не було.
 6. Мова та сама, що в оригіналі.
+
+Якщо скоротити на ${targetCutPct}% без втрати жодного пункту неможливо — скороти настільки, наскільки виходить, але рядків лиши ${lines}.
 
 Поверни ТІЛЬКИ скорочений текст, без нічого зайвого.
 
