@@ -1931,7 +1931,10 @@ function buildTitleBodyFloatRequests(
         if (hasListItems(bodyText)) {
           reqs.push(listParagraphStyleRequest(el.objectId, bodyPt))
         }
-        for (const range of findGroupHeaderRanges(bodyText)) {
+        // Group headers (a whole first line) and colon labels (a prefix of any line) are
+        // both white, and a line can be neither, either, or — for a heading that itself
+        // contains a colon — both. Overlapping ranges paint the same colour, so no conflict.
+        for (const range of [...findGroupHeaderRanges(bodyText), ...findColonLabelRanges(bodyText)]) {
           const endIndex = Math.min(range.end, bodyText.length)
           if (endIndex <= range.start) continue
           fixedRange.push({
@@ -2191,6 +2194,29 @@ function findGroupHeaderRanges(text: string): Array<{ start: number; end: number
       ranges.push({ start: offset, end: offset + nlIdx })
     }
     offset += group.length + 2  // +2 accounts for the "\n\n" separator between groups
+  }
+  return ranges
+}
+
+// Label ranges: on every line, "Медіа:" and its colon read as a label and go WHITE, the rest
+// of the line stays grey. title_body / title_photo had no colon rule at all — only the
+// group-header rule above, which whitens the first line of each blank-line group — so a body
+// like KPI's came out with its opening line fully white and "Медіа:" / "Бренд:" in plain
+// grey, the opposite of what those labels are for.
+//
+// Walks line by line, counting \n and \v alike: \v is a soft break inside one paragraph,
+// and a label at the head of one is still a label.
+function findColonLabelRanges(text: string): Array<{ start: number; end: number }> {
+  const ranges: Array<{ start: number; end: number }> = []
+  let offset = 0
+  for (const line of text.split(/([\n\v])/)) {
+    if (line === '\n' || line === '\v') { offset += 1; continue }
+    const idx = line.indexOf(':')
+    // Bounded so a colon in the middle of a sentence doesn't whiten half a paragraph.
+    if (idx > 0 && idx <= _COLON_LABEL_MAX) {
+      ranges.push({ start: offset, end: offset + idx + 1 })
+    }
+    offset += line.length
   }
   return ranges
 }
@@ -5604,7 +5630,10 @@ export async function buildPresentation(
         if (hasListItems(bodyText)) {
           requests.push(listParagraphStyleRequest(el.objectId, bodyPt))
         }
-        for (const range of findGroupHeaderRanges(bodyText)) {
+        // Group headers (a whole first line) and colon labels (a prefix of any line) are
+        // both white, and a line can be neither, either, or — for a heading that itself
+        // contains a colon — both. Overlapping ranges paint the same colour, so no conflict.
+        for (const range of [...findGroupHeaderRanges(bodyText), ...findColonLabelRanges(bodyText)]) {
           const endIndex = Math.min(range.end, bodyText.length)
           if (endIndex <= range.start) continue
           fixedRangeStyleRequests.push({
