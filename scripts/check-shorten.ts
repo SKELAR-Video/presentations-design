@@ -25,9 +25,9 @@ const CASES: Case[] = [
   },
   {
     name: 'переказало кожен пункт коротше — усі на місці',
-    original: 'Перший напрямок — аналітика ринку\nДругий — робота з партнерами Rozetka та Comfy\nТретій — маркетинг',
-    shortened: 'Аналітика ринку\nПартнери\nМаркетинг',
-    target: 50,
+    original: 'Перший напрямок — аналітика ринку\nДругий напрямок — робота з партнерами Rozetka та Comfy\nТретій напрямок — маркетинг і залучення',
+    shortened: 'Аналітика ринку\nПартнери Rozetka та Comfy\nМаркетинг і залучення',
+    target: 40,
     expectOk: true,
   },
   {
@@ -77,6 +77,22 @@ const CASES: Case[] = [
     target: 50,
     expectOk: false,
     expectMentions: 'змінилась кількість пунктів',
+  },
+  {
+    name: 'ВИПОТРОШИЛО ОДИН РЯДОК заради інших — має відхилити',
+    original: 'Студенти\nFast-track у компанію, куди складно потрапити\nБудуй бізнес, а не заповнюй таблиці',
+    shortened: 'Студенти\nFast-track у компанію\nБудуй бізнес, не таблиці',
+    target: 30,
+    expectOk: false,
+    expectMentions: 'рядок зрізано на',
+  },
+  {
+    name: 'РЯДОК СТАВ ДОВШИМ — має відхилити',
+    original: 'Цільові спеціальності\nВідбір, тестування\nУчасть у реальних кейсах (лімітоване залучення)',
+    shortened: 'Цільові спеціальності\nВідбір і тестування\nУчасть у кейсах',
+    target: 20,
+    expectOk: false,
+    expectMentions: 'рядок став довшим',
   },
   {
     name: 'порожньо — має відхилити',
@@ -144,9 +160,9 @@ console.log(`      зі скороченням: ${note.split('\n')[0]}`)
 // Numbering a bullet is the shape of a list, not a claim about the world. Counting it as a
 // figure rejected an honest rewrite for "inventing" the number 1 on the first live run.
 const numbered = auditShortening(
-  'Аналітика ринку і збір даних\nРобота з партнерами\nМаркетинг і залучення',
-  '1. Аналітика ринку\n2. Партнери\n3. Маркетинг',
-  30,
+  'Аналітика ринку і збір усіх даних\nРобота з нашими партнерами\nМаркетинг і залучення людей',
+  '1. Аналітика і збір даних\n2. Робота з партнерами\n3. Маркетинг і залучення',
+  20,
 )
 const enumOk = numbered.ok
 if (!enumOk) failed++
@@ -160,6 +176,8 @@ const body = ['Перший пункт про щось важливе', 'Дру�
 const deep = shortenPrompt(body, 53)
 const promptOk = deep.includes('рядків має лишитись рівно 6')
   && deep.includes('Перефразуй кожен пункт коротше')
+  && deep.includes('Скорочуй ВСІ рядки приблизно однаково')
+  && deep.includes('Перелік через кому всередині рядка')
   && !deep.toLowerCase().includes('прибрати найменш важливі')
 if (!promptOk) failed++
 console.log(`${promptOk ? 'PASS' : 'FAIL'}  промпт фіксує кількість пунктів і дозволяє перефразувати`)

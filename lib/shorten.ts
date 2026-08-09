@@ -124,6 +124,35 @@ export function auditShortening(
     problems.push(`змінилась кількість пунктів: було ${origList.length}, стало ${newList.length}`)
   }
 
+  // Per-line limits. The count above stops whole points from vanishing; these stop a point
+  // from being gutted while its neighbours are spared. That came from the same instinct —
+  // the model meets the overall target by taking it out of whichever line gives way easiest,
+  // and what gives way easiest is usually the clause carrying the meaning:
+  //
+  //   "Fast-track у компанію, куди складно потрапити" → "Fast-track у компанію"   (-53%)
+  //   "Ростеш так, як люди навколо. Обирай оточення"  → "Ростеш як люди навколо"  (-50%)
+  //   "Фокус-групи, «краш дамі», опитування"          → "Фокус-групи, опитування" (-36%)
+  //
+  // on slots whose targets were 33% and 20%. So no line may be cut far past the slot's own
+  // target; the floor of 25 points keeps a small target from making the task impossible.
+  //
+  // And no line may grow. "Відбір, тестування" came back as "Відбір і тестування" — a line
+  // rewritten for nothing, longer than it started, on a slot being shortened.
+  if (origList.length === newList.length) {
+    const cap = Math.max(25, Math.round(targetCutPct * 1.4))
+    for (let i = 0; i < origList.length; i++) {
+      const before = origList[i].length
+      const after  = newList[i].length
+      if (!before) continue
+      const lineCut = Math.round((1 - after / before) * 100)
+      if (lineCut < 0) {
+        problems.push(`рядок став довшим: "${origList[i].slice(0, 32)}"`)
+      } else if (lineCut > cap) {
+        problems.push(`рядок зрізано на ${lineCut}% при цілі ${targetCutPct}%: "${origList[i].slice(0, 40)}"`)
+      }
+    }
+  }
+
   // The first line of a card is its group heading — the generator draws it a step larger,
   // and it is what reads as the highlight on the slide. Dropping it is not shortening, it is
   // restructuring: the card loses its heading and the line beneath is promoted into a role
@@ -178,11 +207,14 @@ export function shortenPrompt(text: string, targetCutPct: number): string {
 
 ЯК СКОРОЧУВАТИ:
 1. Перефразуй кожен пункт коротше — тією ж мовою, зберігаючи його думку повністю.
-2. Прибирай зайві слова, повтори, службові звороти. Думку — ні.
-3. НЕ додавай жодного числа, назви, імені чи факту, якого немає в оригіналі.
-4. ПЕРШИЙ рядок — заголовок картки. Він лишається першим: скоротити можна, викинути ні.
-5. Не додавай заголовків, пояснень, лапок, коментарів і нумерації, якої не було.
-6. Мова та сама, що в оригіналі.
+2. Скорочуй ВСІ рядки приблизно однаково. Не можна вирізати половину одного рядка, щоб не чіпати інші: саме в тій половині зазвичай і лежить сенс.
+3. Уточнення — це не зайве слово. «у компанію, куди складно потрапити» без другої частини втрачає те, заради чого написане. «Обирай оточення» після «ростеш як люди навколо» — це заклик, не повтор.
+4. Перелік через кому всередині рядка — теж перелік. Його елементи не викидати.
+5. Якщо рядок уже короткий і зрізати в ньому нема чого — лиши його дослівно. Переписувати заради переписування не треба, і рядок у жодному разі не має стати довшим.
+6. НЕ додавай жодного числа, назви, імені чи факту, якого немає в оригіналі.
+7. ПЕРШИЙ рядок — заголовок картки. Він лишається першим: скоротити можна, викинути ні.
+8. Не додавай заголовків, пояснень, лапок, коментарів і нумерації, якої не було.
+9. Мова та сама, що в оригіналі.
 
 Якщо скоротити на ${targetCutPct}% без втрати жодного пункту неможливо — скороти настільки, наскільки виходить, але рядків лиши ${lines}.
 
