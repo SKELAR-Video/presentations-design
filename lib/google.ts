@@ -264,7 +264,16 @@ function subtitleBand(compId: string, slots: Record<string, string>, titlePt: nu
   if (!text) return 0
   const subH    = subtitleHeight(text, subtitlePtFor(text, titlePt))
   const withSub = subtitleY(slots, titlePt) + subH + _SUB_GAP
-  const baseTop = titleZoneBottom(compId) + _SUB_GAP
+  // Measured from the SAME baseline the callers add it to — the title's real text bottom,
+  // not the master's static zone. They disagreed: this asked titleZoneBottom(compId), which
+  // for a flat-column family answers with the master's 326, while flatColumnsTopMin adds the
+  // result to titleZoneBottom(compId, titleText) — 185 for a one-line heading. The band came
+  // out 141px short of the truth, and the columns were laid over the subtitle by that much:
+  // deck 1RVKq…eiL0, slide 12 (67px of boxes, 48px of visible text), slide 16 (104px).
+  //
+  // Two variants of the same sheet made it obvious — two_columns put its columns at 397 and
+  // two_columns_plain at 268, same title, same subtitle, same words.
+  const baseTop = titleZoneBottom(compId, slots['ЗАГОЛОВОК']) + _SUB_GAP
   return Math.max(0, withSub - baseTop)
 }
 
@@ -448,7 +457,14 @@ function bandedColumnTop(
   // Demanding a full TITLE_GAP under a long heading is more correct typographically and
   // costs area — and this change is about finding room that already exists, not about
   // re-opening how tightly circles may sit under a heading. Strictly better or equal.
-  return Math.min(_FLAT_COL_Y_DEF, wanted)
+  //
+  // The cap is on the RISE, never on the floor. A plain Math.min would pull the columns back
+  // up through a tall subtitle whenever the content above needs more than 540 — trading one
+  // overlap for another. Whatever the title and subtitle occupy is not negotiable.
+  return Math.max(
+    flatColumnsTopMin(compId, subBand, band, titleText),
+    Math.min(_FLAT_COL_Y_DEF, wanted),
+  )
 }
 
 // Top of a bento ROW — the one number the font search and the layout must agree on.
