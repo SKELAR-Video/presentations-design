@@ -287,6 +287,11 @@ function RepairSummary({ notes, leftOver }: { notes: string[]; leftOver: number 
   )
 }
 
+// Past this much, "shortening" stops describing what happens. Two thirds of the client's
+// words leave the slide and what returns is a paraphrase — a legitimate choice, but not one
+// to make by clicking the option that was preselected for you.
+const DEEP_CUT_PCT = 50
+
 function OverloadPanel({
   overloads, acceptedCount, fixing, stage, error, notes, splittable, worstCut, onFix,
 }: {
@@ -343,6 +348,11 @@ function OverloadPanel({
               <p className="text-xs text-[#A2A6B1]">
                 тексту на {o.slidesNeeded} слайди, або зрізати {worstCut(o)}%
               </p>
+              {worstCut(o) >= DEEP_CUT_PCT && decisions.get(o.slideIndex) === 'shorten' && (
+                <p className="text-xs text-[#FD3433] mt-0.5">
+                  зникне більше половини тексту — можливо, коротше варто написати в ТЗ
+                </p>
+              )}
             </div>
             <div className="flex gap-1 shrink-0">
               {([
