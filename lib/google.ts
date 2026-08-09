@@ -5502,7 +5502,17 @@ export async function buildPresentation(
   const _TP_BODY_X    = 100                              // create-master: ТЕКСТ box x
   const _TP_BODY_W    = 765                              // create-master: ТЕКСТ box width
   const _TP_BODY_Y    = 440                              // create-master: ТЕКСТ box y (title zone bottom)
-  const _TP_BODY_MAX_H = _H_SLIDE - _PAD - _TP_BODY_Y    // 540 — down to the page margin
+  // …but not all the way down: title_photo is one of the two families that put the logo
+  // BOTTOM-LEFT (see _logoPos), right where a left-aligned body's last lines land. Running
+  // the text to the page margin printed it under the mark — visible on deck 1RVKq…eiL0,
+  // "Меседжі. Напрямки для викладачів", where the closing "студентів)" sits behind it.
+  //
+  // Narrowing the box instead of shortening it would not help: the logo is only 90px wide,
+  // but the body is left-aligned, so it is exactly the first characters of the last lines
+  // that collide.
+  const _TP_LOGO_TOP   = _H_SLIDE - _PAD - _LOGO_H       // 909 — top edge of the mark
+  const _TP_LOGO_GAP   = 24                              // breathing room above it
+  const _TP_BODY_MAX_H = _TP_LOGO_TOP - _TP_LOGO_GAP - _TP_BODY_Y
   for (let i = 0; i < plan.slides.length; i++) {
     if (plan.slides[i].composition !== 'title_photo') continue
     const pageId = planPageIds[i]

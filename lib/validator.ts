@@ -567,7 +567,11 @@ function checkLogoOverlap(slide: slides_v1.Schema$Page, compId: string, slots: R
   // cover_title_only and title-only closing: full-slide title intentionally fills the slide — no overlap check
   const isTitleOnlyClosing = compId === 'closing'
   if (compId === 'cover_title_only' || isTitleOnlyClosing) return { check: 'logo_overlap', pass: true }
-  const isBR   = compId.startsWith('bento_right_')
+  // Which corner the mark actually sits in. title_photo belongs with bento_right_* here —
+  // lib/google.ts's _logoPos puts both bottom-left — and leaving it out meant this check
+  // searched the top-right corner of a slide whose logo is at the bottom, so a body running
+  // under the mark was invisible to the machine by construction.
+  const isBR   = compId.startsWith('bento_right_') || compId === 'title_photo'
   const LOGO_W = 90, LOGO_H = 90
   const lX = isBR ? 100  : 1730
   const lY = isBR ? 890  : 100
