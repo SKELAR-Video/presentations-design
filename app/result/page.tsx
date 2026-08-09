@@ -69,6 +69,34 @@ export default function ResultPage() {
     (deckFacts ? !deckFacts.pass : false) ||
     (validation?.slides ?? []).some(sv =>
       sv.checks.some(c => !c.pass && c.check !== 'readable_font'))
+  // A sheet appears once per design variant, and the variants are not the same shape — a
+  // three-column layout and a flex one give the same words different widths, so the same
+  // text falls short by different amounts on each. The deficit was read off whichever
+  // variant happened to be listed, while the shortened wording is applied to all of them:
+  // enough for the slide the person saw, not enough for its siblings.
+  //
+  // Measured on deck 1bOXi…QfSZw: slide 7 was shortened by the 36% its sibling asked for and
+  // came back at 11pt — still unreadable, because in columns_flex the columns are narrower.
+  //
+  // So the target is the worst case across every slide holding this exact text. Matched by
+  // text rather than by slot name, because the same words live under КОЛОНКА_1 in one
+  // composition and КАРТКА_1 in another — and by exact text, the same rule the shortened
+  // wording is echoed back by.
+  function worstCutFor(slideIndex: number, slot: string): number {
+    const text = plan?.slides[slideIndex]?.slots?.[slot]
+    if (!text?.trim()) return 0
+    let worst = 0
+    for (const o of allOverloads) {
+      const slide = plan?.slides[o.slideIndex]
+      if (!slide) continue
+      for (const os of o.slots) {
+        if (slide.slots[os.slot] !== text) continue
+        if (os.cutPct > worst) worst = os.cutPct
+      }
+    }
+    return worst
+  }
+
   // The repair needs the plan whose slide numbers match the report. Without it the panel
   // could still describe the problem but could not act on it, and a button that cannot keep
   // its promise is worse than no button.
@@ -91,7 +119,7 @@ export default function ResultPage() {
         .map(([slideIndex]) => {
           const o = overloads.find(x => x.slideIndex === slideIndex)!
           const worst = [...o.slots].sort((a, b) => b.cutPct - a.cutPct)[0]
-          return { slideIndex, slot: worst.slot, cutPct: worst.cutPct }
+          return { slideIndex, slot: worst.slot, cutPct: worstCutFor(slideIndex, worst.slot) }
         })
 
       if (targets.length) {
@@ -177,6 +205,7 @@ export default function ResultPage() {
             fixing={fixing}
             stage={fixStage}
             splittable={splittable}
+            worstCut={o => worstCutFor(o.slideIndex, [...o.slots].sort((a, b) => b.cutPct - a.cutPct)[0].slot)}
             error={fixError}
             notes={fixNotes}
             onFix={handleFix}
@@ -259,7 +288,7 @@ function RepairSummary({ notes, leftOver }: { notes: string[]; leftOver: number 
 }
 
 function OverloadPanel({
-  overloads, acceptedCount, fixing, stage, error, notes, splittable, onFix,
+  overloads, acceptedCount, fixing, stage, error, notes, splittable, worstCut, onFix,
 }: {
   overloads: SlideOverload[]
   acceptedCount: number
@@ -268,6 +297,7 @@ function OverloadPanel({
   error: string
   notes: string[]
   splittable: Set<number>
+  worstCut: (o: SlideOverload) => number
   onFix: (decisions: Map<number, Decision>) => void
 }) {
   // Splitting loses nothing at all, so it is the default wherever it can work. Where it
@@ -311,13 +341,13 @@ function OverloadPanel({
             <div className="min-w-0">
               <p className="text-sm text-white">Слайд {o.slideIndex + 1}</p>
               <p className="text-xs text-[#A2A6B1]">
-                тексту на {o.slidesNeeded} слайди, або зрізати {Math.max(...o.slots.map(s => s.cutPct))}%
+                тексту на {o.slidesNeeded} слайди, або зрізати {worstCut(o)}%
               </p>
             </div>
             <div className="flex gap-1 shrink-0">
               {([
                 ['split',   `Розкласти на ${o.slidesNeeded}`],
-                ['shorten', `Скоротити на ${Math.max(...o.slots.map(s => s.cutPct))}%`],
+                ['shorten', `Скоротити на ${worstCut(o)}%`],
                 ['keep',    'Лишити'],
               ] as [Decision, string][]).map(([value, label]) => (
                 <button
