@@ -3420,6 +3420,12 @@ export function expandPlanWithVariants(plan: SlidePlan): {
     // Already a variant of something. Expanding it again would produce variants of a
     // variant: the repair flow hands this function a plan it has already expanded once, and
     // without this guard one sheet becomes N² slides.
+    //
+    // Passed through, but NOT forgotten: the pill that marks a slide as one design option
+    // among several is built from variantMap, and variantMap used to be filled only while
+    // expanding. So a repaired deck came back with its variants intact and every pill gone —
+    // the reader could no longer tell four takes on one sheet from four different sheets.
+    // Registered below instead, once the whole pass knows how many siblings each group has.
     if (slide.variantOf) {
       expandedSlides.push(slide)
       continue
@@ -3528,6 +3534,24 @@ export function expandPlanWithVariants(plan: SlidePlan): {
         flags: { ...(slide.flags ?? {}) },
       })
     }
+  }
+
+  // Slides that arrived already expanded (a repair round) get their pills here, from the
+  // marker each one carries, rather than from the expansion that did not run for them.
+  const groups = new Map<string, number[]>()
+  expandedSlides.forEach((s, i) => {
+    if (!s.variantOf || variantMap.has(i)) return
+    const list = groups.get(s.variantOf) ?? []
+    list.push(i)
+    groups.set(s.variantOf, list)
+  })
+  for (const indices of groups.values()) {
+    // A group of one is not a choice — the sibling variants were dropped or split away, and
+    // marking the survivor "option 1 of 1" would be noise on a slide with no alternative.
+    if (indices.length < 2) continue
+    indices.forEach((idx, vi) => {
+      variantMap.set(idx, { variantIdx: vi + 1, totalVariants: indices.length })
+    })
   }
 
   return { expanded: { ...plan, slides: expandedSlides }, variantMap }

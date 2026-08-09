@@ -46,7 +46,30 @@ export async function POST(req: NextRequest) {
 
     slide.shortenedFrom = { ...(slide.shortenedFrom ?? {}), [target.slot]: original }
     slide.slots[target.slot] = result.text
-    notes.push(`слайд ${target.slideIndex + 1}: скорочено на ${result.cutPct}%`)
+
+    // The same sheet appears several times in a deck, once per design variant, and the
+    // person was shown one of them. Leaving the siblings on the full text put the original
+    // and the shortened version side by side in the same deck, with nothing saying which is
+    // the real one — "щоб не плутати юзера".
+    //
+    // Applied by matching the exact text rather than by re-running the model per sibling:
+    // one call, one wording, and identical text stays identical. Variants whose wording
+    // already differs are left alone, which is the honest reading of an exact match.
+    let echoed = 0
+    for (const other of slides) {
+      if (other === slide) continue
+      for (const [key, value] of Object.entries(other.slots)) {
+        if (value !== original) continue
+        other.slots[key] = result.text
+        other.shortenedFrom = { ...(other.shortenedFrom ?? {}), [key]: original }
+        echoed++
+      }
+    }
+
+    notes.push(
+      `слайд ${target.slideIndex + 1}: скорочено на ${result.cutPct}%` +
+      (echoed ? ` (те саме застосовано ще на ${echoed} варіант${echoed === 1 ? 'і' : 'ах'})` : ''),
+    )
   }
 
   console.log(`[shorten] ${calls} calls, in=${inputTokens} out=${outputTokens}`)
