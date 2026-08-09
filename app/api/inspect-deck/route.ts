@@ -78,6 +78,10 @@ type ShapeInfo = {
   paragraphs: string[]
   paragraph_count: number
   paragraph_facts: ParagraphFact[]
+  // Present only where a box uses more than one colour — which is the only case anyone asks
+  // about. Runs of the same colour are merged, so this reads as "these characters are white,
+  // those are grey".
+  color_runs?: Array<{ text: string; color: string | null }>
 }
 
 // Slides returns textElements as a flat list: a paragraphMarker opens each paragraph
@@ -229,6 +233,30 @@ export async function GET(request: NextRequest) {
 
       const paragraphFacts = readParagraphFacts(textElements as Array<Record<string, any>>)
 
+      // Colour, per run, as text rather than a colour object: "Медіа:" white and the rest
+      // grey is a rule this project states explicitly, and until now nothing but a human eye
+      // could tell whether the file obeyed it. Two separate colour defects had to be reported
+      // by screenshot because the report carried sizes and geometry but never colour.
+      // Written as runs — the text and where its colour changes — since that is exactly the
+      // question being asked: which characters are white.
+      const colorRuns = textElements
+        .filter(te => (te.textRun?.content ?? '') !== '')
+        .map(te => {
+          const c = te.textRun?.style?.foregroundColor?.opaqueColor?.rgbColor
+          const hex = c
+            ? '#' + [c.red ?? 0, c.green ?? 0, c.blue ?? 0]
+                .map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join('')
+            : null
+          return { text: te.textRun?.content ?? '', color: hex }
+        })
+        // Neighbouring runs of the same colour are one run as far as the eye is concerned.
+        .reduce((acc: Array<{ text: string; color: string | null }>, run) => {
+          const prev = acc[acc.length - 1]
+          if (prev && prev.color === run.color) prev.text += run.text
+          else acc.push({ ...run })
+          return acc
+        }, [])
+
       const uniqueFontSizes = [...new Set(fontSizes)]
       const firstFontSize = fontSizes[0] ?? null
 
@@ -252,6 +280,7 @@ export async function GET(request: NextRequest) {
         paragraphs,
         paragraph_count: paragraphFacts.length,
         paragraph_facts: paragraphFacts,
+        color_runs: colorRuns.length > 1 ? colorRuns : undefined,
       })
     }
 
