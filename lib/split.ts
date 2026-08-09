@@ -127,10 +127,21 @@ function splitByLines(slide: Slide, parts: number, slotName: string): SplitResul
     const slots: Record<string, string> = { ...slide.slots }
     slots[slotName] = group.join('\n')
     for (const key of Object.keys(slots)) {
+      // Never the slot being divided. ПІДЗАГОЛОВОК is an introduction on a column layout and
+      // the entire body on `closing` — dropping it there left part two holding nothing but a
+      // heading, and took five lines of the client's text with it (deck 1bOXi…QfSZw,
+      // slides 35–36). Whether a slot is an introduction depends on what the slide is, and
+      // the one certain thing is that the slot we are splitting is not one.
+      if (key === slotName) continue
       if (INTRO_SLOTS.has(key) && gi > 0) delete slots[key]
     }
     return { ...slide, id: `${slide.id}__${gi + 1}`, slots }
   })
+
+  // Belt and braces: whatever the rules above decide, a part with no content is a blank
+  // slide, and a blank slide is content that silently went missing.
+  if (slides.some(s => Object.entries(s.slots)
+    .every(([k, v]) => k === TITLE_SLOT || !v?.trim()))) return null
 
   return {
     slides,

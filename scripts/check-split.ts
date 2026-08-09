@@ -187,6 +187,28 @@ if (!shortenOk) failed++
 console.log(`${shortenOk ? 'PASS' : 'FAIL'}  слайд, відданий на скорочення, не позначається прийнятим`)
 console.log(`      слайдів: ${shortened.slides.length} (очікували 2), з keepSmall: ${shortened.slides.filter(s => s.keepSmall).length} (очікували 0)`)
 
+// ─── The slot being divided is never treated as an introduction ───────────────
+// ПІДЗАГОЛОВОК introduces the sheet on a column layout and IS the body on `closing`.
+// Dropping it from parts 2+ left a closing slide holding nothing but its heading, and took
+// five lines of the client's text with it (deck 1bOXi…QfSZw, slides 35–36).
+const closing = slide('close', 'closing', {
+  'ЗАГОЛОВОК': 'Wording directions',
+  'ПІДЗАГОЛОВОК': [
+    'Ми не чекаємо, поки ти будеш готовий',
+    'Питання «навіщо?» вітаються більше',
+    'Тут не соромляться амбіцій',
+    'Ти не гвинтик',
+  ].join('\n'),
+})
+const closeSplit = splitSlide(closing, overload([{ slot: 'ПІДЗАГОЛОВОК', needed: 900, avail: 540 }], 2))
+const closeParts = closeSplit?.slides ?? []
+const closeOk = closeParts.length === 2
+  && closeParts.every(s => (s.slots['ПІДЗАГОЛОВОК'] ?? '').trim().length > 0)
+  && closeParts.flatMap(s => linesOf(s.slots['ПІДЗАГОЛОВОК'] ?? '')).length === 4
+if (!closeOk) failed++
+console.log(`${closeOk ? 'PASS' : 'FAIL'}  слот, який ділимо, не вважається вступним`)
+console.log(`      частин: ${closeParts.length}, рядків у них: ${closeParts.map(s => linesOf(s.slots['ПІДЗАГОЛОВОК'] ?? '').length).join(' + ') || '—'} (очікували 4 разом, жодної порожньої)`)
+
 // ─── A short row is not split at all ──────────────────────────────────────────
 // Two cards dealt into one and one are two slides that each look like a mistake. The first
 // real run did exactly that to ten sheets; the person's word for the result was "купа
