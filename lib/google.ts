@@ -360,6 +360,10 @@ function buildSubtitleRequests(
 // still the floor, so a short column looks exactly as it does today.
 const _FLAT_TITLE_H    = 245   // create-master: flat-column ЗАГОЛОВОК box height
 const _FLAT_LABEL_BAND = 120   // ПІДПИС_N band above the columns (was 89 in the master)
+
+// How far into a line a colon may sit and still read as a label rather than punctuation
+// inside a sentence. Same figure the label-extraction paths use elsewhere in this file.
+const _COLON_LABEL_MAX = 60
 // Of that band, this much is the label BOX; the rest is the gap down to the column. The
 // font search used to measure the whole 89px band while the master box stayed 50px tall,
 // so a two-line label was sized for room it did not have (85px of text in a 50px box).
@@ -5444,18 +5448,32 @@ export async function buildPresentation(
           }
         }
 
-        // Plain colon-split: prefix up to and including ":" → WHITE
-        const colonIdx = slotValue.indexOf(':')
-        const safeColonEnd = Math.min(colonIdx + 1, actualLen)
-        if (colonIdx >= 0 && safeColonEnd > 0) {
-          fixedRangeStyleRequests.push({
-            updateTextStyle: {
-              objectId: el.objectId,
-              style: { foregroundColor: { opaqueColor: { rgbColor: _WHITE } } },
-              fields: 'foregroundColor',
-              textRange: { type: 'FIXED_RANGE', startIndex: 0, endIndex: safeColonEnd },
-            },
-          })
+        // Plain colon-split: on each line, the part up to and including ":" → WHITE.
+        //
+        // Per LINE, not per box. indexOf on the whole slot found the first colon anywhere in
+        // the block and painted everything before it white — so on a body whose first line
+        // has no colon at all, that line went white in full and the next one turned grey
+        // mid-word: "Медіа: охо|плення" (deck 1F2YV…ft4ic, slide 27). The colon marks a
+        // label on its own line; a line without one is simply not a label.
+        let lineStart = 0
+        for (const line of slotValue.split(/(?=[\n\v])|(?<=[\n\v])/)) {
+          if (/^[\n\v]+$/.test(line)) { lineStart += line.length; continue }
+          const idx = line.indexOf(':')
+          // Bounded so a colon deep inside a sentence doesn't turn half a paragraph white.
+          if (idx > 0 && idx <= _COLON_LABEL_MAX) {
+            const end = Math.min(lineStart + idx + 1, actualLen)
+            if (end > lineStart) {
+              fixedRangeStyleRequests.push({
+                updateTextStyle: {
+                  objectId: el.objectId,
+                  style: { foregroundColor: { opaqueColor: { rgbColor: _WHITE } } },
+                  fields: 'foregroundColor',
+                  textRange: { type: 'FIXED_RANGE', startIndex: lineStart, endIndex: end },
+                },
+              })
+            }
+          }
+          lineStart += line.length
         }
       }
     }
