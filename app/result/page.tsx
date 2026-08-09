@@ -17,6 +17,14 @@ export default function ResultPage() {
   const [fixError, setFixError]     = useState('')
   const [fixNotes, setFixNotes]     = useState<string[]>([])
   const [fixStage, setFixStage]     = useState('')
+  // One repair round, then the deck. The panel used to re-appear on whatever was still
+  // overloaded after a rebuild — and a shortening the audit rejects changes nothing, so the
+  // same slide came back with the same offer, round after round, with the slide numbers
+  // shifting each time because splitting inserts slides. From the person's side that is a
+  // loop with no exit. They asked for one step and then the finished presentation; that is
+  // also the only shape where "no" is a possible answer.
+  const [repairDone, setRepairDone] = useState(false)
+  const [leftOver, setLeftOver]     = useState(0)
 
   useEffect(() => {
     const stored = sessionStorage.getItem('deck_url')
@@ -130,6 +138,8 @@ export default function ResultPage() {
       setValidation(data.validation ?? null)
       setDeckFacts(data.deckFacts ?? null)
       setFixNotes(notes)
+      setLeftOver((data.validation?.overloads ?? []).filter((o: SlideOverload) => !o.accepted).length)
+      setRepairDone(true)
     } catch (e: unknown) {
       setFixError(e instanceof Error ? e.message : 'Невідома помилка')
     } finally {
@@ -160,7 +170,7 @@ export default function ResultPage() {
         {/* The deck is finished and open above this line. Whatever happens here is an offer,
             never a gate: a person who does not care about the small type on slide 7 already
             has what they came for. */}
-        {canRepair && (
+        {canRepair && !repairDone && (
           <OverloadPanel
             overloads={overloads}
             acceptedCount={accepted.length}
@@ -172,6 +182,8 @@ export default function ResultPage() {
             onFix={handleFix}
           />
         )}
+
+        {repairDone && <RepairSummary notes={fixNotes} leftOver={leftOver} />}
 
         {/* Both panels are development instruments, not something the person who asked for
             a deck needs to read: they speak in element ids, pixel heights and check names.
@@ -223,6 +235,29 @@ export default function ResultPage() {
 // "Розкласти" is preselected because it is the only option that loses nothing (see
 // docs/rules/typography.md) — but it is a default, not a verdict, and the deck above is
 // already usable if the person closes the tab instead.
+// What the repair actually did, once and for good. Shown instead of the panel rather than
+// beside it: re-offering the slides that are still tight is what produced the loop, and a
+// person who has already answered should be looking at their deck, not at the same question.
+function RepairSummary({ notes, leftOver }: { notes: string[]; leftOver: number }) {
+  return (
+    <div className="text-left border border-[#292D39] rounded-xl p-5 space-y-3">
+      <p className="text-white font-medium">Виправлено</p>
+      {notes.length > 0 && (
+        <div className="text-sm text-[#A2A6B1] space-y-1">
+          {notes.map(n => <p key={n}>{n}</p>)}
+        </div>
+      )}
+      {leftOver > 0 && (
+        <p className="text-sm text-[#A2A6B1] border-t border-[#292D39] pt-3">
+          {leftOver} {leftOver === 1 ? 'слайд лишився' : 'слайдів лишилось'} із дрібним шрифтом —
+          виправити автоматично не вдалося. Це видно в самій презентації; якщо заважає,
+          найнадійніше правити текст у ТЗ.
+        </p>
+      )}
+    </div>
+  )
+}
+
 function OverloadPanel({
   overloads, acceptedCount, fixing, stage, error, notes, splittable, onFix,
 }: {
