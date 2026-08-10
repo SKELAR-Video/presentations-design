@@ -361,13 +361,14 @@ function buildSubtitleRequests(
 const _FLAT_TITLE_H    = 245   // create-master: flat-column ЗАГОЛОВОК box height
 const _FLAT_LABEL_BAND = 120   // ПІДПИС_N band above the columns (was 89 in the master)
 
-// How far into a line a colon may sit and still read as a label rather than punctuation
-// inside a sentence. Deliberately tighter than the 60 the label-EXTRACTION paths use: those
-// decide which slot text belongs in, and being generous there costs nothing, while here the
-// same generosity paints half a sentence white the moment it happens to end on a colon
-// ("…щоб усе працювало правильно і надійно: без винятків"). Real labels are short — "Медіа:",
-// "Бренд:", "Цільові спеціальності:" — so the bound is set just above the longest of them.
-const _COLON_LABEL_MAX = 30
+// How far into a line a colon may sit and still read as a label. A ceiling only — the real
+// test is the SHAPE of what stands before the colon (see findColonLabelRanges), because
+// length alone cannot separate the two cases we have from real decks:
+//   "Зручні застосунки формують щоденні звички:"            41 — a lead-in, must be white
+//   "…щоб усе працювало правильно і надійно: без винятків"  57 — a sentence, must stay grey
+// Every threshold between them is a guess fitted to two examples, and 30 (the previous
+// value) sacrificed the first to save the second.
+const _COLON_LABEL_MAX = 60
 // Of that band, this much is the label BOX; the rest is the gap down to the column. The
 // font search used to measure the whole 89px band while the master box stayed 50px tall,
 // so a two-line label was sized for room it did not have (85px of text in a 50px box).
@@ -2228,19 +2229,18 @@ export function findColonLabelRanges(text: string): Array<{ start: number; end: 
   for (const line of text.split(/([\n\v])/)) {
     if (line === '\n' || line === '\v') { offset += 1; continue }
     const idx = line.indexOf(':')
-    // Where the colon sits in its line, not how far into it — a character bound alone
-    // cannot tell these two apart, because both are about 40–55 characters long:
-    //   "Зручні застосунки формують щоденні звички:"        ← lead-in, must be white (41)
-    //   "…щоб усе працювало правильно і надійно: без винятків" ← sentence, must stay grey (57)
-    // The colon ENDS the first line and sits inside the second. A line that ends on its
-    // colon is announcing what comes next, whatever its length — that is a heading, and
-    // findGroupHeaderRanges paints whole heading lines with no length bound either. A colon
-    // with the line continuing after it is a label only while it is short ("Медіа:");
-    // further in it is punctuation.
-    // The 30 was set the other way round (deck 1F2YV…ft4ic) and took the lead-in with it:
-    // deck 1OXp1…QAHc, bento_right_2 ТЕКСТ came out entirely grey.
-    const endsLine = idx > 0 && !line.slice(idx + 1).trim()
-    if (idx > 0 && (endsLine || idx <= _COLON_LABEL_MAX)) {
+    // The SHAPE of what stands before the colon, not its length. A label is one clause:
+    //   "Зручні застосунки формують щоденні звички" — no internal punctuation → a label
+    //   "Ми зробили це так, щоб усе працювало правильно і надійно" — a comma, so a
+    //   sentence had already started before the colon, and the colon is its punctuation.
+    // Length cannot separate these (41 and 57), which is how the bound ended up trading one
+    // defect for the other twice: 60 painted half the sentence (deck 1F2YV…ft4ic), 30 then
+    // left the lead-in grey (deck 1NUS9…PhXgU, bento_right_2 ТЕКСТ).
+    // A colon that ENDS its line is a lead-in whatever it contains — it announces what
+    // follows, which is exactly what findGroupHeaderRanges paints, so it needs no ceiling.
+    const endsLine  = !line.slice(idx + 1).trim()
+    const oneClause = !/[,;.!?]/.test(line.slice(0, idx))
+    if (idx > 0 && (endsLine || (idx <= _COLON_LABEL_MAX && oneClause))) {
       ranges.push({ start: offset, end: offset + idx + 1 })
     }
     offset += line.length
