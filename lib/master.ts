@@ -411,6 +411,24 @@ function buildLayout(compId: string, slideId: string, bgColor: RGB, idx: number)
       break
     }
 
+    case 'rows_dot': {
+      // Rows of text with a red dot each. The dots are NOT in the template: how many there
+      // are depends on the slide (two rows or three), and a shape the master drew would
+      // have to be found and deleted again — the timelines create theirs at generation
+      // time for the same reason. The master carries one text box per row, positioned for
+      // the default three-row slide; buildRowsDotRequests moves them and adds the dots.
+      const RD_TEXT_X = 224                    // dot (100 + 72) + 52px gap
+      const RD_TEXT_W = PAD + TITLE_W - RD_TEXT_X   // 1486 — right edge flush with the title
+      const RD_TOP    = 474
+      const RD_STEP   = 188
+      const RD_ROW_H  = 116
+      push(tb(mk(), slideId, 'ЗАГОЛОВОК', PAD, PAD, TITLE_W, 300, 44))
+      for (let k = 0; k < 3; k++) {
+        push(tb(mk(), slideId, `ПУНКТ_${k + 1}`, RD_TEXT_X, RD_TOP + k * RD_STEP, RD_TEXT_W, RD_ROW_H, 18))
+      }
+      break
+    }
+
     case 'title_photo': {
       push(
         tb(mk(), slideId, 'ЗАГОЛОВОК', 90, 99, 827, 341, 33),
@@ -449,7 +467,7 @@ export const MASTER_MARKER = 'skelarMasterDeck'
 // Bump this whenever the master's slides change. A mismatch reads as "no template yet" and
 // a fresh one is built; the old file is left alone rather than deleted, because by then it
 // may be a deck someone edited by hand.
-export const MASTER_VERSION = '2'
+export const MASTER_VERSION = '3'
 
 export async function createMasterDeck(
   auth2: InstanceType<typeof google.auth.OAuth2>,

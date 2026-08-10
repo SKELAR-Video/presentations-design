@@ -403,6 +403,21 @@ export const PHASE0_COMPOSITIONS: Composition[] = [
     ],
   },
   {
+    id: 'rows_dot',
+    name: 'Рядки з крапками (2–3)',
+    when_to_use: '2 або 3 тези одна під одною, кожна з червоною крапкою зліва. Кожен ПУНКТ — цілий рядок на всю ширину слайда, тому підходить для фраз і речень, які у колонки не влізли б. ПУНКТ_3 — опціональний: коли пунктів два, третій рядок не малюється.',
+    themes: ['dark'],
+    slots: [
+      { name: 'ЗАГОЛОВОК', type: 'text', max_chars: 120, style: 'h1' },
+      // A row is 1486px wide — at the 22pt ceiling that is ~110 characters per line, and
+      // the box holds two lines. 200 leaves the font room to step down rather than making
+      // the mapper reject text the layout can actually carry.
+      { name: 'ПУНКТ_1', type: 'text', max_chars: 200, style: 'body' },
+      { name: 'ПУНКТ_2', type: 'text', max_chars: 200, style: 'body' },
+      { name: 'ПУНКТ_3', type: 'text', max_chars: 200, style: 'body', optional: true },
+    ],
+  },
+  {
     id: 'title_photo',
     name: 'Заголовок + фото (половина екрану)',
     when_to_use: 'Текст зліва (заголовок + опціональний абзац), фото справа на половину екрану. Варіант title_body з візуальним акцентом. Підходить для будь-якого слайда типу "одна теза": відкриття теми, ключовий висновок, closing із візуалом. ФОТО — опціональний URL (http...); якщо не вказано — рандомне зображення підставляється автоматично.',

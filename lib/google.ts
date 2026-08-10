@@ -201,10 +201,10 @@ const _DYNAMIC_TITLE_COMPS = new Set([
   'two_columns', 'two_columns_labeled', 'two_columns_plain',
   'three_columns', 'three_columns_num',
   'four_columns', 'four_columns_num', 'four_columns_paren', 'four_columns_bubble',
-  'bento_bottom_4', 'columns_flex',
+  'bento_bottom_4', 'columns_flex', 'rows_dot',
 ])
 
-function titlePtFor(compId: string, titleText?: string): number {
+export function titlePtFor(compId: string, titleText?: string): number {
   // bento_right_* measures against its narrow left zone, everything else against the full
   // width up to the logo.
   if (compId.startsWith('bento_right_')) {
@@ -558,6 +558,12 @@ function bentoDims(
     const cw = colWidth(_UW, 50, 4)  // 392 — flat style, gap=50, no card INN padding
     return { w: cw, h: flatColumnsMaxH(compId, sub, columnDecorBand(compId), ctx?.titleText) }
   }
+  if (compId === 'rows_dot') {
+    // Three rows is the worst case for row height — the box the font is measured against
+    // is the same one rowsDotLayout will draw, whatever the heading does to the band.
+    const t = ctx?.titleText ?? ''
+    return { w: _RD_TEXT_W, h: rowsDotLayout(3, t, titlePtFor('rows_dot', t)).rowH }
+  }
   return null
 }
 
@@ -577,6 +583,7 @@ const BENTO_TOKENS: Record<string, string[]> = {
   bento_right_2:     ['КАРТКА_1', 'КАРТКА_2'],
   bento_right_3:     ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3'],
   bento_right_2x2:   ['КАРТКА_1', 'КАРТКА_2', 'КАРТКА_3', 'КАРТКА_4'],
+  rows_dot:          ['ПУНКТ_1', 'ПУНКТ_2', 'ПУНКТ_3'],
 }
 
 // Role-max font size per composition (start here; shrink only if text overflows).
@@ -597,6 +604,10 @@ const BENTO_MAX_PT: Record<string, number> = {
   bento_right_2:     36,
   bento_right_3:     22,
   bento_right_2x2:   22,
+  // A row is full-slide wide but only 116px tall — two lines at 22pt. The ceiling is the
+  // body scale, not a heading scale: three of these stacked at 28pt would read as three
+  // headings and nothing else on the slide.
+  rows_dot:          22,
 }
 
 // Floor: chosen pt is never smaller than this value.
@@ -617,6 +628,7 @@ const BENTO_MIN_PT: Record<string, number> = {
   bento_right_2:     10,
   bento_right_3:     10,
   bento_right_2x2:   10,
+  rows_dot:          10,
 }
 
 const FONT_STEPS = [22, 18, 14, 10] as const
@@ -1964,7 +1976,7 @@ function buildTitleBodyFloatRequests(
 // 1. Find the max fitting pt for each individual card.
 // 2. Group pt = min of those per-card maxes (tightest card dictates the group).
 // 3. Clamp to floor (minPt). Apply same pt to every filled card.
-function pickBentoCardPts(compId: string, slots: Record<string, string>): Record<string, number> | null {
+export function pickBentoCardPts(compId: string, slots: Record<string, string>): Record<string, number> | null {
   const tokens = BENTO_TOKENS[compId]
   const maxPt  = BENTO_MAX_PT[compId]
   const minPt  = BENTO_MIN_PT[compId] ?? 10
@@ -3836,6 +3848,95 @@ function buildTimelineRequests(pageId: string, slideIdx: number, colXs: readonly
   return reqs
 }
 
+// ─── rows_dot: 2–3 full-width rows, a red dot on each ────────────────────────
+// Hand-drawn layout, then squared to the grid: every visual left edge sits on the dead
+// zone (100) and the rows end where the title ends (1710).
+export const _RD_DOT_SZ  = 72   // dot diameter (drawn 73×71 — a circle, by hand)
+export const _RD_TEXT_X  = 224  // dot right edge (172) + 52px gap
+export const _RD_TEXT_W  = _PAD + _TITLE_W - _RD_TEXT_X   // 1486
+const _RD_ROW_H   = 116         // content height of one row's text box
+const _RD_STEP     = 188        // top-to-top distance between rows
+const _RD_TOP      = 474        // content top of row 1 on a three-row slide
+export const _RD_BOTTOM = _RD_TOP + 2 * _RD_STEP + _RD_ROW_H  // 966 — bottom of the last row
+
+// Where the rows go, for n of them. Three rows fill the band exactly — that IS where the
+// band comes from — so the drawn geometry is reproduced unchanged. Two rows are centred in
+// the same band instead of being left hanging with a fifth of the slide empty below them.
+// A tall heading pushes the top of the band down; when the band no longer fits the fixed
+// step, the step closes up rather than the rows running off the page.
+export function rowsDotLayout(n: number, titleText: string, titlePt: number): { tops: number[]; rowH: number } {
+  const top    = Math.max(_RD_TOP, titleTextBottom(titleText, titlePt) + TITLE_GAP)
+  const band   = _RD_BOTTOM - top
+  const rowH   = Math.max(1, Math.min(_RD_ROW_H, band))
+  const needed = (n - 1) * _RD_STEP + rowH
+  const fits   = needed <= band
+  const step   = fits || n < 2 ? _RD_STEP : Math.max(rowH, (band - rowH) / (n - 1))
+  const y0     = fits ? top + Math.floor((band - needed) / 2) : top
+  return { tops: Array.from({ length: n }, (_, k) => Math.round(y0 + k * step)), rowH }
+}
+
+// Reposition the master's {{ПУНКТ_N}} boxes onto the rows this slide actually has, and
+// draw one red dot per row. The dot sits centred on the FIRST line of its row, so a row
+// that wraps to two lines keeps its dot beside the line it belongs to.
+function buildRowsDotRequests(
+  slide: slides_v1.Schema$Page,
+  slots: Record<string, string>,
+  pageId: string,
+  slideIdx: number,
+): object[] {
+  const tokens = BENTO_TOKENS['rows_dot'] ?? []
+  const filled = tokens.filter(t => (slots[t] ?? '').trim())
+  if (filled.length === 0) return []
+
+  const titleText = (slots['ЗАГОЛОВОК'] ?? '').trim()
+  const titlePt   = titlePtFor('rows_dot', titleText)
+  const { tops, rowH } = rowsDotLayout(filled.length, titleText, titlePt)
+  // The same size the font search settled on, so the dot is centred on the line height
+  // that will actually be written — not on a guess.
+  const bodyPt  = pickBentoCardPts('rows_dot', slots)?.[filled[0]] ?? (BENTO_MIN_PT['rows_dot'] ?? 10)
+  const lineBox = bodyPt * 2.667 * 0.9   // lineSpacing 90, as tb() sets it
+
+  const reqs: object[] = []
+
+  for (const el of slide.pageElements ?? []) {
+    if (!el.objectId || !el.transform || !el.size) continue
+    const elText = (el.shape?.text?.textElements ?? []).map(te => te.textRun?.content ?? '').join('')
+    // Position by rank among the FILLED rows, not by the token's number: a slide with
+    // ПУНКТ_1 and ПУНКТ_3 shows two rows in a row, not two rows with a hole between them.
+    const k = filled.findIndex(t => elText.includes(`{{${t}}}`))
+    if (k < 0) continue
+    reqs.push(makeElemTransform(el.objectId,
+      _RD_TEXT_X - _INSET, tops[k] - _INSET,
+      _RD_TEXT_W + 2 * _INSET, rowH + 2 * _INSET,
+      el.size.width?.magnitude ?? 0, el.size.height?.magnitude ?? 0,
+    ))
+  }
+
+  for (let k = 0; k < filled.length; k++) {
+    const dotId = `rd_dot_${slideIdx}_${k}`
+    const dotY  = Math.round(tops[k] + lineBox / 2 - _RD_DOT_SZ / 2)
+    reqs.push(
+      { createShape: { objectId: dotId, shapeType: 'ELLIPSE', elementProperties: {
+        pageObjectId: pageId,
+        size: { width:  { magnitude: _eL(_RD_DOT_SZ), unit: 'EMU' },
+                height: { magnitude: _eL(_RD_DOT_SZ), unit: 'EMU' } },
+        transform: { scaleX: 1, shearX: 0, translateX: _eL(_PAD),
+                     shearY: 0, scaleY: 1, translateY: _eL(dotY), unit: 'EMU' },
+      } } },
+      { updateShapeProperties: { objectId: dotId, shapeProperties: {
+        shapeBackgroundFill: { solidFill: { color: { rgbColor: _AG_RED_RGB } } },
+        outline: { propertyState: 'NOT_RENDERED' },
+      }, fields: 'shapeBackgroundFill,outline' } },
+    )
+  }
+
+  console.log(
+    `[rows_dot] slide ${slideIdx + 1}: ${filled.length} rows @ ${bodyPt}pt | ` +
+    `tops=${tops.join(',')} | row_h=${rowH} | title=${titlePt}pt`,
+  )
+  return reqs
+}
+
 // columns_flex: dynamic 2–4 column layout with gray "(N)" labels.
 // Deletes the three_columns_num template column boxes and recreates N fresh boxes
 // at dynamic widths. Title stays in the template (already filled via replaceAllText).
@@ -5268,6 +5369,17 @@ export async function buildPresentation(
     const { requests: layoutReqs, dotsY } = buildTimelineLayoutRequests(slide, compId, pSlots)
     requests.push(...layoutReqs)
     requests.push(...buildTimelineRequests(pageId, i, colXs, dotsY))
+  }
+
+  // ── rows_dot: place the rows this slide has + one red dot each ──────────────
+  for (let i = 0; i < plan.slides.length; i++) {
+    if (plan.slides[i].composition !== 'rows_dot') continue
+    const pageId = planPageIds[i]
+    if (!pageId) continue
+    const slide = updatedSlides.find(s => s.objectId === pageId)
+    if (!slide) continue
+    const pSlots = bentoProcessedSlots.get(i) ?? plan.slides[i].slots
+    requests.push(...buildRowsDotRequests(slide, pSlots, pageId, i))
   }
 
   // ── Title logo-safe resize: clamp ЗАГОЛОВОК to _TITLE_W=1610 ────────────────────
