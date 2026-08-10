@@ -2216,8 +2216,19 @@ export function findColonLabelRanges(text: string): Array<{ start: number; end: 
   for (const line of text.split(/([\n\v])/)) {
     if (line === '\n' || line === '\v') { offset += 1; continue }
     const idx = line.indexOf(':')
-    // Bounded so a colon in the middle of a sentence doesn't whiten half a paragraph.
-    if (idx > 0 && idx <= _COLON_LABEL_MAX) {
+    // Where the colon sits in its line, not how far into it — a character bound alone
+    // cannot tell these two apart, because both are about 40–55 characters long:
+    //   "Зручні застосунки формують щоденні звички:"        ← lead-in, must be white (41)
+    //   "…щоб усе працювало правильно і надійно: без винятків" ← sentence, must stay grey (57)
+    // The colon ENDS the first line and sits inside the second. A line that ends on its
+    // colon is announcing what comes next, whatever its length — that is a heading, and
+    // findGroupHeaderRanges paints whole heading lines with no length bound either. A colon
+    // with the line continuing after it is a label only while it is short ("Медіа:");
+    // further in it is punctuation.
+    // The 30 was set the other way round (deck 1F2YV…ft4ic) and took the lead-in with it:
+    // deck 1OXp1…QAHc, bento_right_2 ТЕКСТ came out entirely grey.
+    const endsLine = idx > 0 && !line.slice(idx + 1).trim()
+    if (idx > 0 && (endsLine || idx <= _COLON_LABEL_MAX)) {
       ranges.push({ start: offset, end: offset + idx + 1 })
     }
     offset += line.length

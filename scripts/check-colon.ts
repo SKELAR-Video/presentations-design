@@ -43,5 +43,28 @@ check('мітки всередині того самого блоку теж з�
   findColonLabelRanges(withHeader).map(r => withHeader.slice(r.start, r.end)),
   ['Медіа:', 'Бренд:'])
 
+// ── Where the colon sits, not how far in ────────────────────────────────────
+// A character bound alone cannot separate these two — they are 41 and 57 characters, so
+// any threshold sacrifices one of them. Tightening it to 30 (deck 1F2YV…ft4ic) saved the
+// sentence and cost the lead-in: deck 1OXp1…QAHc came back with the whole bento_right_2
+// ТЕКСТ grey. Both are pinned here, by the real text off both slides.
+
+const leadIn = 'Зручні застосунки формують щоденні звички:\nлюди відкривають улюблені сервіси десятки разів на день.\nОбрана категорія напряму впливає на утримання аудиторії.'
+check('лід-ін, що закінчується двокрапкою, — білий, хоч і 41 символ',
+  findColonLabelRanges(leadIn).map(r => leadIn.slice(r.start, r.end)),
+  ['Зручні застосунки формують щоденні звички:'])
+
+// The same text, with the body pulled up onto the lead-in's own line: now the colon is
+// punctuation inside a running line, and the bound applies again.
+const sameLine = 'Зручні застосунки формують щоденні звички: люди відкривають сервіси щодня'
+check('той самий текст одним рядком — не мітка (двокрапка всередині)',
+  findColonLabelRanges(sameLine).map(r => sameLine.slice(r.start, r.end)),
+  [])
+
+const shortLeadIn = 'Метрики:\nохоплення\nзалученість'
+check('короткий лід-ін теж білий',
+  findColonLabelRanges(shortLeadIn).map(r => shortLeadIn.slice(r.start, r.end)),
+  ['Метрики:'])
+
 console.log(`\n${failed === 0 ? 'ALL PASS' : `${failed} FAIL`}`)
 process.exit(failed === 0 ? 0 : 1)
