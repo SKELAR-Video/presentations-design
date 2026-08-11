@@ -12,6 +12,7 @@
     "check-shorten": "npx tsx scripts/check-shorten.ts",
     "check-colon": "npx tsx scripts/check-colon.ts",
     "check-rows-dot": "npx tsx scripts/check-rows-dot.ts",
+    "check-body-size": "npx tsx scripts/check-body-size.ts",
     "validate-fixture": "tsc --project scripts/tsconfig.fixture.json && node .fx-build/scripts/validate-fixture.js"
   },
   "dependencies": {

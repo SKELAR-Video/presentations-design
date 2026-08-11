@@ -599,20 +599,28 @@ const BENTO_TOKENS: Record<string, string[]> = {
 
 // Role-max font size per composition (start here; shrink only if text overflows).
 // Values from Figma: 2-card → 48pt possible for short text, 3-card → 28pt ceiling.
+// Ceiling for every card, column and body block on a regular slide.
+// Above 24pt body text stops reading as body: a two-sentence card at 28–36pt competes
+// with the heading, and the slide has two titles instead of a title and its content.
+// Per-composition values BELOW this are legitimate (a narrow four-column card could not
+// take 24 anyway) — nothing may go above it. Titles and KPI values are not body and keep
+// their own scales.
+export const BODY_MAX_PT = 24
+
 const BENTO_MAX_PT: Record<string, number> = {
-  two_columns:         28,
-  two_columns_labeled: 36,
-  two_columns_plain:   36,
-  three_columns:          28,
+  two_columns:         BODY_MAX_PT,
+  two_columns_labeled: BODY_MAX_PT,
+  two_columns_plain:   BODY_MAX_PT,
+  three_columns:          BODY_MAX_PT,
   three_columns_num:      18,
-  three_columns_timeline: 28,
-  two_columns_timeline:   28,
+  three_columns_timeline: BODY_MAX_PT,
+  two_columns_timeline:   BODY_MAX_PT,
   four_columns:      22,
   four_columns_num:  18,
   bento_bottom_4:      22,
   four_columns_paren:  22,
   four_columns_bubble: 22,
-  bento_right_2:     36,
+  bento_right_2:     BODY_MAX_PT,
   bento_right_3:     22,
   bento_right_2x2:   22,
   // A row is full-slide wide but only 116px tall — two lines at 22pt. The ceiling is the
@@ -1183,9 +1191,10 @@ interface KpiAdaptive {
   lblH: number
   kCY: number
   valPt: number        // font pt for ЗНАЧЕННЯ (= largest from scale that fits)
+  lblPt: number        // font pt for ПІДПИС (= largest that fits under the value)
 }
 
-function computeKpiAdaptive(
+export function computeKpiAdaptive(
   slots: Record<string, string>,
   cardMinH: number,
   cardMaxH: number,
@@ -1236,18 +1245,38 @@ function computeKpiAdaptive(
     if (allFit) { valPt = pt; break }
   }
 
+  // ── ПІДПИС font: was hard-wired to 14pt, which left a KPI card two thirds empty ──
+  // The caption is body text, so it takes the same ceiling as every other body block,
+  // and it stays a step under the value it explains (a caption level with its number
+  // reads as a second number). Grows only while the whole card still fits the slide.
+  const LBL_SCALE = [BODY_MAX_PT, 22, 18, 14] as const
+  const maxCardH  = _H - _PAD - (_PAD + _TH + bodyH + _TG)
+  const lblCeil   = Math.floor(valPt * _HIERARCHY_RATIO)
+  let lblPt: number = LBL_SCALE[LBL_SCALE.length - 1]
+  for (const pt of LBL_SCALE) {
+    if (pt > lblCeil) continue
+    const need = activeIdxs.reduce((mx, idx) => {
+      const valText = (slots[`КАРТКА_${idx + 1}_ЗНАЧЕННЯ`] ?? '').trim()
+      const lblText = (slots[`КАРТКА_${idx + 1}_ПІДПИС`]   ?? '').trim()
+      const vH = Math.max(Math.ceil(lineH(valPt)), Math.ceil(estimateLineCount(valText, cardTextW, valPt) * lineH(valPt)))
+      const lH = Math.max(Math.ceil(lineH(pt)),    Math.ceil(estimateLineCount(lblText, cardTextW, pt)  * lineH(pt)))
+      return Math.max(mx, vH + lH + 2 * _INN + 2 * KPI_VERT_PAD)
+    }, 0)
+    if (need <= maxCardH) { lblPt = pt; break }
+  }
+
   // ── Card height: content-based, tight group (value + gap + label) ─────────
   let maxValH = 0, maxLblH = 0
   for (const idx of activeIdxs) {
     const valText = (slots[`КАРТКА_${idx + 1}_ЗНАЧЕННЯ`] ?? '').trim()
     const lblText = (slots[`КАРТКА_${idx + 1}_ПІДПИС`]   ?? '').trim()
     const vH = Math.ceil(estimateLineCount(valText, cardTextW, valPt) * lineH(valPt))
-    const lH = Math.ceil(estimateLineCount(lblText, cardTextW, 14) * lineH(14))
+    const lH = Math.ceil(estimateLineCount(lblText, cardTextW, lblPt) * lineH(lblPt))
     if (vH > maxValH) maxValH = vH
     if (lH > maxLblH) maxLblH = lH
   }
   const valH        = Math.max(Math.ceil(lineH(valPt)), maxValH)  // at least 1 line
-  const lblH        = Math.max(Math.ceil(lineH(14)),    maxLblH)
+  const lblH        = Math.max(Math.ceil(lineH(lblPt)), maxLblH)
   const contentCardH = valH + lblH + 2 * _INN + 2 * KPI_VERT_PAD
 
   // ── Card Y: bottom = 980 (fixed), top defaults to center (540), expands up as needed ──
@@ -1257,7 +1286,7 @@ function computeKpiAdaptive(
   const kCY = Math.max(desiredKCY, minTopY)
   const cardH = _H - _PAD - kCY
 
-  return { n, cw, activeIdxs, bodyH, bodyFontPt, cardH, valH, lblH, kCY, valPt }
+  return { n, cw, activeIdxs, bodyH, bodyFontPt, cardH, valH, lblH, kCY, valPt, lblPt }
 }
 
 function buildKpiUpdateRequests(
@@ -1266,9 +1295,9 @@ function buildKpiUpdateRequests(
   slots: Record<string, string>,
 ): object[] {
   const reqs: object[] = []
-  const { cw, activeIdxs, bodyH, bodyFontPt, cardH, valH, lblH, kCY, valPt } = layout
+  const { cw, activeIdxs, bodyH, bodyFontPt, cardH, valH, lblH, kCY, valPt, lblPt } = layout
   const TOL    = 8
-  const LBL_PT = 14
+  const LBL_PT = lblPt
 
   // Map original 0-based card index → display position (0..n-1)
   // e.g. if only cards 0 and 2 are active: {0→0, 2→1}
@@ -1454,7 +1483,7 @@ function buildBadgesRequests(
 
   const items = punkyText
     .split('\n')
-    .map(s => s.replace(/^[•\-–*]\s*/, '').trim())
+    .map(s => stripTrailingPeriod(s.replace(/^[•\-–*]\s*/, '').trim()))
     .filter(Boolean)
 
   let x = _PAD
@@ -1888,7 +1917,10 @@ function buildSectionFloatRequests(
 // ЗАГОЛОВОК fixed height = _H1_FIXED_36 (220px). ТЕКСТ always at fixed y=380 (PAD+220+60).
 // textMaxH = 518px (fixed: H-PAD-52-GAP-380).
 
-const _TB_BODY_STEPS: number[] = [48, 36, 28, 22, 18, 14, 10]
+// Body ladder for title_body / title_photo. Starts at BODY_MAX_PT — the steps above it
+// (28, 36, 48) were removed, not clamped: a short paragraph used to grab 28pt purely
+// because it fitted, and that is exactly the "grubo" look the ceiling exists to stop.
+const _TB_BODY_STEPS: number[] = [BODY_MAX_PT, 22, 18, 14, 10]
 const _TB_TITLE_PT = 36  // ЗАГОЛОВОК pt fixed in title_body master template
 
 function buildTitleBodyFloatRequests(
@@ -2097,6 +2129,18 @@ export function addNbsp(text: string): string {
 // Preserves '?', '!', '…' (U+2026), and '...' (last dot preceded by dot → kept).
 function stripTrailingPeriod(text: string): string {
   return text.replace(/(?<!\.)\.$/u, '')
+}
+
+// Which slots lose their closing period, even when the brief has one.
+// A card, a column, a badge and a KPI caption are LABELS — one clause naming a thing —
+// so the period there is punctuation for a sentence that was never written.
+// Prose slots (ТЕКСТ of title_body/title_photo/bento_right_*) keep it: there the final
+// period closes the last of several real sentences, and dropping it looks like a typo.
+export function stripsTrailingPeriod(compId: string, slotName: string): boolean {
+  if (slotName === 'ЗАГОЛОВОК') return true
+  if (BENTO_TOKENS[compId]?.includes(slotName)) return true
+  if (compId === 'kpi_cards' && /^КАРТКА_\d+_(ЗНАЧЕННЯ|ПІДПИС)$/.test(slotName)) return true
+  return false
 }
 
 // ─── Bento card content preprocessing ────────────────────────────────────────
@@ -5043,7 +5087,7 @@ export async function buildPresentation(
       if ((compId === 'four_columns' || compId === 'four_columns_num' ||
            compId === 'four_columns_paren' || compId === 'four_columns_bubble') && /^КОЛОНКА_\d+$/.test(slotName)) continue
       let replaceText = processedSlots?.[slotName] ?? slotValue
-      if (slotName === 'ЗАГОЛОВОК' || BENTO_TOKENS[compId]?.includes(slotName)) {
+      if (stripsTrailingPeriod(compId, slotName)) {
         replaceText = stripTrailingPeriod(replaceText)
       }
       // Failsafe: strip leading numeric from kpi_cards ПІДПИС that duplicates ЗНАЧЕННЯ.
