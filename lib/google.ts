@@ -225,6 +225,16 @@ export function titlePtFor(compId: string, titleText?: string): number {
     }
     return TITLE_PT_STEPS[TITLE_PT_STEPS.length - 1]
   }
+  // The timelines size their heading with timelineTitlePt and write that size into the
+  // file — 44pt on a short heading. This function was answering 28 for them, the master's
+  // old constant, and the only consumer that matters is hierarchyCapPt: it capped the
+  // cards at 28 × 0.8 = 22pt when the real heading allows 35. So the text on every
+  // timeline slide came out a quarter smaller than the layout permits, for no reason but
+  // two functions disagreeing about one number (deck 1XfcL…LSWjE, slides 18 and 32: cards
+  // 22pt under a 44pt heading).
+  if (compId === 'two_columns_timeline' || compId === 'three_columns_timeline') {
+    return timelineTitlePt(titleText ?? '')
+  }
   return compId === 'two_columns' ? 32 : 28
 }
 
@@ -5632,6 +5642,21 @@ export async function buildPresentation(
             },
           })
         }
+
+        // Diagnostic, not behaviour. On the timelines NO colour rule reaches the file —
+        // the same "4.2 — середня оцінка" is white on two_columns and plain grey on
+        // two_columns_timeline in one deck (1XfcL…LSWjE, slides 15 and 18). Reading the
+        // code did not explain it: the slide is not skipped (pickBentoCardPts returns
+        // real sizes, and those sizes ARE in the file), the main batch runs before the
+        // colour one, and the predicates return the right ranges when called directly.
+        // So the question left is what this loop actually sees on those slides — which
+        // only a real run can answer. Remove once that is known.
+        console.log(
+          `[card-style] slide ${i + 1} (${compId}) ${matchedToken}: pt=${pt} ` +
+          `len=${actualLen} fig=${fig ? JSON.stringify(fig.figure) : '—'} ` +
+          `colon=${findColonLabelRanges(slotValue).length} header=${hasHeader} ` +
+          `obj=${el.objectId} text=${JSON.stringify(slotValue.slice(0, 40))}`,
+        )
       }
     }
   }
