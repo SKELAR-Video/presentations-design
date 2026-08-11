@@ -43,6 +43,27 @@ export default function HomePage() {
     if (!docUrl.trim()) { setError('Додайте посилання'); return }
     setError('')
     setLoading(true)
+    // fetch() rejects only when the request never completed at all — the connection was
+    // dropped, not answered with an error. The browser's own wording for that names
+    // neither the step nor the cause ("Load failed" in Safari, "Failed to fetch" in
+    // Chrome), and this flow makes three calls in a row, so the message that reached the
+    // person told them nothing about which one died or what to do next.
+    async function post(url: string, body: unknown, label: string): Promise<Response> {
+      try {
+        return await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+      } catch (e: unknown) {
+        const raw = e instanceof Error ? e.message : String(e)
+        throw new Error(
+          `${label}: зʼєднання обірвалось (${raw}). ` +
+          'Найчастіше це деплой під час запиту або сон комп’ютера — спробуйте ще раз',
+        )
+      }
+    }
+
     async function safeJson(res: Response, label: string) {
       const text = await res.text()
       if (!text.trim()) throw new Error(`${label}: порожня відповідь сервера (status ${res.status})`)
@@ -53,34 +74,28 @@ export default function HomePage() {
 
     try {
       // Step 1: fetch content from the link
-      const fetchRes = await fetch('/api/fetch-doc', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: docUrl }),
-      })
+      const fetchRes = await post('/api/fetch-doc', { url: docUrl }, 'fetch-doc')
       const fetchData = await safeJson(fetchRes, 'fetch-doc')
       if (!fetchRes.ok) throw new Error(fetchData.error ?? 'Не вдалося завантажити документ')
       // Step 2: map to slide plan
       // gslides → 1:1 mode (text preserved verbatim, one slide per source slide)
       // gdoc    → free-form mode (LLM structures freely from the text)
       const is1to1 = fetchData.type === 'gslides'
-      const mapRes = await fetch('/api/map', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(
-          is1to1
-            ? { slides: fetchData.slides, theme: 'dark', mode: '1to1' }
-            : { text: fetchData.text, theme: 'dark' }
-        ),
-      })
+      const mapRes = await post(
+        '/api/map',
+        is1to1
+          ? { slides: fetchData.slides, theme: 'dark', mode: '1to1' }
+          : { text: fetchData.text, theme: 'dark' },
+        'map',
+      )
       const mapData = await safeJson(mapRes, 'map')
       if (!mapRes.ok) throw new Error(mapData.error ?? 'Помилка аналізу')
 
-      const genRes = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan: mapData.plan, title: 'SKELAR Presentation', briefName: pickedName }),
-      })
+      const genRes = await post(
+        '/api/generate',
+        { plan: mapData.plan, title: 'SKELAR Presentation', briefName: pickedName },
+        'generate',
+      )
       const genData = await safeJson(genRes, 'generate')
       if (!genRes.ok) throw new Error(genData.error ?? 'Помилка генерації деку')
 
