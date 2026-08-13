@@ -920,9 +920,9 @@ const _GITHUB_BG_BASE = 'https://raw.githubusercontent.com/SKELAR-Video/presenta
 const _BG_COUNT = 6
 function getBgBaseUrl(): string {
   if (process.env.BG_BASE_URL) return process.env.BG_BASE_URL.replace(/\/?$/, '/')
-  // VERCEL_PROJECT_PRODUCTION_URL is the stable production hostname (e.g. my-app.vercel.app).
-  // VERCEL_URL is the per-deployment hostname — also works but changes each deploy.
-  const host = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL
+  // Production alias only — see getLogoUrl: VERCEL_URL is the deployment's own host and it
+  // answers the SSO login page instead of the image.
+  const host = process.env.VERCEL_PROJECT_PRODUCTION_URL
   if (host) return `https://${host}/assets/backgrounds/`
   return _GITHUB_BG_BASE
 }
@@ -6231,8 +6231,22 @@ export async function buildPresentation(
       if (!pageId) continue
       const compId = plan.slides[i].composition
       const _bgSlots = plan.slides[i].slots
-      const _isTitleOnlyClosing = compId === 'closing'
-      if (compId !== 'cover' && compId !== 'cover_title_only' && !_isTitleOnlyClosing) continue
+      if (compId !== 'cover' && compId !== 'cover_title_only' && compId !== 'closing') continue
+      // A photograph goes behind a TITLE, never behind body copy. Grey 22pt laid straight
+      // over one of the six mountains lands on lit rock as often as on sky, and no fixed
+      // colour survives both — the subtitle stopped being readable. The same content in two
+      // slides, one photographed and one flat, also read as two different decks.
+      //
+      // So the picture is decided by what the slide CARRIES, not by which composition drew
+      // it: a lone heading keeps its photo, a heading with a subtitle under it does not.
+      // The date is not a subtitle — it is a pill off to the side, not type over the image.
+      //
+      // No scrim: an image behind body copy needs one to stay legible, and that is a design
+      // decision this tool has not been given.
+      if ((_bgSlots['ПІДЗАГОЛОВОК'] ?? '').trim()) {
+        console.log(`[bg] slide ${i + 1} (${compId}): subtitle present → flat background, no photo`)
+        continue
+      }
       bgRequests.push({
         updatePageProperties: {
           objectId: pageId,
