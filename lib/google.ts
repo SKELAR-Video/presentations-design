@@ -967,7 +967,12 @@ function getLogoUrl(): string {
   if (process.env.LOGO_URL) {
     _logoUrlCache = process.env.LOGO_URL
   } else {
-    const host = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL
+    // Production alias only. VERCEL_URL is the deployment's own generated host, and that
+    // one sits behind Vercel's deployment protection: it answers 200 with the 482 KB SSO
+    // login page instead of the 796-byte PNG. Google's image fetcher would take that HTML,
+    // createImage would fail, and one failure kills the whole logo batch — every slide in
+    // the deck loses its logo, with nothing in the response that looks like an error.
+    const host = process.env.VERCEL_PROJECT_PRODUCTION_URL
     _logoUrlCache = host ? `https://${host}/assets/SKELAR%20Symbol.png` : _GITHUB_LOGO
   }
   return _logoUrlCache
@@ -978,7 +983,12 @@ function getLogoRedUrl(): string {
   if (process.env.LOGO_RED_URL) {
     _logoRedUrlCache = process.env.LOGO_RED_URL
   } else {
-    const host = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL
+    // Production alias only. VERCEL_URL is the deployment's own generated host, and that
+    // one sits behind Vercel's deployment protection: it answers 200 with the 482 KB SSO
+    // login page instead of the 796-byte PNG. Google's image fetcher would take that HTML,
+    // createImage would fail, and one failure kills the whole logo batch — every slide in
+    // the deck loses its logo, with nothing in the response that looks like an error.
+    const host = process.env.VERCEL_PROJECT_PRODUCTION_URL
     _logoRedUrlCache = host ? `https://${host}/assets/SKELAR%20Symbol%20for%20red.png` : _GITHUB_LOGO_RED
   }
   return _logoRedUrlCache
@@ -994,7 +1004,12 @@ function getLogoWordmarkUrl(): string {
     const base = process.env.LOGO_URL.replace(/[^/]+$/, '')
     _logoWordmarkUrlCache = `${base}SKELAR%20Logo.png`
   } else {
-    const host = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL
+    // Production alias only. VERCEL_URL is the deployment's own generated host, and that
+    // one sits behind Vercel's deployment protection: it answers 200 with the 482 KB SSO
+    // login page instead of the 796-byte PNG. Google's image fetcher would take that HTML,
+    // createImage would fail, and one failure kills the whole logo batch — every slide in
+    // the deck loses its logo, with nothing in the response that looks like an error.
+    const host = process.env.VERCEL_PROJECT_PRODUCTION_URL
     _logoWordmarkUrlCache = host ? `https://${host}/assets/SKELAR%20Logo.png` : _GITHUB_LOGO_WORDMARK
   }
   return _logoWordmarkUrlCache
