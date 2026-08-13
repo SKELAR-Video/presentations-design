@@ -5545,24 +5545,13 @@ export async function buildPresentation(
     const compId = plan.slides[i].composition
     const pSlots  = bentoProcessedSlots.get(i) ?? plan.slides[i].slots
     const cardPts = pickBentoCardPts(compId, pSlots)
-    // Part of the same [card-style] diagnostic as the per-card line below: the per-card
-    // line only prints for cards this loop actually reaches, so on the slides in question
-    // it may print nothing at all — and silence reads the same whether the cause is a null
-    // cardPts, a missing page, or a token that never matched. These say which. Remove with
-    // the per-card line.
-    if (cardPts === null) {
-      console.log(`[card-style] slide ${i + 1} (${compId}): SKIP — cardPts=null`)
-      continue
-    }
+    if (cardPts === null) continue
     // bento_right_2's older "card < title" guard is gone: hierarchyCapPt inside
     // pickBentoCardPts caps every card family at 80% of its title, not merely below it.
     expectedCardPts.set(i, cardPts)
 
     const slide = updatedSlides.find(s => s.objectId === pageId)
-    if (!slide) {
-      console.log(`[card-style] slide ${i + 1} (${compId}): SKIP — page ${pageId} not in deck`)
-      continue
-    }
+    if (!slide) continue
 
     const bentoTokens = BENTO_TOKENS[compId] ?? []
 
@@ -5587,15 +5576,10 @@ export async function buildPresentation(
       console.log(`[bento-header] slide ${i + 1} (${compId}): group header=${groupHeaderPt}pt across ${headerTokens.length} cards`)
     }
 
-    // Diagnostic counters (see the [card-style] note above) — removed with the logs.
-    let matchedCount = 0
-    const tokensOnPage: string[] = []
-
     for (const el of slide.pageElements ?? []) {
       if (!el.objectId) continue
       const elText = (el.shape?.text?.textElements ?? [])
         .map(te => te.textRun?.content ?? '').join('')
-      for (const m of elText.matchAll(/\{\{([^}]+)\}\}/g)) tokensOnPage.push(m[1])
 
       const matchedToken = bentoTokens.find(t => elText.includes(`{{${t}}}`))
       if (!matchedToken) continue
@@ -5603,7 +5587,6 @@ export async function buildPresentation(
 
       const pt = cardPts[matchedToken]
       if (pt === undefined) continue
-      matchedCount++
 
       const slotValue = pSlots[matchedToken] ?? ''
 
@@ -5729,27 +5712,8 @@ export async function buildPresentation(
           })
         }
 
-        // Diagnostic, not behaviour. On the timelines NO colour rule reaches the file —
-        // the same "4.2 — середня оцінка" is white on two_columns and plain grey on
-        // two_columns_timeline in one deck (1XfcL…LSWjE, slides 15 and 18). Reading the
-        // code did not explain it: the slide is not skipped (pickBentoCardPts returns
-        // real sizes, and those sizes ARE in the file), the main batch runs before the
-        // colour one, and the predicates return the right ranges when called directly.
-        // So the question left is what this loop actually sees on those slides — which
-        // only a real run can answer. Remove once that is known.
-        console.log(
-          `[card-style] slide ${i + 1} (${compId}) ${matchedToken}: pt=${pt} ` +
-          `len=${actualLen} fig=${fig ? JSON.stringify(fig.figure) : '—'} ` +
-          `colon=${findColonLabelRanges(slotValue).length} header=${hasHeader} ` +
-          `obj=${el.objectId} text=${JSON.stringify(slotValue.slice(0, 160))}`,
-        )
       }
     }
-
-    console.log(
-      `[card-style] slide ${i + 1} (${compId}) summary: styled=${matchedCount}/${bentoTokens.length} ` +
-      `pts=${JSON.stringify(cardPts)} tokensOnPage=${tokensOnPage.join(',') || '—'}`,
-    )
   }
 
   // ТЕКСТ font-size auto-shrink for bento_right layouts (left column body text)
