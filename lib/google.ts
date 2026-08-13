@@ -3558,16 +3558,26 @@ export function expandPlanWithVariants(plan: SlidePlan): {
       const remapped = remapSlotsForVariant(slide.slots, slide.composition, varComp)
       const remappedVals = new Set(Object.values(remapped).filter(v => (v ?? '').trim()))
       const targetComp = getComposition(varComp)
-      const targetSlotNames = new Set(targetComp?.slots.map(s => s.name) ?? [])
-      const transitionMap = VARIANT_SLOT_MAPS[`${slide.composition}:${varComp}`] ?? {}
-      // Check 1: non-empty values from explicitly mapped (or same-named) slots must be preserved.
-      // Slots whose mapped name doesn't exist in the target are structural drops → allowed.
+      // Check 1: every non-empty text slot of the original has to survive into the variant.
+      // A slot the target composition does not declare used to be waved through as an
+      // "intentional structural drop". That is how one sheet came back as four design
+      // options of which only one carried the brief's paragraph: two_columns,
+      // two_columns_plain and two_columns_timeline have no ТЕКСТ, so the text vanished
+      // and the pill still called the result a design of the same slide. A variant is a
+      // different way to draw the SAME content — take the content away and it is not a
+      // variant of that sheet, it is a shorter sheet, and the reader has no way to see
+      // that choosing option 1 costs them a paragraph.
+      //
+      // Preservation is measured against the target's whole text rather than slot by
+      // slot, because remapSlotsForVariant legitimately fuses ПІДПИС_N into its column
+      // ("Мітка — тіло"): the words are all there, just no longer as their own value.
+      const remappedText = Object.values(remapped)
+        .map(v => (v ?? '').trim()).filter(Boolean).join('\n')
       if (Object.entries(slide.slots).some(([slot, val]) => {
-        if (!(val ?? '').trim()) return false
-        if (slot.startsWith('ЗОБРАЖЕННЯ_')) return false
-        const mappedName = transitionMap[slot] ?? slot
-        if (!targetSlotNames.has(mappedName)) return false  // structural drop → OK
-        return !remappedVals.has(val)
+        const t = (val ?? '').trim()
+        if (!t) return false
+        if (slot.startsWith('ЗОБРАЖЕННЯ_')) return false  // a picture is layout, not the brief's words
+        return !remappedVals.has(val) && !remappedText.includes(t)
       })) return false
       // Check 2: all required (non-optional) slots of the target composition are non-empty
       if (targetComp) {
