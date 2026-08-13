@@ -25,6 +25,9 @@ export default function ResultPage() {
   // also the only shape where "no" is a possible answer.
   const [repairDone, setRepairDone] = useState(false)
   const [leftOver, setLeftOver]     = useState(0)
+  // "Everything stays" is an answer, not a repair — the summary has to say so, or it
+  // reports "Виправлено" over a deck nothing was done to.
+  const [keptAll, setKeptAll]       = useState(false)
 
   useEffect(() => {
     const stored = sessionStorage.getItem('deck_url')
@@ -119,6 +122,27 @@ export default function ResultPage() {
 
   async function handleFix(decisions: Map<number, Decision>) {
     if (!plan || !deckId) return
+
+    // Everything left as it is. There is nothing to rebuild — the deck linked above this
+    // panel already IS the deck being kept — so the answer is recorded instead of
+    // regenerated: a full rebuild here would spend a minute and a model call to produce
+    // the same file. The button used to be disabled in this state, which read as "your
+    // answer is invalid" and left the panel with no way out of it.
+    //
+    // Recorded on the plan (keepSmall, the same marker applySplits writes) and put back in
+    // sessionStorage, so a reload does not open the panel and ask again.
+    if (decisions.size > 0 && [...decisions.values()].every(d => d === 'keep')) {
+      const slides = plan.slides.map((s, i) => (decisions.has(i) ? { ...s, keepSmall: true } : s))
+      const next = { ...plan, slides }
+      sessionStorage.setItem('deck_plan', JSON.stringify(next))
+      setPlan(next)
+      setFixNotes([])
+      setLeftOver(0)
+      setKeptAll(true)
+      setRepairDone(true)
+      return
+    }
+
     setFixing(true)
     setFixError('')
     setFixNotes([])
@@ -228,7 +252,7 @@ export default function ResultPage() {
           />
         )}
 
-        {repairDone && <RepairSummary notes={fixNotes} leftOver={leftOver} />}
+        {repairDone && <RepairSummary notes={fixNotes} leftOver={leftOver} keptAll={keptAll} />}
 
         {/* Both panels are development instruments, not something the person who asked for
             a deck needs to read: they speak in element ids, pixel heights and check names.
@@ -283,7 +307,18 @@ export default function ResultPage() {
 // What the repair actually did, once and for good. Shown instead of the panel rather than
 // beside it: re-offering the slides that are still tight is what produced the loop, and a
 // person who has already answered should be looking at their deck, not at the same question.
-function RepairSummary({ notes, leftOver }: { notes: string[]; leftOver: number }) {
+function RepairSummary({ notes, leftOver, keptAll }: { notes: string[]; leftOver: number; keptAll?: boolean }) {
+  if (keptAll) {
+    return (
+      <div className="text-left border border-[#292D39] rounded-xl p-5 space-y-2">
+        <p className="text-white font-medium">Лишилось як є</p>
+        <p className="text-sm text-[#A2A6B1]">
+          Презентацію не перезбирали — вона вже така, як ти її лишив. Дрібний шрифт на цих
+          слайдах — твоє рішення, більше не питаю.
+        </p>
+      </div>
+    )
+  }
   return (
     <div className="text-left border border-[#292D39] rounded-xl p-5 space-y-3">
       <p className="text-white font-medium">Виправлено</p>
@@ -416,15 +451,20 @@ function OverloadPanel({
         </div>
       )}
 
+      {/* "Лишити" on every slide is a complete answer, so the button acts on it. Disabling
+          it here said the opposite — that answering "лишити" everywhere was not an answer —
+          and the panel became a dead end: no way to confirm, no way to close. The label is a
+          verb for the same reason: "Усе лишається як є" describes a state, and a button that
+          describes a state instead of naming its action reads as switched off. */}
       <button
         onClick={() => onFix(decisions)}
-        disabled={fixing || toDo === 0}
+        disabled={fixing}
         className="w-full py-3 rounded-xl border border-[#FD3433] text-white text-sm hover:bg-[#FD3433]/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         {fixing
           ? (stage || 'Перезбираю презентацію…')
           : toDo === 0
-            ? 'Усе лишається як є'
+            ? 'Лишити все як є'
             : `Виправити ${toDo} і перезібрати`}
       </button>
       <p className="text-xs text-[#A2A6B1]">
