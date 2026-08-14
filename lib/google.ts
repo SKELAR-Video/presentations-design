@@ -1195,6 +1195,70 @@ function makeElemTransform(
   }
 }
 
+// ─── Card fit: the two numbers that must be one ─────────────────────────────
+// The font is chosen against one rectangle and the text is written into another. That
+// single fault shows up in both directions — a card that overflows by 5px and a card
+// filled to 17% are the same bug seen from two sides — so it is measured, not argued.
+//
+// Deliberately NOT a third copy of the geometry: `measured` comes from bentoDims (what
+// pickBentoCardPts sized the font against) and `drawn` is read back out of the requests
+// the real layout builder emits for a synthetic master page. A copied formula would agree
+// with itself and prove nothing.
+export type CardFit = {
+  token: string
+  pt: number
+  measuredH: number   // box the font was chosen against (bentoDims)
+  drawnH: number      // text box the layout actually draws, −1 if the family has no builder
+  textH: number       // height the text really needs at that pt
+  fillPct: number     // textH / drawnH
+}
+
+export function cardFitFacts(compId: string, slots: Record<string, string>): CardFit[] {
+  const tokens = BENTO_TOKENS[compId]
+  const cardPts = pickBentoCardPts(compId, slots)
+  if (!tokens || !cardPts) return []
+  const titleText = (slots['ЗАГОЛОВОК'] ?? '').trim()
+  const subBand = subtitleBand(compId, slots, titlePtFor(compId, titleText))
+
+  // A stand-in for the master page: one text box per token, each still holding its
+  // {{TOKEN}}, which is exactly what the builder matches on during generation.
+  const fakeSlide: slides_v1.Schema$Page = {
+    objectId: 'fit_page',
+    pageElements: tokens.map((t, k) => ({
+      objectId: `fit_${k}`,
+      transform: { scaleX: 1, scaleY: 1, translateX: 0, translateY: 0, unit: 'EMU' },
+      size: { width: { magnitude: _eL(100), unit: 'EMU' }, height: { magnitude: _eL(100), unit: 'EMU' } },
+      shape: { shapeType: 'TEXT_BOX', text: { textElements: [{ textRun: { content: `{{${t}}}` } }] } },
+    })),
+  }
+  const reqs = buildBentoRowLayoutRequests(fakeSlide, compId, slots, 'fit_page', 0, titleText)
+  const drawnByToken = new Map<string, number>()
+  for (const r of reqs) {
+    const tr = (r as Record<string, { objectId?: string; transform?: { scaleY?: number } }>)
+      .updatePageElementTransform
+    const idx = tr?.objectId?.match(/^fit_(\d+)$/)?.[1]
+    if (idx === undefined || !tr?.transform?.scaleY) continue
+    // scaleY = h * FPX / intrinsicH, and the stand-in box is 100px tall → h = scaleY * 100
+    drawnByToken.set(tokens[Number(idx)], Math.round(tr.transform.scaleY * 100))
+  }
+
+  const out: CardFit[] = []
+  for (let k = 0; k < tokens.length; k++) {
+    const token = tokens[k]
+    const text = (slots[token] ?? '').trim()
+    if (!text) continue
+    const pt = cardPts[token]
+    if (pt === undefined) continue
+    const dims = bentoDims(compId, { titleText, tokenIdx: k, subBand })
+    if (!dims) continue
+    const drawnH = drawnByToken.get(token) ?? -1
+    const textH = Math.ceil(measuredTextHeight(text, dims.w, pt))
+    const against = drawnH > 0 ? drawnH : dims.h
+    out.push({ token, pt, measuredH: dims.h, drawnH, textH, fillPct: Math.round((textH / against) * 100) })
+  }
+  return out
+}
+
 interface KpiAdaptive {
   n: number            // active card count (1–4)
   cw: number           // dynamic card width: floor((UW - (n-1)*GAP) / n)
