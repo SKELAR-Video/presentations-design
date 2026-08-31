@@ -477,8 +477,14 @@ export async function createMasterDeck(
   const driveApi  = google.drive({ version: 'v3', auth: auth2 })
   const comps     = PHASE0_COMPOSITIONS
 
+  // The version goes in the NAME, not only in appProperties. Those properties are private
+  // to the app and invisible in the Drive UI, so a person looking at their Drive saw several
+  // files called "SKELAR Template Deck — Phase 0" and no way to tell which one the tool uses
+  // or which are leftovers from earlier versions. Version bumps deliberately leave the old
+  // file alone (it may be a deck someone edited by hand), so those leftovers are expected —
+  // they just have to be recognisable.
   const { data: created } = await slidesApi.presentations.create({
-    requestBody: { title: 'SKELAR Template Deck — Phase 0' },
+    requestBody: { title: `SKELAR Template Deck v${MASTER_VERSION} (службовий — не редагувати)` },
   })
   const presentationId = created.presentationId!
 

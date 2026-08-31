@@ -877,6 +877,19 @@ async function ensureOwnMaster(
   }
 }
 
+// The template, found or built, filed beside the decks — the whole "where does the master
+// live" question in one call. /api/create-master used to build unconditionally, so every
+// visit to /setup left another identical "SKELAR Template Deck" in the user's Drive with no
+// way to tell it from the one actually in use (appProperties are invisible in the Drive UI).
+// Generation always went through ensureOwnMaster and reused correctly; only the manual route
+// duplicated. Now both take the same path.
+export async function getOrCreateMasterDeck(
+  auth2: InstanceType<typeof google.auth.OAuth2>,
+): Promise<string | undefined> {
+  const drive = google.drive({ version: 'v3', auth: auth2 })
+  return ensureOwnMaster(drive, auth2, await ensureDeckFolder(drive))
+}
+
 // ─── Logo ────────────────────────────────────────────────────────────────────
 const _FPX    = 9144000 / 1920
 const _W      = 1920

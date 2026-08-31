@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { google } from 'googleapis'
-import { createMasterDeck } from '@/lib/master'
+import { getOrCreateMasterDeck } from '@/lib/google'
 
 // Thin wrapper. The template builder itself lives in lib/master.ts so the generator can
 // call it too: an app-built template is covered by the narrow drive.file scope, while a
@@ -21,7 +21,12 @@ export async function POST() {
   if (!session?.accessToken) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const presentationId = await createMasterDeck(getOAuth2Client(session.accessToken))
+    // Find-or-build, never build-again: pressing the button twice used to leave two
+    // identical templates behind, and nothing in the Drive UI told them apart.
+    const presentationId = await getOrCreateMasterDeck(getOAuth2Client(session.accessToken))
+    if (!presentationId) {
+      return NextResponse.json({ error: 'Не вдалося ні знайти, ні створити майстер-шаблон' }, { status: 500 })
+    }
     return NextResponse.json({
       presentationId,
       url: `https://docs.google.com/presentation/d/${presentationId}/edit`,
