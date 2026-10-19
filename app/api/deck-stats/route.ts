@@ -11,7 +11,10 @@ import { readServiceCredentials } from '@/lib/stats'
 // підрахунку. Хто хоче подробиць — відкриває таблицю.
 
 const TAB = 'Клод Дизайн'
-const SHEETS_SCOPE = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+// Той самий scope, що в писальника. Із readonly прилетіло «The caller does not
+// have permission»: доступ у робота є, але виданий під повний spreadsheets, і
+// звужений scope до цієї ж таблиці вже не пускає.
+const SHEETS_SCOPE = ['https://www.googleapis.com/auth/spreadsheets']
 
 export async function GET() {
   const sheetId = process.env.USAGE_SHEET_ID
@@ -61,7 +64,9 @@ export async function GET() {
     const msg = e instanceof Error ? e.message : String(e)
     const hint = /Unable to parse range|not found/i.test(msg)
       ? `вкладки «${TAB}» ще немає — жодного запису не було`
-      : msg
+      : /permission/i.test(msg)
+        ? `таблиця не розшарена на робота ${creds.email} з правом Editor`
+        : msg
     return NextResponse.json({ error: hint }, { status: 502 })
   }
 }
